@@ -2,7 +2,7 @@
 import requests
 import time
 import threading
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 # ============================================================
 #  KONFIGURATION – hier deine Daten eintragen
@@ -29,7 +29,8 @@ notified_karten  = set()
 notified_torwart = set()
 
 def jetzt():
-    return datetime.now().strftime("%H:%M")
+    de_time = datetime.now(timezone.utc) + timedelta(hours=2)
+    return de_time.strftime("%H:%M")
 
 def send_telegram(message: str):
     url     = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
