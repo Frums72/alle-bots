@@ -2,67 +2,63 @@ import requests
 import time
 import threading
 import xml.etree.ElementTree as ET
+import re
 from datetime import datetime
 
 # ============================================================
 #  KONFIGURATION – hier deine Daten eintragen
 # ============================================================
-# Fussball API
 API_KEY            = "E2xvBtoCuexKFTUt"
 API_SECRET         = "FiAUHwmqoVBQqo64rDA26ZFBddlT6gmM"
 
-# Telegram (gilt für ALLE Bots)
 TELEGRAM_BOT_TOKEN = "8706066107:AAFAQhT3k0jhTZ7ep-VWHPlskOKJVvsfucQ"
 TELEGRAM_CHAT_ID   = "7272001004"
 
 # ── Fussball Bot Einstellungen ────────────────────────────
-MAX_CORNERS         = 5    # Max. Ecken in HZ1
-MIN_KARTEN          = 2    # Mindestanzahl Karten
-KARTEN_BIS_MINUTE   = 30   # Karten bis zu dieser Minute
-MIN_SHOTS_ON_TARGET = 5    # Mindestanzahl Schüsse aufs Tor
-FUSSBALL_INTERVAL   = 2    # Minuten
+MAX_CORNERS         = 5
+MIN_KARTEN          = 2
+KARTEN_BIS_MINUTE   = 30
+MIN_SHOTS_ON_TARGET = 5
+FUSSBALL_INTERVAL   = 2
 
 # ── Kleinanzeigen Bot Einstellungen ──────────────────────
-KA_INTERVAL         = 3    # Minuten
+KA_INTERVAL         = 3
 # ============================================================
 
-# ============================================================
-#  KLEINANZEIGEN KATEGORIEN
-# ============================================================
 KATEGORIEN = [
     # Smartphones
-    {"name": "📱 iPhone 14",          "suche": "iPhone 14",          "max_preis": 220},
-    {"name": "📱 iPhone 15",          "suche": "iPhone 15",          "max_preis": 300},
-    {"name": "📱 iPhone 14 Pro",      "suche": "iPhone 14 Pro",      "max_preis": 360},
-    {"name": "📱 Samsung S24",        "suche": "Samsung Galaxy S24", "max_preis": 300},
+    {"name": "📱 iPhone 14",          "suche": "iphone 14",          "max_preis": 220},
+    {"name": "📱 iPhone 15",          "suche": "iphone 15",          "max_preis": 300},
+    {"name": "📱 iPhone 14 Pro",      "suche": "iphone 14 pro",      "max_preis": 360},
+    {"name": "📱 Samsung S24",        "suche": "samsung s24",        "max_preis": 300},
     # Gaming
-    {"name": "🎮 PS5 Slim",           "suche": "PS5 Slim",           "max_preis": 260},
-    {"name": "🎮 PS5 Pro",            "suche": "PS5 Pro",            "max_preis": 500},
-    {"name": "🎮 Nintendo Switch 2",  "suche": "Nintendo Switch 2",  "max_preis": 280},
-    {"name": "🎮 Xbox Series X",      "suche": "Xbox Series X",      "max_preis": 250},
+    {"name": "🎮 PS5 Slim",           "suche": "ps5 slim",           "max_preis": 260},
+    {"name": "🎮 PS5 Pro",            "suche": "ps5 pro",            "max_preis": 500},
+    {"name": "🎮 Nintendo Switch 2",  "suche": "nintendo switch 2",  "max_preis": 280},
+    {"name": "🎮 Xbox Series X",      "suche": "xbox series x",      "max_preis": 250},
     # Laptop / Mac
-    {"name": "💻 MacBook Air M2",     "suche": "MacBook Air M2",     "max_preis": 520},
-    {"name": "💻 MacBook Pro M3",     "suche": "MacBook Pro M3",     "max_preis": 950},
+    {"name": "💻 MacBook Air M2",     "suche": "macbook air m2",     "max_preis": 520},
+    {"name": "💻 MacBook Pro M3",     "suche": "macbook pro m3",     "max_preis": 950},
     # Grafikkarten
-    {"name": "🖥️ RTX 4070",          "suche": "RTX 4070",           "max_preis": 300},
-    {"name": "🖥️ RTX 4080",          "suche": "RTX 4080",           "max_preis": 620},
+    {"name": "🖥️ RTX 4070",          "suche": "rtx 4070",           "max_preis": 300},
+    {"name": "🖥️ RTX 4080",          "suche": "rtx 4080",           "max_preis": 620},
     # Sneaker
-    {"name": "👟 Jordan 1 Retro",     "suche": "Air Jordan 1",       "max_preis": 120},
-    {"name": "👟 Yeezy 350",          "suche": "Yeezy 350",          "max_preis": 130},
-    {"name": "👟 Nike Dunk",          "suche": "Nike Dunk Low",      "max_preis": 100},
+    {"name": "👟 Jordan 1 Retro",     "suche": "air jordan 1",       "max_preis": 120},
+    {"name": "👟 Yeezy 350",          "suche": "yeezy 350",          "max_preis": 130},
+    {"name": "👟 Nike Dunk",          "suche": "nike dunk low",      "max_preis": 100},
     # Sammelkarten
-    {"name": "🃏 Pokémon Booster",    "suche": "Pokemon Booster",    "max_preis": 20},
-    {"name": "🃏 Pokémon Display",    "suche": "Pokemon Display",    "max_preis": 80},
-    {"name": "🃏 Pokémon Karten",     "suche": "Pokemon Karten",     "max_preis": 50},
-    {"name": "🃏 Magic the Gathering","suche": "Magic the Gathering", "max_preis": 30},
-    {"name": "🃏 One Piece Karten",   "suche": "One Piece Karten",   "max_preis": 30},
+    {"name": "🃏 Pokemon Booster",    "suche": "pokemon booster",    "max_preis": 20},
+    {"name": "🃏 Pokemon Display",    "suche": "pokemon display",    "max_preis": 80},
+    {"name": "🃏 Pokemon Karten",     "suche": "pokemon karten",     "max_preis": 50},
+    {"name": "🃏 Magic Gathering",    "suche": "magic gathering",    "max_preis": 30},
+    {"name": "🃏 One Piece Karten",   "suche": "one piece karten",   "max_preis": 30},
     # Lego
-    {"name": "🧱 Lego Star Wars",     "suche": "Lego Star Wars",     "max_preis": 60},
-    {"name": "🧱 Lego Technic",       "suche": "Lego Technic",       "max_preis": 50},
-    # Uhren & Sonstiges
-    {"name": "⌚ Apple Watch",        "suche": "Apple Watch",        "max_preis": 150},
-    {"name": "📷 Sony Alpha",         "suche": "Sony Alpha",         "max_preis": 400},
-    {"name": "🎸 Gitarre",            "suche": "Gitarre",            "max_preis": 100},
+    {"name": "🧱 Lego Star Wars",     "suche": "lego star wars",     "max_preis": 60},
+    {"name": "🧱 Lego Technic",       "suche": "lego technic",       "max_preis": 50},
+    # Sonstiges
+    {"name": "⌚ Apple Watch",        "suche": "apple watch",        "max_preis": 150},
+    {"name": "📷 Sony Alpha",         "suche": "sony alpha",         "max_preis": 400},
+    {"name": "🎸 Gitarre",            "suche": "gitarre",            "max_preis": 100},
 ]
 
 # ============================================================
@@ -80,7 +76,7 @@ def send_telegram(message: str):
         print(f"  [Telegram Fehler] {resp.text}")
 
 # ============================================================
-#  FUSSBALL API FUNKTIONEN
+#  FUSSBALL API
 # ============================================================
 
 BASE_URL_FB  = "https://livescore-api.com/api-client"
@@ -117,7 +113,6 @@ def karten_emoji(typ):
     if typ == "YELLOW_RED_CARD": return "🟨🟥"
     return "🃏"
 
-# ── Ecken Bot ─────────────────────────────────────────────
 def bot_ecken():
     print(f"[Ecken-Bot] Gestartet | max. {MAX_CORNERS} Ecken in HZ1")
     while True:
@@ -149,7 +144,6 @@ def bot_ecken():
             print(f"  [Ecken-Bot] Fehler: {e}")
         time.sleep(FUSSBALL_INTERVAL * 60)
 
-# ── Karten Bot ────────────────────────────────────────────
 def bot_karten():
     print(f"[Karten-Bot] Gestartet | mind. {MIN_KARTEN} Karten bis Minute {KARTEN_BIS_MINUTE}")
     while True:
@@ -193,7 +187,6 @@ def bot_karten():
             print(f"  [Karten-Bot] Fehler: {e}")
         time.sleep(FUSSBALL_INTERVAL * 60)
 
-# ── Torwart Bot ───────────────────────────────────────────
 def bot_torwart():
     print(f"[Torwart-Bot] Gestartet | 0:0 + mind. {MIN_SHOTS_ON_TARGET} Schüsse")
     while True:
@@ -227,7 +220,7 @@ def bot_torwart():
                     msg = (f"🧤 <b>TORWART-ALARM!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                            f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
                            f"📊 Stand: <b>0:0</b> | {min_text}\n━━━━━━━━━━━━━━━━━━━━\n"
-                           f"🎯 Schüsse aufs Tor: <b>{shots_ges}</b> ({shots_home}|{shots_away})\n"
+                           f"🎯 Schüsse: <b>{shots_ges}</b> ({shots_home}|{shots_away})\n"
                            f"🧤 Paraden: <b>{saves_home+saves_away}</b> ({saves_home}|{saves_away})\n"
                            f"⚽ Ballbesitz: {poss_home}%|{poss_away}%\n"
                            f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
@@ -240,49 +233,76 @@ def bot_torwart():
         time.sleep(FUSSBALL_INTERVAL * 60)
 
 # ============================================================
-#  KLEINANZEIGEN BOT
+#  KLEINANZEIGEN BOT – korrigierte URL
 # ============================================================
 
 ka_seen = set()
 
-def get_rss(suchbegriff, max_preis):
-    query = suchbegriff.replace(" ", "+")
-    if max_preis > 0:
-        url = f"https://www.kleinanzeigen.de/s-anzeigen/rss.xml?keywords={query}&maxPrice={max_preis}&sortingField=CREATION_DATE"
-    else:
-        url = f"https://www.kleinanzeigen.de/s-anzeigen/rss.xml?keywords={query}&sortingField=CREATION_DATE"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-    resp    = requests.get(url, headers=headers, timeout=10)
+def get_rss(suchbegriff):
+    """Holt RSS ohne maxPrice – Preisfilter machen wir selbst."""
+    query = suchbegriff.replace(" ", "-")
+    url   = f"https://www.kleinanzeigen.de/s-anzeigen/{query}/k0.rss"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/rss+xml, application/xml, text/xml"
+    }
+    resp = requests.get(url, headers=headers, timeout=15)
     resp.raise_for_status()
     return resp.text
 
-def parse_rss(xml_text):
-    import re
-    root  = ET.fromstring(xml_text)
+def preis_aus_text(text):
+    """Extrahiert Preis aus Titel/Beschreibung."""
+    match = re.search(r'(\d+[\.,]?\d*)\s*[€E]', text)
+    if match:
+        preis_str = match.group(1).replace(".", "").replace(",", ".")
+        try:
+            return float(preis_str)
+        except:
+            return None
+    return None
+
+def parse_rss(xml_text, max_preis):
+    """Liest Anzeigen und filtert nach Preis."""
+    try:
+        root  = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return []
+    
     items = []
     for item in root.findall(".//item"):
         titel = item.findtext("title", "").strip()
         link  = item.findtext("link", "").strip()
-        preis = item.findtext("{http://www.w3.org/2005/Atom}price", "")
-        ort   = item.findtext("{http://www.w3.org/2005/Atom}locality", "")
+        desc  = item.findtext("description", "")
         guid  = item.findtext("guid", link)
-        if not preis:
-            match = re.search(r'(\d+[\.,]?\d*)\s*€', titel)
-            preis = match.group(0) if match else "VB"
-        items.append({"titel": titel, "link": link, "preis": preis, "ort": ort, "guid": guid})
+
+        # Preis aus Titel oder Beschreibung lesen
+        preis_num = preis_aus_text(titel) or preis_aus_text(desc)
+        
+        # Preisfilter anwenden
+        if max_preis > 0 and preis_num is not None:
+            if preis_num > max_preis:
+                continue
+        
+        preis_text = f"{int(preis_num)}€" if preis_num else "VB"
+        
+        items.append({
+            "titel": titel,
+            "link":  link,
+            "preis": preis_text,
+            "guid":  guid
+        })
     return items
 
 def bot_kleinanzeigen():
     print(f"[KA-Bot] Gestartet | {len(KATEGORIEN)} Kategorien")
-    # Init – bestehende Anzeigen einlesen
-    print("[KA-Bot] Initialisierung...")
+    print("[KA-Bot] Initialisierung – lese bestehende Anzeigen...")
     for kat in KATEGORIEN:
         try:
-            xml   = get_rss(kat["suche"], kat["max_preis"])
-            items = parse_rss(xml)
+            xml   = get_rss(kat["suche"])
+            items = parse_rss(xml, 0)  # Beim Init keinen Preisfilter
             for item in items:
                 ka_seen.add(item["guid"])
-            time.sleep(1.5)
+            time.sleep(2)
         except Exception as e:
             print(f"  [KA-Bot] Init Fehler {kat['name']}: {e}")
     print(f"[KA-Bot] Fertig – {len(ka_seen)} bestehende Anzeigen ignoriert\n")
@@ -292,23 +312,23 @@ def bot_kleinanzeigen():
         try:
             for kat in KATEGORIEN:
                 try:
-                    xml   = get_rss(kat["suche"], kat["max_preis"])
-                    items = parse_rss(xml)
+                    xml   = get_rss(kat["suche"])
+                    items = parse_rss(xml, kat["max_preis"])
                     for item in items:
                         if item["guid"] not in ka_seen:
                             msg = (f"{kat['name']} <b>SCHNÄPPCHEN!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
-                                   f"📌 {item['titel']}\n💰 Preis: <b>{item['preis']}</b>\n"
-                                   f"📍 {item['ort'] or 'k.A.'}\n"
+                                   f"📌 {item['titel']}\n"
+                                   f"💰 Preis: <b>{item['preis']}</b>\n"
                                    f"🔗 <a href=\"{item['link']}\">Zur Anzeige</a>\n"
                                    f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                             send_telegram(msg)
                             ka_seen.add(item["guid"])
                             neu += 1
                             print(f"  [KA-Bot] NEU [{kat['name']}]: {item['titel']} – {item['preis']}")
-                    time.sleep(1.5)
+                    time.sleep(2)
                 except Exception as e:
                     print(f"  [KA-Bot] Fehler {kat['name']}: {e}")
-                    time.sleep(2)
+                    time.sleep(3)
             print(f"[{jetzt()}] [KA-Bot] {len(KATEGORIEN)} Kategorien geprüft | {neu} neu")
         except Exception as e:
             print(f"[KA-Bot] Fehler: {e}")
@@ -321,20 +341,20 @@ if __name__ == "__main__":
     print("=" * 55)
     print("  ALLE BOTS WERDEN GESTARTET")
     print("  ⚽ Fussball: Ecken + Karten + Torwart")
-    print("  🛒 Kleinanzeigen: 25 Kategorien")
+    print(f"  🛒 Kleinanzeigen: {len(KATEGORIEN)} Kategorien")
     print("=" * 55 + "\n")
 
     threads = [
-        threading.Thread(target=bot_ecken,          daemon=True, name="Ecken-Bot"),
-        threading.Thread(target=bot_karten,          daemon=True, name="Karten-Bot"),
-        threading.Thread(target=bot_torwart,         daemon=True, name="Torwart-Bot"),
-        threading.Thread(target=bot_kleinanzeigen,   daemon=True, name="KA-Bot"),
+        threading.Thread(target=bot_ecken,        daemon=True, name="Ecken-Bot"),
+        threading.Thread(target=bot_karten,        daemon=True, name="Karten-Bot"),
+        threading.Thread(target=bot_torwart,       daemon=True, name="Torwart-Bot"),
+        threading.Thread(target=bot_kleinanzeigen, daemon=True, name="KA-Bot"),
     ]
 
     for t in threads:
         t.start()
         time.sleep(2)
 
-    print("\nAlle Bots laufen! Druecke STRG+C zum Beenden.\n")
+    print("\nAlle Bots laufen!\n")
     while True:
         time.sleep(60)
