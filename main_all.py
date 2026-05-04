@@ -8,12 +8,12 @@ from datetime import datetime
 #  KONFIGURATION – hier deine Daten eintragen
 # ============================================================
 # Fussball API
-API_KEY            = "DEIN_KEY_HIER"
-API_SECRET         = "DEIN_SECRET_HIER"
+API_KEY            = "E2xvBtoCuexKFTUt"
+API_SECRET         = "FiAUHwmqoVBQqo64rDA26ZFBddlT6gmM"
 
 # Telegram (gilt für ALLE Bots)
-TELEGRAM_BOT_TOKEN = "DEIN_BOT_TOKEN"
-TELEGRAM_CHAT_ID   = "DEINE_CHAT_ID"
+TELEGRAM_BOT_TOKEN = "8706066107:AAFAQhT3k0jhTZ7ep-VWHPlskOKJVvsfucQ"
+TELEGRAM_CHAT_ID   = "7272001004"
 
 # ── Fussball Bot Einstellungen ────────────────────────────
 MAX_CORNERS         = 5    # Max. Ecken in HZ1
