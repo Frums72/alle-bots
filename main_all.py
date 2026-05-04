@@ -1,4 +1,4 @@
-import requests
+import requests # v2
 import time
 import threading
 import xml.etree.ElementTree as ET
