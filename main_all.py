@@ -1,4 +1,4 @@
-# v15 - Debug API Fehler
+# v16 - Zurück zu livescore-api
 import requests
 import re
 import time
@@ -8,7 +8,8 @@ from datetime import datetime, timezone, timedelta
 # ============================================================
 #  KONFIGURATION – hier deine Daten eintragen
 # ============================================================
-API_FOOTBALL_KEY   = "cfdd80c61b7b01fb9b589052e30a6b34"
+API_KEY            = "INUnk7eRsptCrMNq"
+API_SECRET         = "h2wf08YErEQbSAfAn9XIgbzJB3l3P9u6"
 
 TELEGRAM_BOT_TOKEN = "8706066107:AAFAQhT3k0jhTZ7ep-VWHPlskOKJVvsfucQ"
 TELEGRAM_CHAT_ID   = "7272001004"
@@ -28,8 +29,8 @@ FUSSBALL_INTERVAL   = 3
 TAGESBERICHT_UHRZEIT = 22
 # ============================================================
 
-AF_BASE    = "https://v3.football.api-sports.io"
-AF_HEADERS = {"x-apisports-key": API_FOOTBALL_KEY}
+LS_BASE = "https://livescore-api.com/api-client"
+LS_AUTH = {"key": API_KEY, "secret": API_SECRET}
 
 KARTEN_TYPEN = {"Yellow Card", "Red Card", "Yellow Red Card"}
 
@@ -104,87 +105,43 @@ def send_discord(webhook_url: str, message: str):
 #  API-FOOTBALL FUNKTIONEN
 # ============================================================
 
-def af_get_live_matches():
-    try:
-        resp = requests.get(f"{AF_BASE}/fixtures", headers=AF_HEADERS,
-                           params={"live": "all"}, timeout=10)
-        print(f"  [API-Football] Status: {resp.status_code}")
-        if resp.status_code != 200:
-            print(f"  [API-Football] Fehler Response: {resp.text[:200]}")
-            return []
-        data = resp.json()
-        errors = data.get("errors", {})
-        if errors:
-            print(f"  [API-Football] API Fehler: {errors}")
-            return []
-        results = data.get("response", [])
-        print(f"  [API-Football] {len(results)} Spiele gefunden")
-        return results
-    except Exception as e:
-        print(f"  [API-Football] Exception: {e}")
-        return []
-
-def af_get_statistiken(fixture_id):
-    resp = requests.get(f"{AF_BASE}/fixtures/statistics",
-                       headers=AF_HEADERS,
-                       params={"fixture": fixture_id}, timeout=10)
+def ls_get_live_matches():
+    resp = requests.get(f"{LS_BASE}/matches/live.json", params=LS_AUTH, timeout=10)
     resp.raise_for_status()
-    data   = resp.json().get("response", [])
+    return resp.json().get("data", {}).get("match", []) or []
+
+def ls_get_statistiken(match_id):
+    params = {**LS_AUTH, "match_id": match_id}
+    resp   = requests.get(f"{LS_BASE}/statistics/matches.json", params=params, timeout=10)
+    resp.raise_for_status()
+    stats  = resp.json().get("data", [])
     result = {"corners_home": 0, "corners_away": 0,
               "shots_on_target_home": 0, "shots_on_target_away": 0,
               "saves_home": 0, "saves_away": 0,
               "possession_home": "?", "possession_away": "?"}
-    for i, team_stats in enumerate(data):
-        is_home = i == 0
-        for stat in team_stats.get("statistics", []):
-            typ = stat.get("type", "")
-            val = stat.get("value") or 0
-            if typ == "Corner Kicks":
-                if is_home: result["corners_home"] = int(val)
-                else:       result["corners_away"] = int(val)
-            elif typ == "Shots on Goal":
-                if is_home: result["shots_on_target_home"] = int(val)
-                else:       result["shots_on_target_away"] = int(val)
-            elif typ == "Goalkeeper Saves":
-                if is_home: result["saves_home"] = int(val)
-                else:       result["saves_away"] = int(val)
-            elif typ == "Ball Possession":
-                pct = str(val).replace("%", "")
-                if is_home: result["possession_home"] = pct
-                else:       result["possession_away"] = pct
+    for s in stats:
+        val_h = int(s.get("home") or 0)
+        val_a = int(s.get("away") or 0)
+        typ   = s.get("type", "")
+        if typ == "corners":
+            result["corners_home"] = val_h
+            result["corners_away"] = val_a
+        elif typ == "shots_on_target":
+            result["shots_on_target_home"] = val_h
+            result["shots_on_target_away"] = val_a
+        elif typ == "saves":
+            result["saves_home"] = val_h
+            result["saves_away"] = val_a
+        elif typ == "possesion":
+            result["possession_home"] = str(val_h)
+            result["possession_away"] = str(val_a)
     return result
 
-def af_get_events(fixture_id):
-    resp = requests.get(f"{AF_BASE}/fixtures/events",
-                       headers=AF_HEADERS,
-                       params={"fixture": fixture_id}, timeout=10)
+def ls_get_events(match_id):
+    params = {**LS_AUTH, "id": match_id}
+    resp   = requests.get(f"{LS_BASE}/matches/events.json", params=params, timeout=10)
     resp.raise_for_status()
-    return resp.json().get("response", [])
-
-def _parse_fixtures(fixtures):
-    matches    = []
-    status_map = {"HT": "HALF TIME BREAK", "1H": "IN PLAY",
-                  "2H": "IN PLAY", "ET": "ADDED TIME",
-                  "FT": "FT", "AET": "AET"}
-    for fix in fixtures:
-        status_short = fix.get("fixture", {}).get("status", {}).get("short", "")
-        minute       = fix.get("fixture", {}).get("status", {}).get("elapsed") or 0
-        home         = fix.get("teams", {}).get("home", {}).get("name", "?")
-        away         = fix.get("teams", {}).get("away", {}).get("name", "?")
-        goals_h      = fix.get("goals", {}).get("home") or 0
-        goals_a      = fix.get("goals", {}).get("away") or 0
-        matches.append({
-            "id":          fix["fixture"]["id"],
-            "fixture_id":  fix["fixture"]["id"],
-            "status":      status_map.get(status_short, status_short),
-            "time":        str(minute),
-            "home":        {"name": home},
-            "away":        {"name": away},
-            "competition": {"name": fix.get("league", {}).get("name", "?")},
-            "country":     {"name": fix.get("league", {}).get("country", "International")},
-            "scores":      {"score": f"{goals_h} - {goals_a}"},
-        })
-    return matches
+    return resp.json().get("data", {}).get("event", []) or []
 
 def get_live_matches():
     """Max. 1 API-Anfrage alle 90 Sek. - alle Bots teilen den Cache."""
@@ -192,8 +149,7 @@ def get_live_matches():
     with _cache_lock:
         now = time.time()
         if now - _cache_timestamp > CACHE_TTL:
-            fixtures         = af_get_live_matches()
-            _cache_matches   = _parse_fixtures(fixtures)
+            _cache_matches   = ls_get_live_matches()
             _cache_timestamp = now
             print(f"  [Cache] {len(_cache_matches)} Spiele geladen")
         return list(_cache_matches)
@@ -201,15 +157,15 @@ def get_live_matches():
 
 
 def get_statistiken(match_id):
-    return af_get_statistiken(match_id)
+    return ls_get_statistiken(match_id)
 
 def get_events(match_id):
-    return af_get_events(match_id)
+    return ls_get_events(match_id)
 
 def karten_emoji(typ):
-    if "Yellow" in typ and "Red" in typ: return "🟨🟥"
-    if "Red" in typ:    return "🟥"
-    if "Yellow" in typ: return "🟨"
+    if typ == "YELLOW_RED_CARD": return "🟨🟥"
+    if typ == "RED_CARD":        return "🟥"
+    if typ == "YELLOW_CARD":     return "🟨"
     return "🃏"
 
 def get_quote(home, away, typ):
@@ -477,7 +433,7 @@ def auswertung_karten(spiel):
     GRENZE     = 5
     try:
         events = get_events(match_id)
-        anzahl = len([e for e in events if e.get("type") == "Card"])
+        anzahl = len([e for e in events if e.get("event") in {"YELLOW_CARD", "RED_CARD", "YELLOW_RED_CARD"}])
         gewonnen = anzahl > GRENZE
         emoji    = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
         update_statistik("karten", gewonnen, quote)
@@ -499,18 +455,13 @@ def auswertung_torwart(spiel):
     away     = spiel["away"]
     quote    = spiel.get("quote")
     try:
-        resp = requests.get(f"{AF_BASE}/fixtures",
-                           headers=AF_HEADERS,
-                           params={"id": match_id}, timeout=10)
+        params = {**LS_AUTH, "id": match_id}
+        resp   = requests.get(f"{LS_BASE}/matches/single.json", params=params, timeout=10)
         resp.raise_for_status()
-        fixes = resp.json().get("response", [])
-        if not fixes:
-            return None
-        fix      = fixes[0]
-        goals_h  = fix.get("goals", {}).get("home") or 0
-        goals_a  = fix.get("goals", {}).get("away") or 0
-        tore     = goals_h + goals_a
-        score    = f"{goals_h} - {goals_a}"
+        match  = resp.json().get("data", {}).get("match", {})
+        score  = match.get("scores", {}).get("score", "0 - 0")
+        parts  = score.replace(" ", "").split("-")
+        tore   = int(parts[0]) + int(parts[1]) if len(parts) == 2 else 0
         gewonnen = tore >= 1
         emoji    = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
         update_statistik("torwart", gewonnen, quote)
@@ -750,8 +701,8 @@ def bot_karten():
                     continue
                 events  = get_events(match_id)
                 karten  = [e for e in events
-                           if e.get("type") == "Card"
-                           and (e.get("time", {}).get("elapsed") or 999) <= KARTEN_BIS_MINUTE]
+                           if e.get("event") in {"YELLOW_CARD", "RED_CARD", "YELLOW_RED_CARD"}
+                           and (e.get("time") or 999) <= KARTEN_BIS_MINUTE]
                 home    = game.get("home", {}).get("name", "?")
                 away    = game.get("away", {}).get("name", "?")
                 comp    = game.get("competition", {}).get("name", "?")
@@ -764,9 +715,9 @@ def bot_karten():
                     karten_discord = []
                     for k in karten:
                         spieler  = (k.get("player") or {}).get("name", "?")
-                        team     = (k.get("team") or {}).get("name", "?")
-                        min_k    = (k.get("time") or {}).get("elapsed", "?")
-                        detail   = (k.get("detail") or "Card")
+                        team     = k.get("home_away", "?")
+                        min_k    = k.get("time", "?")
+                        detail   = k.get("event", "YELLOW_CARD")
                         emoji    = karten_emoji(detail)
                         zeilen.append(f"  {emoji} {min_k}' {spieler} ({team})")
                         karten_discord.append(f"{emoji} {min_k}' {spieler} ({team})")
@@ -859,10 +810,10 @@ def bot_torwart():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v15")
+    print("  ⚽ FUSSBALL BOTS v16")
     print("  Telegram + Discord (3 Webhooks)")
     print("  Ecken Unter + Ecken Über + Karten + Torwart")
-    print("  Powered by API-Football")
+    print("  Powered by livescore-api")
     print("=" * 50 + "\n")
 
     threads = [
