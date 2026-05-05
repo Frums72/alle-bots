@@ -1,4 +1,4 @@
-# v6 - Telegram + 3 Discord Webhooks
+# v7 - Discord Embeds + Ecken fix
 import requests
 import re
 import time
@@ -534,7 +534,7 @@ def bot_ecken():
                              f"🎯 Tipp: Unter <b>{grenze}</b> Ecken gesamt{ql}\n"
                              f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                     send_telegram(msg)
-                    send_discord_embed(DISCORD_WEBHOOK_ECKEN, discord_ecken_tipp(home, away, comp, country, score, corners, grenze, quote))
+                    send_discord_embed(DISCORD_WEBHOOK_ECKEN, discord_ecken_tipp(home, away, comp, country, score, corners_home, corners_away, corners, grenze, quote))
                     notified_ecken.add(match_id)
                     beobachtete_spiele[match_id] = {
                         "typ": "ecken", "match_id": match_id,
