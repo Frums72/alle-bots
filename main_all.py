@@ -14,9 +14,9 @@ API_SECRET         = "FiAUHwmqoVBQqo64rDA26ZFBddlT6gmM"
 TELEGRAM_BOT_TOKEN = "8706066107:AAFAQhT3k0jhTZ7ep-VWHPlskOKJVvsfucQ"
 TELEGRAM_CHAT_ID   = "7272001004"
 
-DISCORD_WEBHOOK_ECKEN   = "https://discord.com/api/webhooks/1501122812700786870/3667BQTjRqVHhy_c6KJ6XmurwyOeKClHLVLhoK8-idRcAZYIVXPL9PBa-ZyXLH5j4pz5"
+DISCORD_WEBHOOK_ECKEN   = "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4"
 DISCORD_WEBHOOK_KARTEN  = "https://discord.com/api/webhooks/1501123056544907378/X5xjFTx81adqbY6vkigbJHqwKOSO68BXjSqTeY_WOaywGn8A4-Q9c98tkRE-d2K_8p0p"
-DISCORD_WEBHOOK_TORWART = "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4"
+DISCORD_WEBHOOK_TORWART = "https://discord.com/api/webhooks/1501122812700786870/3667BQTjRqVHhy_c6KJ6XmurwyOeKClHLVLhoK8-idRcAZYIVXPL9PBa-ZyXLH5j4pz5"
 
 ODDS_API_KEY       = "866948de5d6c34ca51faf6bd77e0bb2a"  # Optional: the-odds-api.com
 EINSATZ            = 10.0
@@ -301,6 +301,7 @@ def bot_auswertung_und_berichte():
     global tagesbericht_gesendet
     print("[Auswertung-Bot] Gestartet")
     letzter_wochenbericht = de_now().isocalendar()[1]
+    spiel_zuletzt_live    = {}  # match_id -> timestamp wann zuletzt in Live-Liste gesehen
 
     while True:
         try:
@@ -315,22 +316,36 @@ def bot_auswertung_und_berichte():
                 letzter_wochenbericht = aktuelle_woche
 
             if beobachtete_spiele:
-                alle     = get_live_matches()
-                live_ids = {m.get("id") for m in alle}
-                # Status-Map für laufende Spiele
-                live_status = {m.get("id"): m.get("status", "") for m in alle}
+                try:
+                    alle        = get_live_matches()
+                    live_ids    = {m.get("id") for m in alle}
+                    live_status = {m.get("id"): m.get("status", "") for m in alle}
+                except Exception as e:
+                    print(f"  [Auswertung-Bot] API Fehler: {e}")
+                    time.sleep(60)
+                    continue
+
+                aktuell = time.time()
 
                 for match_id, spiel in list(beobachtete_spiele.items()):
                     if match_id in auswertung_done:
                         continue
 
-                    status = live_status.get(match_id, "")
-                    # Spiel beendet wenn: nicht mehr live ODER Status ist FT/FINISHED/AET
-                    beendet = (match_id not in live_ids or
-                               status in ("FT", "FINISHED", "AET", "FULL TIME", "AFTER EXTRA TIME"))
+                    if match_id in live_ids:
+                        # Spiel noch live – Zeitstempel aktualisieren
+                        spiel_zuletzt_live[match_id] = aktuell
+                        continue
 
-                    if beendet:
-                        time.sleep(15)  # kurz warten damit finale Stats geladen sind
+                    # Spiel nicht mehr in Live-Liste
+                    zuletzt      = spiel_zuletzt_live.get(match_id, 0)
+                    minuten_weg  = (aktuell - zuletzt) / 60 if zuletzt > 0 else 999
+                    status       = live_status.get(match_id, "")
+                    beendet_status = status in ("FT", "FINISHED", "AET", "FULL TIME", "AFTER EXTRA TIME")
+
+                    # Auswerten wenn Status FT ist ODER Spiel mind. 3 Min. weg
+                    if beendet_status or minuten_weg >= 3:
+                        print(f"  [Auswertung] Spiel beendet: {spiel['home']} vs {spiel['away']} (weg seit {round(minuten_weg)} Min.)")
+                        time.sleep(20)
                         typ     = spiel["typ"]
                         webhook = spiel["webhook"]
                         msg     = None
@@ -344,10 +359,14 @@ def bot_auswertung_und_berichte():
                             send_telegram(msg)
                             send_discord(webhook, msg)
                             auswertung_done.add(match_id)
-                            print(f"  [Auswertung] {spiel['home']} vs {spiel['away']} ({typ})")
+                            print(f"  [Auswertung] Gesendet: {spiel['home']} vs {spiel['away']} ({typ})")
+                        else:
+                            auswertung_done.add(match_id)
+                            print(f"  [Auswertung] Keine Daten: {spiel['home']} vs {spiel['away']}")
+
         except Exception as e:
             print(f"  [Auswertung-Bot] Fehler: {e}")
-        time.sleep(2 * 60)
+        time.sleep(60)
 
 # ============================================================
 #  FUSSBALL BOTS
