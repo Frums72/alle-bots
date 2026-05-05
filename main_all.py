@@ -1,4 +1,4 @@
-# v11 - Fix 0 Ecken Filter
+# v12 - Filter 0 Ecken global
 import requests
 import re
 import time
@@ -11,13 +11,12 @@ from datetime import datetime, timezone, timedelta
 API_KEY            = "E2xvBtoCuexKFTUt"
 API_SECRET         = "FiAUHwmqoVBQqo64rDA26ZFBddlT6gmM"
 
-TELEGRAM_BOT_TOKEN = "8706066107:AAHAiW3fpBh1C316H1Tp3U1FPkFIRPDljxc"
+TELEGRAM_BOT_TOKEN = "8706066107:AAFAQhT3k0jhTZ7ep-VWHPlskOKJVvsfucQ"
 TELEGRAM_CHAT_ID   = "7272001004"
 
 DISCORD_WEBHOOK_ECKEN   = "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4"
 DISCORD_WEBHOOK_KARTEN  = "https://discord.com/api/webhooks/1501123056544907378/X5xjFTx81adqbY6vkigbJHqwKOSO68BXjSqTeY_WOaywGn8A4-Q9c98tkRE-d2K_8p0p"
 DISCORD_WEBHOOK_TORWART = "https://discord.com/api/webhooks/1501122812700786870/3667BQTjRqVHhy_c6KJ6XmurwyOeKClHLVLhoK8-idRcAZYIVXPL9PBa-ZyXLH5j4pz5"
-
 
 ODDS_API_KEY          = "866948de5d6c34ca51faf6bd77e0bb2a"  # Optional: the-odds-api.com
 API_FOOTBALL_KEY      = "188a1e4dcf0d2e2329d22a4464213ebe"  # von api-football.com
@@ -681,8 +680,8 @@ def bot_ecken():
                 country = (game.get("country") or {}).get("name", "International")
                 score   = game.get("scores", {}).get("score", "?")
                 grenze  = corners * 2 + 2
-                # API-Football Spiele mit 0 Ecken überspringen (keine zuverlässigen Daten)
-                if corners == 0 and game.get("source") == "api-football":
+                # 0 Ecken = keine zuverlässigen Statistiken verfügbar -> überspringen
+                if corners == 0:
                     continue
 
                 if corners <= MAX_CORNERS:
@@ -894,7 +893,7 @@ def bot_torwart():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v11")
+    print("  ⚽ FUSSBALL BOTS v12")
     print("  Telegram + Discord (3 Webhooks)")
     print("  Ecken + Karten + Torwart + Auswertung + API-Football")
     print("=" * 50 + "\n")
