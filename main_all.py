@@ -14,9 +14,9 @@ API_SECRET         = "FiAUHwmqoVBQqo64rDA26ZFBddlT6gmM"
 TELEGRAM_BOT_TOKEN = "8706066107:AAFAQhT3k0jhTZ7ep-VWHPlskOKJVvsfucQ"
 TELEGRAM_CHAT_ID   = "7272001004"
 
-DISCORD_WEBHOOK_ECKEN   = "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4"
+DISCORD_WEBHOOK_ECKEN   = "https://discord.com/api/webhooks/1501122812700786870/3667BQTjRqVHhy_c6KJ6XmurwyOeKClHLVLhoK8-idRcAZYIVXPL9PBa-ZyXLH5j4pz5"
 DISCORD_WEBHOOK_KARTEN  = "https://discord.com/api/webhooks/1501123056544907378/X5xjFTx81adqbY6vkigbJHqwKOSO68BXjSqTeY_WOaywGn8A4-Q9c98tkRE-d2K_8p0p"
-DISCORD_WEBHOOK_TORWART = "https://discord.com/api/webhooks/1501122812700786870/3667BQTjRqVHhy_c6KJ6XmurwyOeKClHLVLhoK8-idRcAZYIVXPL9PBa-ZyXLH5j4pz5"
+DISCORD_WEBHOOK_TORWART = "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4"
 
 ODDS_API_KEY       = "866948de5d6c34ca51faf6bd77e0bb2a"  # Optional: the-odds-api.com
 EINSATZ            = 10.0
@@ -317,11 +317,20 @@ def bot_auswertung_und_berichte():
             if beobachtete_spiele:
                 alle     = get_live_matches()
                 live_ids = {m.get("id") for m in alle}
+                # Status-Map für laufende Spiele
+                live_status = {m.get("id"): m.get("status", "") for m in alle}
+
                 for match_id, spiel in list(beobachtete_spiele.items()):
                     if match_id in auswertung_done:
                         continue
-                    if match_id not in live_ids:
-                        time.sleep(30)
+
+                    status = live_status.get(match_id, "")
+                    # Spiel beendet wenn: nicht mehr live ODER Status ist FT/FINISHED/AET
+                    beendet = (match_id not in live_ids or
+                               status in ("FT", "FINISHED", "AET", "FULL TIME", "AFTER EXTRA TIME"))
+
+                    if beendet:
+                        time.sleep(15)  # kurz warten damit finale Stats geladen sind
                         typ     = spiel["typ"]
                         webhook = spiel["webhook"]
                         msg     = None
@@ -338,7 +347,7 @@ def bot_auswertung_und_berichte():
                             print(f"  [Auswertung] {spiel['home']} vs {spiel['away']} ({typ})")
         except Exception as e:
             print(f"  [Auswertung-Bot] Fehler: {e}")
-        time.sleep(5 * 60)
+        time.sleep(2 * 60)
 
 # ============================================================
 #  FUSSBALL BOTS
