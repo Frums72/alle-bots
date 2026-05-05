@@ -1,4 +1,4 @@
-# v12 - Filter 0 Ecken global
+# v13 - Komplett API-Football (livescore-api entfernt)
 import requests
 import re
 import time
@@ -8,18 +8,16 @@ from datetime import datetime, timezone, timedelta
 # ============================================================
 #  KONFIGURATION – hier deine Daten eintragen
 # ============================================================
-API_KEY            = "INUnk7eRsptCrMNq"
-API_SECRET         = "h2wf08YErEQbSAfAn9XIgbzJB3l3P9u6"
+API_FOOTBALL_KEY   = "188a1e4dcf0d2e2329d22a4464213ebe"
 
 TELEGRAM_BOT_TOKEN = "8706066107:AAFAQhT3k0jhTZ7ep-VWHPlskOKJVvsfucQ"
 TELEGRAM_CHAT_ID   = "7272001004"
 
 DISCORD_WEBHOOK_ECKEN   = "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4"
-DISCORD_WEBHOOK_KARTEN  = "https://discord.com/api/webhooks/1501123056544907378/X5xjFTx81adqbY6vkigbJHqwKOSO68BXjSqTeY_WOaywGn8A4-Q9c98tkRE-d2K_8p0p"
-DISCORD_WEBHOOK_TORWART = "https://discord.com/api/webhooks/1501122812700786870/3667BQTjRqVHhy_c6KJ6XmurwyOeKClHLVLhoK8-idRcAZYIVXPL9PBa-ZyXLH5j4pz5"
+DISCORD_WEBHOOK_KARTEN  = "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4"
+DISCORD_WEBHOOK_TORWART = "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4"
 
-ODDS_API_KEY          = "866948de5d6c34ca51faf6bd77e0bb2a"  # Optional: the-odds-api.com
-API_FOOTBALL_KEY      = "188a1e4dcf0d2e2329d22a4464213ebe"  # von api-football.com
+ODDS_API_KEY       = "866948de5d6c34ca51faf6bd77e0bb2a"
 EINSATZ            = 10.0
 
 MAX_CORNERS         = 5
@@ -30,16 +28,17 @@ FUSSBALL_INTERVAL   = 2
 TAGESBERICHT_UHRZEIT = 22
 # ============================================================
 
-BASE_URL_FB  = "https://livescore-api.com/api-client"
-AUTH_FB      = {"key": API_KEY, "secret": API_SECRET}
-KARTEN_TYPEN = {"YELLOW_CARD", "RED_CARD", "YELLOW_RED_CARD"}
+AF_BASE    = "https://v3.football.api-sports.io"
+AF_HEADERS = {"x-apisports-key": API_FOOTBALL_KEY}
+
+KARTEN_TYPEN = {"Yellow Card", "Red Card", "Yellow Red Card"}
 
 notified_ecken       = set()
 notified_ecken_over  = set()
 notified_karten      = set()
 notified_torwart     = set()
-beobachtete_spiele = {}
-auswertung_done    = set()
+beobachtete_spiele   = {}
+auswertung_done      = set()
 
 statistik = {
     "ecken":       {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
@@ -69,7 +68,6 @@ def de_now():
     return datetime.now(timezone.utc) + timedelta(hours=2)
 
 def html_zu_discord(text):
-    """Konvertiert Telegram HTML zu Discord Markdown."""
     text = text.replace("<b>", "**").replace("</b>", "**")
     text = re.sub(r"<[^>]+>", "", text)
     return text
@@ -81,129 +79,14 @@ def send_telegram(message: str):
     if resp.status_code != 200:
         print(f"  [Telegram Fehler] {resp.text}")
 
-FARBE_ECKEN   = 0xF4A300  # Orange
-FARBE_KARTEN  = 0xE74C3C  # Rot
-FARBE_TORWART = 0x1ABC9C  # Türkis
-FARBE_AUSWERTUNG_GEWONNEN = 0x2ECC71  # Grün
-FARBE_AUSWERTUNG_VERLOREN = 0xE74C3C  # Rot
-FARBE_BERICHT = 0x3498DB  # Blau
-
 def send_discord_embed(webhook_url: str, embed: dict):
-    """Sendet ein Discord Embed."""
     if not webhook_url or webhook_url.startswith("DISCORD"):
         return
-    payload = {"embeds": [embed]}
-    resp = requests.post(webhook_url, json=payload, timeout=10)
+    resp = requests.post(webhook_url, json={"embeds": [embed]}, timeout=10)
     if resp.status_code not in (200, 204):
         print(f"  [Discord Fehler] {resp.status_code}: {resp.text}")
 
-def discord_ecken_tipp(home, away, comp, country, score, corners_home, corners_away, corners, grenze, quote):
-    """Erstellt Discord Embed für Ecken-Tipp."""
-    quote_text = f"\n💶 **Quote:** {quote}" if quote else ""
-    return {
-        "title": "📐 Ecken Tipp",
-        "color": FARBE_ECKEN,
-        "fields": [
-            {"name": "🏆 Liga", "value": f"{comp} ({country})", "inline": True},
-            {"name": "⚽ Spiel", "value": f"{home} vs {away}", "inline": True},
-            {"name": "📊 Halbzeitstand", "value": f"**{score}**", "inline": True},
-            {"name": "📐 Ecken zur Halbzeit",
-             "value": f"🔵 {home}: **{corners_home}**\n🔴 {away}: **{corners_away}**\n📊 Gesamt: **{corners}**", "inline": False},
-            {"name": "🎯 Empfehlung",
-             "value": f"Unter **{grenze} Ecken** (Gesamtspiel){quote_text}", "inline": False},
-        ],
-        "footer": {"text": f"Fixture • {heute()} {jetzt()}"},
-        "thumbnail": {"url": "https://i.imgur.com/4M34hi2.png"}
-    }
-
-def discord_ecken_over_tipp(home, away, comp, country, score, minute, corners_home, corners_away, corners, quote):
-    """Erstellt Discord Embed für Ecken-Über-Tipp."""
-    quote_text = f"\n💶 **Quote:** {quote}" if quote else ""
-    return {
-        "title": "📐 Ecken ÜBER Tipp",
-        "color": 0x9B59B6,
-        "fields": [
-            {"name": "🏆 Liga", "value": f"{comp} ({country})", "inline": True},
-            {"name": "⚽ Spiel", "value": f"{home} vs {away}", "inline": True},
-            {"name": "📊 Stand", "value": f"**{score}** | Min. **{minute}'**", "inline": True},
-            {"name": "📐 Ecken bisher",
-             "value": f"🔵 {home}: **{corners_home}**\n🔴 {away}: **{corners_away}**\n📊 Gesamt: **{corners}**", "inline": False},
-            {"name": "🎯 Empfehlung",
-             "value": f"Über **14 Ecken** (Gesamtspiel){quote_text}", "inline": False},
-        ],
-        "footer": {"text": f"Fixture • {heute()} {jetzt()}"},
-    }
-
-def discord_karten_tipp(home, away, comp, country, score, minute, karten_liste, quote):
-    """Erstellt Discord Embed für Karten-Tipp."""
-    karten_text = "\n".join(karten_liste) if karten_liste else "–"
-    quote_text  = f"\n💶 **Quote:** {quote}" if quote else ""
-    return {
-        "title": "🃏 Karten Signal",
-        "color": FARBE_KARTEN,
-        "fields": [
-            {"name": "🏆 Liga", "value": f"{comp} ({country})", "inline": True},
-            {"name": "⚽ Spiel", "value": f"{home} vs {away}", "inline": True},
-            {"name": "📊 Stand", "value": f"**{score}** | Min. **{minute}'**", "inline": True},
-            {"name": "🃏 Karten bis Minute 30", "value": karten_text, "inline": False},
-            {"name": "🎯 Empfehlung",
-             "value": f"Über **5 Karten** (Gesamtspiel){quote_text}", "inline": False},
-        ],
-        "footer": {"text": f"Fixture • {heute()} {jetzt()}"},
-    }
-
-def discord_torwart_tipp(home, away, comp, country, shots_home, shots_away,
-                          saves_h, saves_a, poss_h, poss_a, min_text, quote):
-    """Erstellt Discord Embed für Torwart-Tipp."""
-    quote_text = f"\n💶 **Quote:** {quote}" if quote else ""
-    return {
-        "title": "🧤 Torwart Alarm",
-        "color": FARBE_TORWART,
-        "fields": [
-            {"name": "🏆 Liga", "value": f"{comp} ({country})", "inline": True},
-            {"name": "⚽ Spiel", "value": f"{home} vs {away}", "inline": True},
-            {"name": "📊 Stand", "value": f"**0:0** | {min_text}", "inline": True},
-            {"name": "🎯 Schüsse aufs Tor",
-             "value": f"Gesamt: **{shots_home+shots_away}** ({shots_home} | {shots_away})", "inline": True},
-            {"name": "🧤 Paraden",
-             "value": f"Gesamt: **{saves_h+saves_a}** ({saves_h} | {saves_a})", "inline": True},
-            {"name": "⚽ Ballbesitz",
-             "value": f"{poss_h}% | {poss_a}%", "inline": True},
-            {"name": "🎯 Empfehlung",
-             "value": f"Mindestens **1 Tor** fällt noch{quote_text}", "inline": False},
-        ],
-        "footer": {"text": f"Fixture • {heute()} {jetzt()}"},
-    }
-
-def discord_auswertung(typ, home, away, gewonnen, details: dict):
-    """Erstellt Discord Embed für Auswertung."""
-    farbe  = FARBE_AUSWERTUNG_GEWONNEN if gewonnen else FARBE_AUSWERTUNG_VERLOREN
-    emoji  = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
-    titel  = {"ecken": "📐 Auswertung – Eckwetten",
-              "karten": "🃏 Auswertung – Karten",
-              "torwart": "🧤 Auswertung – Torwart"}[typ]
-    felder = [{"name": "⚽ Spiel", "value": f"{home} vs {away}", "inline": False}]
-    for k, v in details.items():
-        felder.append({"name": k, "value": v, "inline": True})
-    felder.append({"name": "Ergebnis", "value": f"**{emoji}**", "inline": False})
-    return {
-        "title": titel,
-        "color": farbe,
-        "fields": felder,
-        "footer": {"text": f"Auswertung • {heute()} {jetzt()}"},
-    }
-
-def discord_bericht(titel, felder):
-    """Erstellt Discord Embed für Tages/Wochenbericht."""
-    return {
-        "title": titel,
-        "color": FARBE_BERICHT,
-        "fields": felder,
-        "footer": {"text": f"Bericht • {heute()} {jetzt()}"},
-    }
-
 def send_discord(webhook_url: str, message: str):
-    """Fallback: Sendet plain text (für Berichte ohne eigenes Embed)."""
     if not webhook_url or webhook_url.startswith("DISCORD"):
         return
     discord_msg = html_zu_discord(message)
@@ -211,142 +94,89 @@ def send_discord(webhook_url: str, message: str):
     if resp.status_code not in (200, 204):
         print(f"  [Discord Fehler] {resp.status_code}: {resp.text}")
 
-def send_alle(message: str, webhook: str):
-    """Schickt Nachricht an Telegram UND Discord (plain text fallback)."""
-    send_telegram(message)
-    send_discord(webhook, message)
-
-def get_live_matches():
-    resp = requests.get(f"{BASE_URL_FB}/matches/live.json", params=AUTH_FB, timeout=10)
-    resp.raise_for_status()
-    return resp.json().get("data", {}).get("match", [])
-
-def get_statistiken(match_id):
-    params = {**AUTH_FB, "match_id": match_id}
-    resp   = requests.get(f"{BASE_URL_FB}/statistics/matches.json", params=params, timeout=10)
-    resp.raise_for_status()
-    result = {}
-    for s in resp.json().get("data", []):
-        result[s.get("type")] = {"home": s.get("home") or 0, "away": s.get("away") or 0}
-    return result
-
-def get_events(match_id):
-    params = {**AUTH_FB, "id": match_id}
-    resp   = requests.get(f"{BASE_URL_FB}/matches/events.json", params=params, timeout=10)
-    resp.raise_for_status()
-    return resp.json().get("data", {}).get("event", []) or []
-
 # ============================================================
-#  API-FOOTBALL FUNKTIONEN (zusätzliche Spiele)
+#  API-FOOTBALL FUNKTIONEN
 # ============================================================
-
-AF_BASE    = "https://v3.football.api-sports.io"
-AF_HEADERS = {"x-apisports-key": API_FOOTBALL_KEY}
-
-af_cache = {}  # Cache damit wir nicht zu viele Anfragen machen
 
 def af_get_live_matches():
-    """Holt Live-Spiele von API-Football."""
-    if not API_FOOTBALL_KEY or API_FOOTBALL_KEY == "DEIN_API_FOOTBALL_KEY":
-        return []
-    try:
-        resp = requests.get(f"{AF_BASE}/fixtures", headers=AF_HEADERS,
-                           params={"live": "all"}, timeout=10)
-        if resp.status_code != 200:
-            return []
-        return resp.json().get("response", [])
-    except Exception as e:
-        print(f"  [API-Football] Fehler: {e}")
-        return []
+    resp = requests.get(f"{AF_BASE}/fixtures", headers=AF_HEADERS,
+                       params={"live": "all"}, timeout=10)
+    resp.raise_for_status()
+    return resp.json().get("response", [])
 
 def af_get_statistiken(fixture_id):
-    """Holt Statistiken von API-Football (mit Cache)."""
-    if fixture_id in af_cache:
-        return af_cache[fixture_id]
-    try:
-        resp = requests.get(f"{AF_BASE}/fixtures/statistics",
-                           headers=AF_HEADERS,
-                           params={"fixture": fixture_id}, timeout=10)
-        if resp.status_code != 200:
-            return {}
-        data = resp.json().get("response", [])
-        result = {}
-        for team_stats in data:
-            is_home = team_stats.get("team", {}).get("id") == team_stats.get("team", {}).get("id")
-            for stat in team_stats.get("statistics", []):
-                typ = stat.get("type", "").lower().replace(" ", "_")
-                val = stat.get("value") or 0
-                if typ not in result:
-                    result[typ] = {"home": 0, "away": 0}
-                if len(result.get(typ, {}).values()) == 0:
-                    result[typ]["home"] = val
-                else:
-                    result[typ]["away"] = val
-        af_cache[fixture_id] = result
-        return result
-    except Exception as e:
-        print(f"  [API-Football] Stats Fehler: {e}")
-        return {}
+    resp = requests.get(f"{AF_BASE}/fixtures/statistics",
+                       headers=AF_HEADERS,
+                       params={"fixture": fixture_id}, timeout=10)
+    resp.raise_for_status()
+    data   = resp.json().get("response", [])
+    result = {"corners_home": 0, "corners_away": 0,
+              "shots_on_target_home": 0, "shots_on_target_away": 0,
+              "saves_home": 0, "saves_away": 0,
+              "possession_home": "?", "possession_away": "?"}
+    for i, team_stats in enumerate(data):
+        is_home = i == 0
+        for stat in team_stats.get("statistics", []):
+            typ = stat.get("type", "")
+            val = stat.get("value") or 0
+            if typ == "Corner Kicks":
+                if is_home: result["corners_home"] = int(val)
+                else:       result["corners_away"] = int(val)
+            elif typ == "Shots on Goal":
+                if is_home: result["shots_on_target_home"] = int(val)
+                else:       result["shots_on_target_away"] = int(val)
+            elif typ == "Goalkeeper Saves":
+                if is_home: result["saves_home"] = int(val)
+                else:       result["saves_away"] = int(val)
+            elif typ == "Ball Possession":
+                pct = str(val).replace("%", "")
+                if is_home: result["possession_home"] = pct
+                else:       result["possession_away"] = pct
+    return result
 
-def af_normalize_match(fix):
-    """Konvertiert API-Football Format in unser internes Format."""
-    status  = fix.get("fixture", {}).get("status", {}).get("short", "")
-    minute  = fix.get("fixture", {}).get("status", {}).get("elapsed") or 0
-    home    = fix.get("teams", {}).get("home", {}).get("name", "?")
-    away    = fix.get("teams", {}).get("away", {}).get("name", "?")
-    goals_h = fix.get("goals", {}).get("home") or 0
-    goals_a = fix.get("goals", {}).get("away") or 0
+def af_get_events(fixture_id):
+    resp = requests.get(f"{AF_BASE}/fixtures/events",
+                       headers=AF_HEADERS,
+                       params={"fixture": fixture_id}, timeout=10)
+    resp.raise_for_status()
+    return resp.json().get("response", [])
 
-    # Status konvertieren
-    status_map = {
-        "HT": "HALF TIME BREAK",
-        "1H": "IN PLAY",
-        "2H": "IN PLAY",
-        "ET": "ADDED TIME",
-        "FT": "FT",
-        "AET": "AET",
-    }
+def get_live_matches():
+    fixtures = af_get_live_matches()
+    matches  = []
+    for fix in fixtures:
+        status_short = fix.get("fixture", {}).get("status", {}).get("short", "")
+        minute       = fix.get("fixture", {}).get("status", {}).get("elapsed") or 0
+        home         = fix.get("teams", {}).get("home", {}).get("name", "?")
+        away         = fix.get("teams", {}).get("away", {}).get("name", "?")
+        goals_h      = fix.get("goals", {}).get("home") or 0
+        goals_a      = fix.get("goals", {}).get("away") or 0
+        status_map   = {"HT": "HALF TIME BREAK", "1H": "IN PLAY",
+                        "2H": "IN PLAY", "ET": "ADDED TIME",
+                        "FT": "FT", "AET": "AET"}
+        matches.append({
+            "id":          fix["fixture"]["id"],
+            "fixture_id":  fix["fixture"]["id"],
+            "status":      status_map.get(status_short, status_short),
+            "time":        str(minute),
+            "home":        {"name": home},
+            "away":        {"name": away},
+            "competition": {"name": fix.get("league", {}).get("name", "?")},
+            "country":     {"name": fix.get("league", {}).get("country", "International")},
+            "scores":      {"score": f"{goals_h} - {goals_a}"},
+        })
+    return matches
 
-    return {
-        "id":          f"af_{fix['fixture']['id']}",  # Prefix damit keine ID-Kollision
-        "fixture_id":  fix["fixture"]["id"],          # Original ID für Stats-Abruf
-        "source":      "api-football",
-        "status":      status_map.get(status, status),
-        "time":        str(minute),
-        "home":        {"name": home},
-        "away":        {"name": away},
-        "competition": {"name": fix.get("league", {}).get("name", "?")},
-        "country":     {"name": fix.get("league", {}).get("country", "International")},
-        "scores":      {"score": f"{goals_h} - {goals_a}"},
-    }
+def get_statistiken(match_id):
+    return af_get_statistiken(match_id)
 
-def get_all_live_matches():
-    """Kombiniert Live-Spiele von livescore-api UND API-Football."""
-    # livescore-api Spiele
-    ls_matches = get_live_matches()
-    ls_ids     = set()
-    for m in ls_matches:
-        key = f"{m.get('home',{}).get('name','')}_{m.get('away',{}).get('name','')}"
-        ls_ids.add(key)
-
-    # API-Football Spiele (nur neue die livescore-api nicht hat)
-    af_matches = []
-    for fix in af_get_live_matches():
-        home = fix.get("teams", {}).get("home", {}).get("name", "")
-        away = fix.get("teams", {}).get("away", {}).get("name", "")
-        key  = f"{home}_{away}"
-        if key not in ls_ids:  # Nur Spiele die livescore-api NICHT hat
-            af_matches.append(af_normalize_match(fix))
-
-    total = ls_matches + af_matches
-    if af_matches:
-        print(f"  [API-Football] +{len(af_matches)} zusätzliche Spiele")
-    return total
+def get_events(match_id):
+    return af_get_events(match_id)
 
 def karten_emoji(typ):
-    if typ == "YELLOW_CARD":     return "🟨"
-    if typ == "RED_CARD":        return "🟥"
-    if typ == "YELLOW_RED_CARD": return "🟨🟥"
+    if "Yellow" in typ and "Red" in typ: return "🟨🟥"
+    if "Red" in typ:    return "🟥"
+    if "Yellow" in typ: return "🟨"
     return "🃏"
 
 def get_quote(home, away, typ):
@@ -354,7 +184,8 @@ def get_quote(home, away, typ):
         return None
     try:
         url    = "https://api.the-odds-api.com/v4/sports/soccer/odds/"
-        params = {"apiKey": ODDS_API_KEY, "regions": "eu", "markets": "totals", "oddsFormat": "decimal"}
+        params = {"apiKey": ODDS_API_KEY, "regions": "eu",
+                  "markets": "totals", "oddsFormat": "decimal"}
         resp   = requests.get(url, params=params, timeout=8)
         if resp.status_code != 200:
             return None
@@ -370,6 +201,104 @@ def get_quote(home, away, typ):
         return None
     except:
         return None
+
+# ============================================================
+#  DISCORD EMBEDS
+# ============================================================
+
+FARBE_ECKEN              = 0xF4A300
+FARBE_ECKEN_OVER         = 0x9B59B6
+FARBE_KARTEN             = 0xE74C3C
+FARBE_TORWART            = 0x1ABC9C
+FARBE_AUSWERTUNG_GEWONNEN= 0x2ECC71
+FARBE_AUSWERTUNG_VERLOREN= 0xE74C3C
+FARBE_BERICHT            = 0x3498DB
+
+def discord_ecken_tipp(home, away, comp, country, score, corners_home, corners_away, corners, grenze, quote):
+    quote_text = f"\n💶 **Quote:** {quote}" if quote else ""
+    return {
+        "title": "📐 Ecken Tipp",
+        "color": FARBE_ECKEN,
+        "fields": [
+            {"name": "🏆 Liga",             "value": f"{comp} ({country})", "inline": True},
+            {"name": "⚽ Spiel",            "value": f"{home} vs {away}",   "inline": True},
+            {"name": "📊 Halbzeitstand",    "value": f"**{score}**",        "inline": True},
+            {"name": "📐 Ecken zur Halbzeit",
+             "value": f"🔵 {home}: **{corners_home}**\n🔴 {away}: **{corners_away}**\n📊 Gesamt: **{corners}**",
+             "inline": False},
+            {"name": "🎯 Empfehlung",
+             "value": f"Unter **{grenze} Ecken** (Gesamtspiel){quote_text}", "inline": False},
+        ],
+        "footer": {"text": f"Fixture • {heute()} {jetzt()}"},
+    }
+
+def discord_ecken_over_tipp(home, away, comp, country, score, minute, corners_home, corners_away, corners, quote):
+    quote_text = f"\n💶 **Quote:** {quote}" if quote else ""
+    return {
+        "title": "📐 Ecken ÜBER Tipp",
+        "color": FARBE_ECKEN_OVER,
+        "fields": [
+            {"name": "🏆 Liga",          "value": f"{comp} ({country})",              "inline": True},
+            {"name": "⚽ Spiel",         "value": f"{home} vs {away}",                "inline": True},
+            {"name": "📊 Stand",         "value": f"**{score}** | Min. **{minute}'**","inline": True},
+            {"name": "📐 Ecken bisher",
+             "value": f"🔵 {home}: **{corners_home}**\n🔴 {away}: **{corners_away}**\n📊 Gesamt: **{corners}**",
+             "inline": False},
+            {"name": "🎯 Empfehlung",
+             "value": f"Über **14 Ecken** (Gesamtspiel){quote_text}", "inline": False},
+        ],
+        "footer": {"text": f"Fixture • {heute()} {jetzt()}"},
+    }
+
+def discord_karten_tipp(home, away, comp, country, score, minute, karten_liste, quote):
+    quote_text  = f"\n💶 **Quote:** {quote}" if quote else ""
+    karten_text = "\n".join(karten_liste) if karten_liste else "–"
+    return {
+        "title": "🃏 Karten Signal",
+        "color": FARBE_KARTEN,
+        "fields": [
+            {"name": "🏆 Liga",  "value": f"{comp} ({country})",              "inline": True},
+            {"name": "⚽ Spiel", "value": f"{home} vs {away}",                "inline": True},
+            {"name": "📊 Stand", "value": f"**{score}** | Min. **{minute}'**","inline": True},
+            {"name": "🃏 Karten bis Minute 30", "value": karten_text,         "inline": False},
+            {"name": "🎯 Empfehlung",
+             "value": f"Über **5 Karten** (Gesamtspiel){quote_text}", "inline": False},
+        ],
+        "footer": {"text": f"Fixture • {heute()} {jetzt()}"},
+    }
+
+def discord_torwart_tipp(home, away, comp, country, shots_home, shots_away,
+                          saves_h, saves_a, poss_h, poss_a, min_text, quote):
+    quote_text = f"\n💶 **Quote:** {quote}" if quote else ""
+    return {
+        "title": "🧤 Torwart Alarm",
+        "color": FARBE_TORWART,
+        "fields": [
+            {"name": "🏆 Liga",              "value": f"{comp} ({country})",                        "inline": True},
+            {"name": "⚽ Spiel",             "value": f"{home} vs {away}",                          "inline": True},
+            {"name": "📊 Stand",             "value": f"**0:0** | {min_text}",                      "inline": True},
+            {"name": "🎯 Schüsse aufs Tor",  "value": f"Gesamt: **{shots_home+shots_away}** ({shots_home}|{shots_away})", "inline": True},
+            {"name": "🧤 Paraden",           "value": f"Gesamt: **{saves_h+saves_a}** ({saves_h}|{saves_a})",            "inline": True},
+            {"name": "⚽ Ballbesitz",        "value": f"{poss_h}% | {poss_a}%",                     "inline": True},
+            {"name": "🎯 Empfehlung",
+             "value": f"Mindestens **1 Tor** fällt noch{quote_text}", "inline": False},
+        ],
+        "footer": {"text": f"Fixture • {heute()} {jetzt()}"},
+    }
+
+def discord_auswertung(typ, home, away, gewonnen, details: dict):
+    farbe = FARBE_AUSWERTUNG_GEWONNEN if gewonnen else FARBE_AUSWERTUNG_VERLOREN
+    emoji = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
+    titel = {"ecken": "📐 Auswertung – Ecken Unter",
+             "ecken_over": "📐 Auswertung – Ecken Über",
+             "karten": "🃏 Auswertung – Karten",
+             "torwart": "🧤 Auswertung – Torwart"}.get(typ, "📊 Auswertung")
+    felder = [{"name": "⚽ Spiel", "value": f"{home} vs {away}", "inline": False}]
+    for k, v in details.items():
+        felder.append({"name": k, "value": v, "inline": True})
+    felder.append({"name": "Ergebnis", "value": f"**{emoji}**", "inline": False})
+    return {"title": titel, "color": farbe, "fields": felder,
+            "footer": {"text": f"Auswertung • {heute()} {jetzt()}"}}
 
 # ============================================================
 #  STATISTIK & BERICHTE
@@ -398,6 +327,7 @@ def statistik_zeile(name, stat):
     return f"{name}: {stat['gewonnen']}/{gesamt} ({pct}%) {emoji} {'+' if gewinn >= 0 else ''}{gewinn}€"
 
 def send_tagesbericht():
+    global tagesbericht_gesendet
     gw  = sum(statistik[t]["gewonnen"] for t in statistik)
     vl  = sum(statistik[t]["verloren"] for t in statistik)
     ges = gw + vl
@@ -419,7 +349,7 @@ def send_tagesbericht():
            f"━━━━━━━━━━━━━━━━━━━━\n"
            f"🕐 {jetzt()} Uhr")
     send_telegram(msg)
-    send_discord(DISCORD_WEBHOOK_ECKEN, msg)  # Tagesbericht in Ecken-Channel
+    send_discord(DISCORD_WEBHOOK_ECKEN, msg)
     for t in statistik:
         statistik[t] = {"gewonnen": 0, "verloren": 0, "gewinn": 0.0}
     print(f"  [Bericht] Tagesbericht gesendet ({heute()})")
@@ -464,23 +394,23 @@ def auswertung_ecken(spiel):
     quote     = spiel.get("quote")
     try:
         stats       = get_statistiken(match_id)
-        total_ecken = int(stats.get("corners", {}).get("home", 0)) + int(stats.get("corners", {}).get("away", 0))
+        total_ecken = stats["corners_home"] + stats["corners_away"]
         gewonnen    = total_ecken < grenze
         emoji       = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
         update_statistik("ecken", gewonnen, quote)
         ql = f"💶 Quote: <b>{quote}</b> → Gewinn: <b>+{round((quote-1)*EINSATZ,2)}€</b>\n" if quote and gewonnen else ""
-        return (f"📊 <b>Auswertung – Ecken-Tipp</b>\n━━━━━━━━━━━━━━━━━━━━\n"
-                f"📌 {home} vs {away}\n"
-                f"📐 Ecken HZ1: <b>{hz1_ecken}</b>\n"
-                f"🎯 Tipp: Unter <b>{grenze}</b> Ecken gesamt\n"
-                f"📈 Tatsächlich: <b>{total_ecken}</b> Ecken\n{ql}"
-                f"━━━━━━━━━━━━━━━━━━━━\n{emoji}\n🕐 {jetzt()} Uhr")
+        msg = (f"📊 <b>Auswertung – Ecken Unter</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+               f"📌 {home} vs {away}\n"
+               f"📐 Ecken HZ1: <b>{hz1_ecken}</b>\n"
+               f"🎯 Tipp: Unter <b>{grenze}</b> Ecken gesamt\n"
+               f"📈 Tatsächlich: <b>{total_ecken}</b> Ecken\n{ql}"
+               f"━━━━━━━━━━━━━━━━━━━━\n{emoji}\n🕐 {jetzt()} Uhr")
+        return msg
     except Exception as e:
         print(f"  [Auswertung] Ecken Fehler: {e}")
         return None
 
 def auswertung_ecken_over(spiel):
-    """Ecken-Über-Tipp: Über 14 Ecken gesamt"""
     match_id  = spiel["match_id"]
     hz1_ecken = spiel["hz1_ecken"]
     home      = spiel["home"]
@@ -489,17 +419,18 @@ def auswertung_ecken_over(spiel):
     GRENZE    = 14
     try:
         stats       = get_statistiken(match_id)
-        total_ecken = int(stats.get("corners", {}).get("home", 0)) + int(stats.get("corners", {}).get("away", 0))
+        total_ecken = stats["corners_home"] + stats["corners_away"]
         gewonnen    = total_ecken > GRENZE
         emoji       = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
         update_statistik("ecken_over", gewonnen, quote)
         ql = f"💶 Quote: <b>{quote}</b> → Gewinn: <b>+{round((quote-1)*EINSATZ,2)}€</b>\n" if quote and gewonnen else ""
-        return (f"📊 <b>Auswertung – Ecken ÜBER Tipp</b>\n━━━━━━━━━━━━━━━━━━━━\n"
-                f"📌 {home} vs {away}\n"
-                f"📐 Ecken bei Signal: <b>{hz1_ecken}</b>\n"
-                f"🎯 Tipp: Über <b>{GRENZE}</b> Ecken gesamt\n"
-                f"📈 Tatsächlich: <b>{total_ecken}</b> Ecken\n{ql}"
-                f"━━━━━━━━━━━━━━━━━━━━\n{emoji}\n🕐 {jetzt()} Uhr")
+        msg = (f"📊 <b>Auswertung – Ecken Über</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+               f"📌 {home} vs {away}\n"
+               f"📐 Ecken bei Signal: <b>{hz1_ecken}</b>\n"
+               f"🎯 Tipp: Über <b>{GRENZE}</b> Ecken gesamt\n"
+               f"📈 Tatsächlich: <b>{total_ecken}</b> Ecken\n{ql}"
+               f"━━━━━━━━━━━━━━━━━━━━\n{emoji}\n🕐 {jetzt()} Uhr")
+        return msg
     except Exception as e:
         print(f"  [Auswertung] Ecken-Über Fehler: {e}")
         return None
@@ -512,18 +443,19 @@ def auswertung_karten(spiel):
     quote      = spiel.get("quote")
     GRENZE     = 5
     try:
-        events   = get_events(match_id)
-        anzahl   = len([e for e in events if e.get("event") in KARTEN_TYPEN])
+        events = get_events(match_id)
+        anzahl = len([e for e in events if e.get("type") == "Card"])
         gewonnen = anzahl > GRENZE
         emoji    = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
         update_statistik("karten", gewonnen, quote)
         ql = f"💶 Quote: <b>{quote}</b> → Gewinn: <b>+{round((quote-1)*EINSATZ,2)}€</b>\n" if quote and gewonnen else ""
-        return (f"📊 <b>Auswertung – Karten-Tipp</b>\n━━━━━━━━━━━━━━━━━━━━\n"
-                f"📌 {home} vs {away}\n"
-                f"🃏 Karten nach 30 Min.: <b>{karten_hz1}</b>\n"
-                f"🎯 Tipp: Über <b>{GRENZE}</b> Karten gesamt\n"
-                f"📈 Tatsächlich: <b>{anzahl}</b> Karten\n{ql}"
-                f"━━━━━━━━━━━━━━━━━━━━\n{emoji}\n🕐 {jetzt()} Uhr")
+        msg = (f"📊 <b>Auswertung – Karten Tipp</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+               f"📌 {home} vs {away}\n"
+               f"🃏 Karten nach 30 Min.: <b>{karten_hz1}</b>\n"
+               f"🎯 Tipp: Über <b>{GRENZE}</b> Karten gesamt\n"
+               f"📈 Tatsächlich: <b>{anzahl}</b> Karten\n{ql}"
+               f"━━━━━━━━━━━━━━━━━━━━\n{emoji}\n🕐 {jetzt()} Uhr")
+        return msg
     except Exception as e:
         print(f"  [Auswertung] Karten Fehler: {e}")
         return None
@@ -534,22 +466,28 @@ def auswertung_torwart(spiel):
     away     = spiel["away"]
     quote    = spiel.get("quote")
     try:
-        params = {**AUTH_FB, "id": match_id}
-        resp   = requests.get(f"{BASE_URL_FB}/matches/single.json", params=params, timeout=10)
+        resp = requests.get(f"{AF_BASE}/fixtures",
+                           headers=AF_HEADERS,
+                           params={"id": match_id}, timeout=10)
         resp.raise_for_status()
-        match       = resp.json().get("data", {}).get("match", {})
-        score       = match.get("scores", {}).get("score", "0 - 0")
-        parts       = score.replace(" ", "").split("-")
-        tore        = int(parts[0]) + int(parts[1]) if len(parts) == 2 else 0
-        gewonnen    = tore >= 1
-        emoji       = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
+        fixes = resp.json().get("response", [])
+        if not fixes:
+            return None
+        fix      = fixes[0]
+        goals_h  = fix.get("goals", {}).get("home") or 0
+        goals_a  = fix.get("goals", {}).get("away") or 0
+        tore     = goals_h + goals_a
+        score    = f"{goals_h} - {goals_a}"
+        gewonnen = tore >= 1
+        emoji    = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
         update_statistik("torwart", gewonnen, quote)
         ql = f"💶 Quote: <b>{quote}</b> → Gewinn: <b>+{round((quote-1)*EINSATZ,2)}€</b>\n" if quote and gewonnen else ""
-        return (f"📊 <b>Auswertung – Torwart-Tipp</b>\n━━━━━━━━━━━━━━━━━━━━\n"
-                f"📌 {home} vs {away}\n"
-                f"🎯 Tipp: Mindestens 1 Tor fällt noch\n"
-                f"📈 Endstand: <b>{score}</b> ({tore} Tore)\n{ql}"
-                f"━━━━━━━━━━━━━━━━━━━━\n{emoji}\n🕐 {jetzt()} Uhr")
+        msg = (f"📊 <b>Auswertung – Torwart Tipp</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+               f"📌 {home} vs {away}\n"
+               f"🎯 Tipp: Mindestens 1 Tor fällt noch\n"
+               f"📈 Endstand: <b>{score}</b> ({tore} Tore)\n{ql}"
+               f"━━━━━━━━━━━━━━━━━━━━\n{emoji}\n🕐 {jetzt()} Uhr")
+        return msg
     except Exception as e:
         print(f"  [Auswertung] Torwart Fehler: {e}")
         return None
@@ -562,7 +500,7 @@ def bot_auswertung_und_berichte():
     global tagesbericht_gesendet
     print("[Auswertung-Bot] Gestartet")
     letzter_wochenbericht = de_now().isocalendar()[1]
-    spiel_zuletzt_live    = {}  # match_id -> timestamp wann zuletzt in Live-Liste gesehen
+    spiel_zuletzt_live    = {}
 
     while True:
         try:
@@ -578,7 +516,7 @@ def bot_auswertung_und_berichte():
 
             if beobachtete_spiele:
                 try:
-                    alle        = get_all_live_matches()
+                    alle        = get_live_matches()
                     live_ids    = {m.get("id") for m in alle}
                     live_status = {m.get("id"): m.get("status", "") for m in alle}
                 except Exception as e:
@@ -587,25 +525,18 @@ def bot_auswertung_und_berichte():
                     continue
 
                 aktuell = time.time()
-
                 for match_id, spiel in list(beobachtete_spiele.items()):
                     if match_id in auswertung_done:
                         continue
-
                     if match_id in live_ids:
-                        # Spiel noch live – Zeitstempel aktualisieren
                         spiel_zuletzt_live[match_id] = aktuell
                         continue
-
-                    # Spiel nicht mehr in Live-Liste
-                    zuletzt      = spiel_zuletzt_live.get(match_id, 0)
-                    minuten_weg  = (aktuell - zuletzt) / 60 if zuletzt > 0 else 999
-                    status       = live_status.get(match_id, "")
-                    beendet_status = status in ("FT", "FINISHED", "AET", "FULL TIME", "AFTER EXTRA TIME")
-
-                    # Auswerten wenn Status FT ist ODER Spiel mind. 3 Min. weg
+                    zuletzt        = spiel_zuletzt_live.get(match_id, 0)
+                    minuten_weg    = (aktuell - zuletzt) / 60 if zuletzt > 0 else 999
+                    status         = live_status.get(match_id, "")
+                    beendet_status = status in ("FT", "FINISHED", "AET")
                     if beendet_status or minuten_weg >= 3:
-                        print(f"  [Auswertung] Spiel beendet: {spiel['home']} vs {spiel['away']} (weg seit {round(minuten_weg)} Min.)")
+                        print(f"  [Auswertung] Beendet: {spiel['home']} vs {spiel['away']}")
                         time.sleep(20)
                         typ     = spiel["typ"]
                         webhook = spiel["webhook"]
@@ -620,30 +551,27 @@ def bot_auswertung_und_berichte():
                             msg = auswertung_torwart(spiel)
                         if msg:
                             send_telegram(msg)
-                            # Discord Embed für Auswertung
                             gewonnen = "GEWONNEN" in msg
-                            if typ == "ecken":
+                            if typ in ("ecken", "ecken_over"):
                                 hz1 = spiel["hz1_ecken"]
-                                grenze = hz1 * 2 + 2
+                                grenze = hz1 * 2 + 2 if typ == "ecken" else 14
                                 total = re.search(r"Tatsächlich.*?(\d+)", msg)
                                 total_val = total.group(1) if total else "?"
                                 details = {
                                     "📐 Ecken HZ1": f"**{hz1}**",
-                                    "🎯 Tipp": f"Unter **{grenze}** Ecken gesamt",
+                                    "🎯 Tipp": f"{'Unter' if typ == 'ecken' else 'Über'} **{grenze}** Ecken",
                                     "📈 Tatsächlich": f"**{total_val}** Ecken"
                                 }
                             elif typ == "karten":
                                 details = {
                                     "🃏 Karten bis 30'": f"**{spiel['karten_anzahl']}**",
-                                    "🎯 Tipp": "Über **5** Karten gesamt",
-                                    "📈 Endstand": "siehe Nachricht"
+                                    "🎯 Tipp": "Über **5** Karten gesamt"
                                 }
                             else:
-                                score_match = re.search(r"Endstand.*?([\d]+ - [\d]+)", msg)
-                                endstand = score_match.group(1) if score_match else "?"
+                                score_match = re.search(r"Endstand.*?(\d+ - \d+)", msg)
                                 details = {
                                     "🎯 Tipp": "Mindestens **1 Tor** fällt noch",
-                                    "📈 Endstand": f"**{endstand}**"
+                                    "📈 Endstand": f"**{score_match.group(1) if score_match else '?'}**"
                                 }
                             embed = discord_auswertung(typ, spiel["home"], spiel["away"], gewonnen, details)
                             send_discord_embed(webhook, embed)
@@ -651,7 +579,6 @@ def bot_auswertung_und_berichte():
                             print(f"  [Auswertung] Gesendet: {spiel['home']} vs {spiel['away']} ({typ})")
                         else:
                             auswertung_done.add(match_id)
-                            print(f"  [Auswertung] Keine Daten: {spiel['home']} vs {spiel['away']}")
 
         except Exception as e:
             print(f"  [Auswertung-Bot] Fehler: {e}")
@@ -665,30 +592,29 @@ def bot_ecken():
     print(f"[Ecken-Bot] Gestartet | max. {MAX_CORNERS} Ecken in HZ1")
     while True:
         try:
-            matches  = get_all_live_matches()
+            matches  = get_live_matches()
             halftime = [m for m in matches if m.get("status") == "HALF TIME BREAK"]
             print(f"[{jetzt()}] [Ecken-Bot] {len(halftime)} Halbzeit-Spiele")
             for game in halftime:
                 match_id = game.get("id")
                 if match_id in notified_ecken:
                     continue
-                stats   = get_statistiken(match_id)
-                corners = int(stats.get("corners", {}).get("home", 0)) + int(stats.get("corners", {}).get("away", 0))
-                home    = game.get("home", {}).get("name", "?")
-                away    = game.get("away", {}).get("name", "?")
-                comp    = game.get("competition", {}).get("name", "?")
-                country = (game.get("country") or {}).get("name", "International")
-                score   = game.get("scores", {}).get("score", "?")
-                grenze  = corners * 2 + 2
-                # 0 Ecken = keine zuverlässigen Statistiken verfügbar -> überspringen
+                stats        = get_statistiken(match_id)
+                corners_home = stats["corners_home"]
+                corners_away = stats["corners_away"]
+                corners      = corners_home + corners_away
+                home         = game.get("home", {}).get("name", "?")
+                away         = game.get("away", {}).get("name", "?")
+                comp         = game.get("competition", {}).get("name", "?")
+                country      = (game.get("country") or {}).get("name", "International")
+                score        = game.get("scores", {}).get("score", "?")
+                grenze       = corners * 2 + 2
+
                 if corners == 0:
                     continue
-
                 if corners <= MAX_CORNERS:
                     quote = get_quote(home, away, "ecken")
                     ql    = f"\n💶 Quote: <b>{quote}</b>" if quote else ""
-                    corners_home = int(stats.get("corners", {}).get("home", 0))
-                    corners_away = int(stats.get("corners", {}).get("away", 0))
                     msg   = (f"📐 <b>Ecken Tipp!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                              f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
                              f"📊 Stand: <b>{score}</b>\n"
@@ -698,7 +624,9 @@ def bot_ecken():
                              f"🎯 Tipp: Unter <b>{grenze}</b> Ecken gesamt{ql}\n"
                              f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                     send_telegram(msg)
-                    send_discord_embed(DISCORD_WEBHOOK_ECKEN, discord_ecken_tipp(home, away, comp, country, score, corners_home, corners_away, corners, grenze, quote))
+                    send_discord_embed(DISCORD_WEBHOOK_ECKEN,
+                        discord_ecken_tipp(home, away, comp, country, score,
+                                           corners_home, corners_away, corners, grenze, quote))
                     notified_ecken.add(match_id)
                     beobachtete_spiele[match_id] = {
                         "typ": "ecken", "match_id": match_id,
@@ -716,8 +644,7 @@ def bot_ecken_over():
     print(f"[Ecken-Über-Bot] Gestartet | Signal sobald 7 Ecken in laufender HZ1")
     while True:
         try:
-            matches = get_all_live_matches()
-            # NUR laufende Spiele in der 1. Halbzeit (Minute 1-45, kein HT, kein ADDED TIME HZ2)
+            matches = get_live_matches()
             hz1 = []
             for m in matches:
                 status = m.get("status", "")
@@ -727,44 +654,37 @@ def bot_ecken_over():
                     continue
                 if status == "IN PLAY" and 1 <= minute <= 45:
                     hz1.append(m)
-
             print(f"[{jetzt()}] [Ecken-Über-Bot] {len(hz1)} laufende HZ1-Spiele")
-
             for game in hz1:
-                match_id = game.get("id")
+                match_id     = game.get("id")
                 if match_id in notified_ecken_over:
                     continue
-
                 stats        = get_statistiken(match_id)
-                corners_home = int(stats.get("corners", {}).get("home", 0))
-                corners_away = int(stats.get("corners", {}).get("away", 0))
+                corners_home = stats["corners_home"]
+                corners_away = stats["corners_away"]
                 corners      = corners_home + corners_away
-
                 if corners < 7:
                     continue
-
                 home    = game.get("home", {}).get("name", "?")
                 away    = game.get("away", {}).get("name", "?")
                 comp    = game.get("competition", {}).get("name", "?")
                 country = (game.get("country") or {}).get("name", "International")
                 score   = game.get("scores", {}).get("score", "?")
                 minute  = game.get("time", "?")
-
-                quote = get_quote(home, away, "ecken_over")
-                ql    = f"\n💶 Quote: <b>{quote}</b>" if quote else ""
-                msg   = (f"📐 <b>Ecken ÜBER Tipp!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
-                         f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
-                         f"📊 Stand: <b>{score}</b> | Minute: <b>{minute}'</b>\n"
-                         f"🔵 {home}: <b>{corners_home}</b>\n"
-                         f"🔴 {away}: <b>{corners_away}</b>\n"
-                         f"📊 Gesamt: <b>{corners}</b>\n"
-                         f"🎯 Tipp: Über <b>14</b> Ecken gesamt{ql}\n"
-                         f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
+                quote   = get_quote(home, away, "ecken_over")
+                ql      = f"\n💶 Quote: <b>{quote}</b>" if quote else ""
+                msg     = (f"📐 <b>Ecken ÜBER Tipp!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                           f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
+                           f"📊 Stand: <b>{score}</b> | Minute: <b>{minute}'</b>\n"
+                           f"🔵 {home}: <b>{corners_home}</b>\n"
+                           f"🔴 {away}: <b>{corners_away}</b>\n"
+                           f"📊 Gesamt: <b>{corners}</b>\n"
+                           f"🎯 Tipp: Über <b>14</b> Ecken gesamt{ql}\n"
+                           f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                 send_telegram(msg)
-                send_discord_embed(DISCORD_WEBHOOK_ECKEN, discord_ecken_over_tipp(
-                    home, away, comp, country, score, minute,
-                    corners_home, corners_away, corners, quote
-                ))
+                send_discord_embed(DISCORD_WEBHOOK_ECKEN,
+                    discord_ecken_over_tipp(home, away, comp, country, score, minute,
+                                            corners_home, corners_away, corners, quote))
                 notified_ecken_over.add(match_id)
                 beobachtete_spiele[match_id] = {
                     "typ": "ecken_over", "match_id": match_id,
@@ -774,7 +694,6 @@ def bot_ecken_over():
                 }
                 print(f"  [Ecken-Über-Bot] OK: {home} vs {away} ({corners} Ecken in Min. {minute})")
                 time.sleep(0.5)
-
         except Exception as e:
             print(f"  [Ecken-Über-Bot] Fehler: {e}")
         time.sleep(FUSSBALL_INTERVAL * 60)
@@ -783,7 +702,7 @@ def bot_karten():
     print(f"[Karten-Bot] Gestartet | mind. {MIN_KARTEN} Karten bis Minute {KARTEN_BIS_MINUTE}")
     while True:
         try:
-            matches = get_all_live_matches()
+            matches = get_live_matches()
             laufend = [m for m in matches if m.get("status") in ("IN PLAY", "ADDED TIME")]
             print(f"[{jetzt()}] [Karten-Bot] {len(laufend)} laufende Spiele")
             for game in laufend:
@@ -796,30 +715,40 @@ def bot_karten():
                     continue
                 if minute > KARTEN_BIS_MINUTE + 5:
                     continue
-                events = get_events(match_id)
-                karten = [e for e in events if e.get("event") in KARTEN_TYPEN and e.get("time", 999) <= KARTEN_BIS_MINUTE]
-                home   = game.get("home", {}).get("name", "?")
-                away   = game.get("away", {}).get("name", "?")
-                comp   = game.get("competition", {}).get("name", "?")
-                country= (game.get("country") or {}).get("name", "International")
-                score  = game.get("scores", {}).get("score", "?")
+                events  = get_events(match_id)
+                karten  = [e for e in events
+                           if e.get("type") == "Card"
+                           and (e.get("time", {}).get("elapsed") or 999) <= KARTEN_BIS_MINUTE]
+                home    = game.get("home", {}).get("name", "?")
+                away    = game.get("away", {}).get("name", "?")
+                comp    = game.get("competition", {}).get("name", "?")
+                country = (game.get("country") or {}).get("name", "International")
+                score   = game.get("scores", {}).get("score", "?")
                 if len(karten) >= MIN_KARTEN:
                     quote  = get_quote(home, away, "karten")
                     ql     = f"\n💶 Quote: <b>{quote}</b>" if quote else ""
-                    zeilen = ""
+                    zeilen = []
+                    karten_discord = []
                     for k in karten:
-                        spieler = (k.get("player") or {}).get("name", "?")
-                        team    = home if k.get("is_home") else away
-                        zeilen += f"  {karten_emoji(k.get('event'))} {k.get('time')}' {spieler} ({team})\n"
+                        spieler  = (k.get("player") or {}).get("name", "?")
+                        team     = (k.get("team") or {}).get("name", "?")
+                        min_k    = (k.get("time") or {}).get("elapsed", "?")
+                        detail   = (k.get("detail") or "Card")
+                        emoji    = karten_emoji(detail)
+                        zeilen.append(f"  {emoji} {min_k}' {spieler} ({team})")
+                        karten_discord.append(f"{emoji} {min_k}' {spieler} ({team})")
+                    karten_text = "\n".join(zeilen)
                     msg = (f"🃏 <b>Karten-Alarm!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                            f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
                            f"📊 Stand: <b>{score}</b> | Minute: <b>{minute}'</b>\n"
-                           f"━━━━━━━━━━━━━━━━━━━━\n<b>{len(karten)} Karten bis Min. {KARTEN_BIS_MINUTE}:</b>\n{zeilen}"
+                           f"━━━━━━━━━━━━━━━━━━━━\n<b>{len(karten)} Karten bis Min. {KARTEN_BIS_MINUTE}:</b>\n"
+                           f"{karten_text}\n"
                            f"🎯 Tipp: Über <b>5</b> Karten gesamt{ql}\n"
                            f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                     send_telegram(msg)
-                    karten_discord = [f"{karten_emoji(k.get('event'))} {k.get('time')}' {(k.get('player') or {}).get('name', '?')} ({home if k.get('is_home') else away})" for k in karten]
-                    send_discord_embed(DISCORD_WEBHOOK_KARTEN, discord_karten_tipp(home, away, comp, country, score, minute, karten_discord, quote))
+                    send_discord_embed(DISCORD_WEBHOOK_KARTEN,
+                        discord_karten_tipp(home, away, comp, country, score, minute,
+                                            karten_discord, quote))
                     notified_karten.add(match_id)
                     beobachtete_spiele[match_id] = {
                         "typ": "karten", "match_id": match_id,
@@ -837,7 +766,7 @@ def bot_torwart():
     print(f"[Torwart-Bot] Gestartet | 0:0 + mind. {MIN_SHOTS_ON_TARGET} Schüsse")
     while True:
         try:
-            matches = get_all_live_matches()
+            matches = get_live_matches()
             aktiv   = [m for m in matches if m.get("status") in ("IN PLAY", "ADDED TIME", "HALF TIME BREAK")]
             print(f"[{jetzt()}] [Torwart-Bot] {len(aktiv)} aktive Spiele")
             for game in aktiv:
@@ -848,13 +777,13 @@ def bot_torwart():
                 if "0 - 0" not in score and "0-0" not in score:
                     continue
                 stats      = get_statistiken(match_id)
-                shots_home = int(stats.get("shots_on_target", {}).get("home", 0))
-                shots_away = int(stats.get("shots_on_target", {}).get("away", 0))
+                shots_home = stats["shots_on_target_home"]
+                shots_away = stats["shots_on_target_away"]
                 shots_ges  = shots_home + shots_away
-                saves_home = int(stats.get("saves", {}).get("home", 0))
-                saves_away = int(stats.get("saves", {}).get("away", 0))
-                poss_home  = stats.get("possesion", {}).get("home", "?")
-                poss_away  = stats.get("possesion", {}).get("away", "?")
+                saves_home = stats["saves_home"]
+                saves_away = stats["saves_away"]
+                poss_home  = stats["possession_home"]
+                poss_away  = stats["possession_away"]
                 home       = game.get("home", {}).get("name", "?")
                 away       = game.get("away", {}).get("name", "?")
                 comp       = game.get("competition", {}).get("name", "?")
@@ -874,7 +803,11 @@ def bot_torwart():
                              f"🎯 Tipp: Mindestens <b>1 Tor</b> fällt noch{ql}\n"
                              f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                     send_telegram(msg)
-                    send_discord_embed(DISCORD_WEBHOOK_TORWART, discord_torwart_tipp(home, away, comp, country, shots_home, shots_away, saves_home, saves_away, poss_home, poss_away, min_text, quote))
+                    send_discord_embed(DISCORD_WEBHOOK_TORWART,
+                        discord_torwart_tipp(home, away, comp, country,
+                                             shots_home, shots_away,
+                                             saves_home, saves_away,
+                                             poss_home, poss_away, min_text, quote))
                     notified_torwart.add(match_id)
                     beobachtete_spiele[match_id] = {
                         "typ": "torwart", "match_id": match_id,
@@ -893,9 +826,10 @@ def bot_torwart():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v12")
+    print("  ⚽ FUSSBALL BOTS v13")
     print("  Telegram + Discord (3 Webhooks)")
-    print("  Ecken + Karten + Torwart + Auswertung + API-Football")
+    print("  Ecken Unter + Ecken Über + Karten + Torwart")
+    print("  Powered by API-Football")
     print("=" * 50 + "\n")
 
     threads = [
