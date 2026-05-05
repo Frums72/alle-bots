@@ -1,4 +1,4 @@
-# v7 - Discord Embeds + Ecken fix
+# v9 - Bilanz mit 4 Wetttypen
 import requests
 import re
 import time
@@ -33,21 +33,24 @@ BASE_URL_FB  = "https://livescore-api.com/api-client"
 AUTH_FB      = {"key": API_KEY, "secret": API_SECRET}
 KARTEN_TYPEN = {"YELLOW_CARD", "RED_CARD", "YELLOW_RED_CARD"}
 
-notified_ecken   = set()
-notified_karten  = set()
-notified_torwart = set()
+notified_ecken       = set()
+notified_ecken_over  = set()
+notified_karten      = set()
+notified_torwart     = set()
 beobachtete_spiele = {}
 auswertung_done    = set()
 
 statistik = {
-    "ecken":   {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
-    "karten":  {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
-    "torwart": {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
+    "ecken":       {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
+    "ecken_over":  {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
+    "karten":      {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
+    "torwart":     {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
 }
 wochen_statistik = {
-    "ecken":   {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
-    "karten":  {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
-    "torwart": {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
+    "ecken":       {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
+    "ecken_over":  {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
+    "karten":      {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
+    "torwart":     {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
 }
 tagesbericht_gesendet = None
 
@@ -110,6 +113,24 @@ def discord_ecken_tipp(home, away, comp, country, score, corners_home, corners_a
         ],
         "footer": {"text": f"Fixture • {heute()} {jetzt()}"},
         "thumbnail": {"url": "https://i.imgur.com/4M34hi2.png"}
+    }
+
+def discord_ecken_over_tipp(home, away, comp, country, score, minute, corners_home, corners_away, corners, quote):
+    """Erstellt Discord Embed für Ecken-Über-Tipp."""
+    quote_text = f"\n💶 **Quote:** {quote}" if quote else ""
+    return {
+        "title": "📐 Ecken ÜBER Tipp",
+        "color": 0x9B59B6,
+        "fields": [
+            {"name": "🏆 Liga", "value": f"{comp} ({country})", "inline": True},
+            {"name": "⚽ Spiel", "value": f"{home} vs {away}", "inline": True},
+            {"name": "📊 Stand", "value": f"**{score}** | Min. **{minute}'**", "inline": True},
+            {"name": "📐 Ecken bisher",
+             "value": f"🔵 {home}: **{corners_home}**\n🔴 {away}: **{corners_away}**\n📊 Gesamt: **{corners}**", "inline": False},
+            {"name": "🎯 Empfehlung",
+             "value": f"Über **14 Ecken** (Gesamtspiel){quote_text}", "inline": False},
+        ],
+        "footer": {"text": f"Fixture • {heute()} {jetzt()}"},
     }
 
 def discord_karten_tipp(home, away, comp, country, score, minute, karten_liste, quote):
@@ -282,7 +303,9 @@ def send_tagesbericht():
            f"🎯 Trefferquote: <b>{pct}%</b>\n"
            f"{ei} Simulation ({EINSATZ}€/Tipp): <b>{'+' if gn >= 0 else ''}{gn}€</b>\n"
            f"━━━━━━━━━━━━━━━━━━━━\n"
-           f"⚽ {statistik_zeile('Ecken', statistik['ecken'])}\n"
+           f"📊 <b>Nach Wetttyp:</b>\n"
+           f"⚽ {statistik_zeile('Ecken Unter', statistik['ecken'])}\n"
+           f"📐 {statistik_zeile('Ecken Über', statistik['ecken_over'])}\n"
            f"🃏 {statistik_zeile('Karten', statistik['karten'])}\n"
            f"🧤 {statistik_zeile('Torwart', statistik['torwart'])}\n"
            f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -291,7 +314,7 @@ def send_tagesbericht():
     send_discord(DISCORD_WEBHOOK_ECKEN, msg)  # Tagesbericht in Ecken-Channel
     for t in statistik:
         statistik[t] = {"gewonnen": 0, "verloren": 0, "gewinn": 0.0}
-    print(f"  [Bericht] Tagesbericht gesendet")
+    print(f"  [Bericht] Tagesbericht gesendet ({heute()})")
 
 def send_wochenbericht():
     gw  = sum(wochen_statistik[t]["gewonnen"] for t in wochen_statistik)
@@ -307,7 +330,9 @@ def send_wochenbericht():
            f"🎯 Trefferquote: <b>{pct}%</b>\n"
            f"{ei} Simulation ({EINSATZ}€/Tipp): <b>{'+' if gn >= 0 else ''}{gn}€</b>\n"
            f"━━━━━━━━━━━━━━━━━━━━\n"
-           f"⚽ {statistik_zeile('Ecken', wochen_statistik['ecken'])}\n"
+           f"📊 <b>Nach Wetttyp:</b>\n"
+           f"⚽ {statistik_zeile('Ecken Unter', wochen_statistik['ecken'])}\n"
+           f"📐 {statistik_zeile('Ecken Über', wochen_statistik['ecken_over'])}\n"
            f"🃏 {statistik_zeile('Karten', wochen_statistik['karten'])}\n"
            f"🧤 {statistik_zeile('Torwart', wochen_statistik['torwart'])}\n"
            f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -344,6 +369,31 @@ def auswertung_ecken(spiel):
                 f"━━━━━━━━━━━━━━━━━━━━\n{emoji}\n🕐 {jetzt()} Uhr")
     except Exception as e:
         print(f"  [Auswertung] Ecken Fehler: {e}")
+        return None
+
+def auswertung_ecken_over(spiel):
+    """Ecken-Über-Tipp: Über 14 Ecken gesamt"""
+    match_id  = spiel["match_id"]
+    hz1_ecken = spiel["hz1_ecken"]
+    home      = spiel["home"]
+    away      = spiel["away"]
+    quote     = spiel.get("quote")
+    GRENZE    = 14
+    try:
+        stats       = get_statistiken(match_id)
+        total_ecken = int(stats.get("corners", {}).get("home", 0)) + int(stats.get("corners", {}).get("away", 0))
+        gewonnen    = total_ecken > GRENZE
+        emoji       = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
+        update_statistik("ecken_over", gewonnen, quote)
+        ql = f"💶 Quote: <b>{quote}</b> → Gewinn: <b>+{round((quote-1)*EINSATZ,2)}€</b>\n" if quote and gewonnen else ""
+        return (f"📊 <b>Auswertung – Ecken ÜBER Tipp</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                f"📌 {home} vs {away}\n"
+                f"📐 Ecken bei Signal: <b>{hz1_ecken}</b>\n"
+                f"🎯 Tipp: Über <b>{GRENZE}</b> Ecken gesamt\n"
+                f"📈 Tatsächlich: <b>{total_ecken}</b> Ecken\n{ql}"
+                f"━━━━━━━━━━━━━━━━━━━━\n{emoji}\n🕐 {jetzt()} Uhr")
+    except Exception as e:
+        print(f"  [Auswertung] Ecken-Über Fehler: {e}")
         return None
 
 def auswertung_karten(spiel):
@@ -454,6 +504,8 @@ def bot_auswertung_und_berichte():
                         msg     = None
                         if typ == "ecken":
                             msg = auswertung_ecken(spiel)
+                        elif typ == "ecken_over":
+                            msg = auswertung_ecken_over(spiel)
                         elif typ == "karten":
                             msg = auswertung_karten(spiel)
                         elif typ == "torwart":
@@ -546,6 +598,73 @@ def bot_ecken():
                 time.sleep(0.5)
         except Exception as e:
             print(f"  [Ecken-Bot] Fehler: {e}")
+        time.sleep(FUSSBALL_INTERVAL * 60)
+
+def bot_ecken_over():
+    print(f"[Ecken-Über-Bot] Gestartet | Signal ab 7 Ecken in HZ1")
+    while True:
+        try:
+            matches = get_live_matches()
+            # NUR laufende Spiele in der 1. Halbzeit (Minute 1-45, kein HT, kein ADDED TIME HZ2)
+            hz1 = []
+            for m in matches:
+                status = m.get("status", "")
+                try:
+                    minute = int(m.get("time", 0))
+                except:
+                    continue
+                if status == "IN PLAY" and 1 <= minute <= 45:
+                    hz1.append(m)
+
+            print(f"[{jetzt()}] [Ecken-Über-Bot] {len(hz1)} Spiele in HZ1")
+
+            for game in hz1:
+                match_id = game.get("id")
+                if match_id in notified_ecken_over:
+                    continue
+
+                stats        = get_statistiken(match_id)
+                corners_home = int(stats.get("corners", {}).get("home", 0))
+                corners_away = int(stats.get("corners", {}).get("away", 0))
+                corners      = corners_home + corners_away
+
+                if corners < 7:
+                    continue
+
+                home    = game.get("home", {}).get("name", "?")
+                away    = game.get("away", {}).get("name", "?")
+                comp    = game.get("competition", {}).get("name", "?")
+                country = (game.get("country") or {}).get("name", "International")
+                score   = game.get("scores", {}).get("score", "?")
+                minute  = game.get("time", "?")
+
+                quote = get_quote(home, away, "ecken_over")
+                ql    = f"\n💶 Quote: <b>{quote}</b>" if quote else ""
+                msg   = (f"📐 <b>Ecken ÜBER Tipp!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                         f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
+                         f"📊 Stand: <b>{score}</b> | Minute: <b>{minute}'</b>\n"
+                         f"🔵 {home}: <b>{corners_home}</b>\n"
+                         f"🔴 {away}: <b>{corners_away}</b>\n"
+                         f"📊 Gesamt: <b>{corners}</b>\n"
+                         f"🎯 Tipp: Über <b>14</b> Ecken gesamt{ql}\n"
+                         f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
+                send_telegram(msg)
+                send_discord_embed(DISCORD_WEBHOOK_ECKEN, discord_ecken_over_tipp(
+                    home, away, comp, country, score, minute,
+                    corners_home, corners_away, corners, quote
+                ))
+                notified_ecken_over.add(match_id)
+                beobachtete_spiele[match_id] = {
+                    "typ": "ecken_over", "match_id": match_id,
+                    "home": home, "away": away,
+                    "hz1_ecken": corners, "quote": quote,
+                    "webhook": DISCORD_WEBHOOK_ECKEN
+                }
+                print(f"  [Ecken-Über-Bot] OK: {home} vs {away} ({corners} Ecken in Min. {minute})")
+                time.sleep(0.5)
+
+        except Exception as e:
+            print(f"  [Ecken-Über-Bot] Fehler: {e}")
         time.sleep(FUSSBALL_INTERVAL * 60)
 
 def bot_karten():
@@ -662,13 +781,14 @@ def bot_torwart():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v6")
+    print("  ⚽ FUSSBALL BOTS v9")
     print("  Telegram + Discord (3 Webhooks)")
     print("  Ecken + Karten + Torwart + Auswertung")
     print("=" * 50 + "\n")
 
     threads = [
         threading.Thread(target=bot_ecken,                   daemon=True, name="Ecken-Bot"),
+        threading.Thread(target=bot_ecken_over,              daemon=True, name="Ecken-Über-Bot"),
         threading.Thread(target=bot_karten,                  daemon=True, name="Karten-Bot"),
         threading.Thread(target=bot_torwart,                 daemon=True, name="Torwart-Bot"),
         threading.Thread(target=bot_auswertung_und_berichte, daemon=True, name="Auswertung-Bot"),
