@@ -1,4 +1,4 @@
-# v7 - Discord Embeds + Ecken fix
+# v7 - Discord Embeds + Ecken fixx
 import requests
 import re
 import time
