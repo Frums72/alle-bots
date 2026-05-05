@@ -1,4 +1,4 @@
-# v9 - Bilanz mit 4 Wetttypen
+# v10 - API-Football Integration
 import requests
 import re
 import time
@@ -19,6 +19,7 @@ DISCORD_WEBHOOK_KARTEN  = "https://discord.com/api/webhooks/1501123056544907378/
 DISCORD_WEBHOOK_TORWART = "https://discord.com/api/webhooks/1501122812700786870/3667BQTjRqVHhy_c6KJ6XmurwyOeKClHLVLhoK8-idRcAZYIVXPL9PBa-ZyXLH5j4pz5"
 
 ODDS_API_KEY       = "866948de5d6c34ca51faf6bd77e0bb2a"  # Optional: the-odds-api.com
+API_FOOTBALL_KEY      = "188a1e4dcf0d2e2329d22a4464213ebe"  # von api-football.com
 EINSATZ            = 10.0
 
 MAX_CORNERS         = 5
@@ -234,6 +235,113 @@ def get_events(match_id):
     resp   = requests.get(f"{BASE_URL_FB}/matches/events.json", params=params, timeout=10)
     resp.raise_for_status()
     return resp.json().get("data", {}).get("event", []) or []
+
+# ============================================================
+#  API-FOOTBALL FUNKTIONEN (zusätzliche Spiele)
+# ============================================================
+
+AF_BASE    = "https://v3.football.api-sports.io"
+AF_HEADERS = {"x-apisports-key": API_FOOTBALL_KEY}
+
+af_cache = {}  # Cache damit wir nicht zu viele Anfragen machen
+
+def af_get_live_matches():
+    """Holt Live-Spiele von API-Football."""
+    if not API_FOOTBALL_KEY or API_FOOTBALL_KEY == "DEIN_API_FOOTBALL_KEY":
+        return []
+    try:
+        resp = requests.get(f"{AF_BASE}/fixtures", headers=AF_HEADERS,
+                           params={"live": "all"}, timeout=10)
+        if resp.status_code != 200:
+            return []
+        return resp.json().get("response", [])
+    except Exception as e:
+        print(f"  [API-Football] Fehler: {e}")
+        return []
+
+def af_get_statistiken(fixture_id):
+    """Holt Statistiken von API-Football (mit Cache)."""
+    if fixture_id in af_cache:
+        return af_cache[fixture_id]
+    try:
+        resp = requests.get(f"{AF_BASE}/fixtures/statistics",
+                           headers=AF_HEADERS,
+                           params={"fixture": fixture_id}, timeout=10)
+        if resp.status_code != 200:
+            return {}
+        data = resp.json().get("response", [])
+        result = {}
+        for team_stats in data:
+            is_home = team_stats.get("team", {}).get("id") == team_stats.get("team", {}).get("id")
+            for stat in team_stats.get("statistics", []):
+                typ = stat.get("type", "").lower().replace(" ", "_")
+                val = stat.get("value") or 0
+                if typ not in result:
+                    result[typ] = {"home": 0, "away": 0}
+                if len(result.get(typ, {}).values()) == 0:
+                    result[typ]["home"] = val
+                else:
+                    result[typ]["away"] = val
+        af_cache[fixture_id] = result
+        return result
+    except Exception as e:
+        print(f"  [API-Football] Stats Fehler: {e}")
+        return {}
+
+def af_normalize_match(fix):
+    """Konvertiert API-Football Format in unser internes Format."""
+    status  = fix.get("fixture", {}).get("status", {}).get("short", "")
+    minute  = fix.get("fixture", {}).get("status", {}).get("elapsed") or 0
+    home    = fix.get("teams", {}).get("home", {}).get("name", "?")
+    away    = fix.get("teams", {}).get("away", {}).get("name", "?")
+    goals_h = fix.get("goals", {}).get("home") or 0
+    goals_a = fix.get("goals", {}).get("away") or 0
+
+    # Status konvertieren
+    status_map = {
+        "HT": "HALF TIME BREAK",
+        "1H": "IN PLAY",
+        "2H": "IN PLAY",
+        "ET": "ADDED TIME",
+        "FT": "FT",
+        "AET": "AET",
+    }
+
+    return {
+        "id":          f"af_{fix['fixture']['id']}",  # Prefix damit keine ID-Kollision
+        "fixture_id":  fix["fixture"]["id"],          # Original ID für Stats-Abruf
+        "source":      "api-football",
+        "status":      status_map.get(status, status),
+        "time":        str(minute),
+        "home":        {"name": home},
+        "away":        {"name": away},
+        "competition": {"name": fix.get("league", {}).get("name", "?")},
+        "country":     {"name": fix.get("league", {}).get("country", "International")},
+        "scores":      {"score": f"{goals_h} - {goals_a}"},
+    }
+
+def get_all_live_matches():
+    """Kombiniert Live-Spiele von livescore-api UND API-Football."""
+    # livescore-api Spiele
+    ls_matches = get_live_matches()
+    ls_ids     = set()
+    for m in ls_matches:
+        key = f"{m.get('home',{}).get('name','')}_{m.get('away',{}).get('name','')}"
+        ls_ids.add(key)
+
+    # API-Football Spiele (nur neue die livescore-api nicht hat)
+    af_matches = []
+    for fix in af_get_live_matches():
+        home = fix.get("teams", {}).get("home", {}).get("name", "")
+        away = fix.get("teams", {}).get("away", {}).get("name", "")
+        key  = f"{home}_{away}"
+        if key not in ls_ids:  # Nur Spiele die livescore-api NICHT hat
+            af_matches.append(af_normalize_match(fix))
+
+    total = ls_matches + af_matches
+    if af_matches:
+        print(f"  [API-Football] +{len(af_matches)} zusätzliche Spiele")
+    return total
 
 def karten_emoji(typ):
     if typ == "YELLOW_CARD":     return "🟨"
@@ -470,7 +578,7 @@ def bot_auswertung_und_berichte():
 
             if beobachtete_spiele:
                 try:
-                    alle        = get_live_matches()
+                    alle        = get_all_live_matches()
                     live_ids    = {m.get("id") for m in alle}
                     live_status = {m.get("id"): m.get("status", "") for m in alle}
                 except Exception as e:
@@ -557,7 +665,7 @@ def bot_ecken():
     print(f"[Ecken-Bot] Gestartet | max. {MAX_CORNERS} Ecken in HZ1")
     while True:
         try:
-            matches  = get_live_matches()
+            matches  = get_all_live_matches()
             halftime = [m for m in matches if m.get("status") == "HALF TIME BREAK"]
             print(f"[{jetzt()}] [Ecken-Bot] {len(halftime)} Halbzeit-Spiele")
             for game in halftime:
@@ -601,10 +709,10 @@ def bot_ecken():
         time.sleep(FUSSBALL_INTERVAL * 60)
 
 def bot_ecken_over():
-    print(f"[Ecken-Über-Bot] Gestartet | Signal ab 7 Ecken in HZ1")
+    print(f"[Ecken-Über-Bot] Gestartet | Signal sobald 7 Ecken in laufender HZ1")
     while True:
         try:
-            matches = get_live_matches()
+            matches = get_all_live_matches()
             # NUR laufende Spiele in der 1. Halbzeit (Minute 1-45, kein HT, kein ADDED TIME HZ2)
             hz1 = []
             for m in matches:
@@ -616,7 +724,7 @@ def bot_ecken_over():
                 if status == "IN PLAY" and 1 <= minute <= 45:
                     hz1.append(m)
 
-            print(f"[{jetzt()}] [Ecken-Über-Bot] {len(hz1)} Spiele in HZ1")
+            print(f"[{jetzt()}] [Ecken-Über-Bot] {len(hz1)} laufende HZ1-Spiele")
 
             for game in hz1:
                 match_id = game.get("id")
@@ -671,7 +779,7 @@ def bot_karten():
     print(f"[Karten-Bot] Gestartet | mind. {MIN_KARTEN} Karten bis Minute {KARTEN_BIS_MINUTE}")
     while True:
         try:
-            matches = get_live_matches()
+            matches = get_all_live_matches()
             laufend = [m for m in matches if m.get("status") in ("IN PLAY", "ADDED TIME")]
             print(f"[{jetzt()}] [Karten-Bot] {len(laufend)} laufende Spiele")
             for game in laufend:
@@ -725,7 +833,7 @@ def bot_torwart():
     print(f"[Torwart-Bot] Gestartet | 0:0 + mind. {MIN_SHOTS_ON_TARGET} Schüsse")
     while True:
         try:
-            matches = get_live_matches()
+            matches = get_all_live_matches()
             aktiv   = [m for m in matches if m.get("status") in ("IN PLAY", "ADDED TIME", "HALF TIME BREAK")]
             print(f"[{jetzt()}] [Torwart-Bot] {len(aktiv)} aktive Spiele")
             for game in aktiv:
@@ -781,9 +889,9 @@ def bot_torwart():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v9")
+    print("  ⚽ FUSSBALL BOTS v10")
     print("  Telegram + Discord (3 Webhooks)")
-    print("  Ecken + Karten + Torwart + Auswertung")
+    print("  Ecken + Karten + Torwart + Auswertung + API-Football")
     print("=" * 50 + "\n")
 
     threads = [
