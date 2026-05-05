@@ -1,4 +1,4 @@
-# v14 - Shared Cache spart API-Anfragen
+# v15 - Debug API Fehler
 import requests
 import re
 import time
@@ -8,7 +8,7 @@ from datetime import datetime, timezone, timedelta
 # ============================================================
 #  KONFIGURATION – hier deine Daten eintragen
 # ============================================================
-API_FOOTBALL_KEY   = "cfdd80c61b7b01fb9b589052e30a6b34"
+API_FOOTBALL_KEY   = "188a1e4dcf0d2e2329d22a4464213ebe"
 
 TELEGRAM_BOT_TOKEN = "8706066107:AAFAQhT3k0jhTZ7ep-VWHPlskOKJVvsfucQ"
 TELEGRAM_CHAT_ID   = "7272001004"
@@ -105,10 +105,24 @@ def send_discord(webhook_url: str, message: str):
 # ============================================================
 
 def af_get_live_matches():
-    resp = requests.get(f"{AF_BASE}/fixtures", headers=AF_HEADERS,
-                       params={"live": "all"}, timeout=10)
-    resp.raise_for_status()
-    return resp.json().get("response", [])
+    try:
+        resp = requests.get(f"{AF_BASE}/fixtures", headers=AF_HEADERS,
+                           params={"live": "all"}, timeout=10)
+        print(f"  [API-Football] Status: {resp.status_code}")
+        if resp.status_code != 200:
+            print(f"  [API-Football] Fehler Response: {resp.text[:200]}")
+            return []
+        data = resp.json()
+        errors = data.get("errors", {})
+        if errors:
+            print(f"  [API-Football] API Fehler: {errors}")
+            return []
+        results = data.get("response", [])
+        print(f"  [API-Football] {len(results)} Spiele gefunden")
+        return results
+    except Exception as e:
+        print(f"  [API-Football] Exception: {e}")
+        return []
 
 def af_get_statistiken(fixture_id):
     resp = requests.get(f"{AF_BASE}/fixtures/statistics",
@@ -845,7 +859,7 @@ def bot_torwart():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v14")
+    print("  ⚽ FUSSBALL BOTS v15")
     print("  Telegram + Discord (3 Webhooks)")
     print("  Ecken Unter + Ecken Über + Karten + Torwart")
     print("  Powered by API-Football")
