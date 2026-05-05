@@ -165,32 +165,23 @@ def ls_get_statistiken(match_id):
               "shots_on_target_home": 0, "shots_on_target_away": 0,
               "saves_home": 0, "saves_away": 0,
               "possession_home": "?", "possession_away": "?"}
-
-    # DEBUG: Alle Stat-Typen loggen um falsche Feldnamen zu erkennen
-    alle_typen = [s.get("type", "") for s in stats]
-    print(f"  [Stats-Debug] Match {match_id} → Typen: {alle_typen}")
-
     for s in stats:
-        val_h = int(s.get("home") or 0)
-        val_a = int(s.get("away") or 0)
-        # Feldname normalisieren: Kleinschreibung, Leerzeichen→Unterstrich
-        typ_raw  = s.get("type", "")
-        typ      = typ_raw.lower().replace(" ", "_")
-
+        val_h   = int(s.get("home") or 0)
+        val_a   = int(s.get("away") or 0)
+        typ_raw = s.get("type", "")
+        typ     = typ_raw.lower().replace(" ", "_")
         if typ == "corners":
             result["corners_home"] = val_h
             result["corners_away"] = val_a
         elif typ in ("shots_on_target", "on_target", "shots_on_goal"):
             result["shots_on_target_home"] = val_h
             result["shots_on_target_away"] = val_a
-            print(f"  [Stats-Debug] Schüsse aufs Tor gefunden als '{typ_raw}': {val_h}|{val_a}")
         elif typ == "saves":
             result["saves_home"] = val_h
             result["saves_away"] = val_a
         elif typ in ("possession", "possesion", "ball_possession"):
             result["possession_home"] = str(val_h)
             result["possession_away"] = str(val_a)
-
     return result
 
 def ls_get_events(match_id):
