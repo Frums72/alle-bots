@@ -18,6 +18,7 @@ DISCORD_WEBHOOK_ECKEN   = "https://discord.com/api/webhooks/1501122762096377957/
 DISCORD_WEBHOOK_KARTEN  = "https://discord.com/api/webhooks/1501123056544907378/X5xjFTx81adqbY6vkigbJHqwKOSO68BXjSqTeY_WOaywGn8A4-Q9c98tkRE-d2K_8p0p"
 DISCORD_WEBHOOK_TORWART = "https://discord.com/api/webhooks/1501122812700786870/3667BQTjRqVHhy_c6KJ6XmurwyOeKClHLVLhoK8-idRcAZYIVXPL9PBa-ZyXLH5j4pz5"
 
+
 ODDS_API_KEY       = "866948de5d6c34ca51faf6bd77e0bb2a"  # Optional: the-odds-api.com
 EINSATZ            = 10.0
 
@@ -77,8 +78,111 @@ def send_telegram(message: str):
     if resp.status_code != 200:
         print(f"  [Telegram Fehler] {resp.text}")
 
+FARBE_ECKEN   = 0xF4A300  # Orange
+FARBE_KARTEN  = 0xE74C3C  # Rot
+FARBE_TORWART = 0x1ABC9C  # Türkis
+FARBE_AUSWERTUNG_GEWONNEN = 0x2ECC71  # Grün
+FARBE_AUSWERTUNG_VERLOREN = 0xE74C3C  # Rot
+FARBE_BERICHT = 0x3498DB  # Blau
+
+def send_discord_embed(webhook_url: str, embed: dict):
+    """Sendet ein Discord Embed."""
+    if not webhook_url or webhook_url.startswith("DISCORD"):
+        return
+    payload = {"embeds": [embed]}
+    resp = requests.post(webhook_url, json=payload, timeout=10)
+    if resp.status_code not in (200, 204):
+        print(f"  [Discord Fehler] {resp.status_code}: {resp.text}")
+
+def discord_ecken_tipp(home, away, comp, country, score, corners_home, corners_away, corners, grenze, quote):
+    """Erstellt Discord Embed für Ecken-Tipp."""
+    quote_text = f"\n💶 **Quote:** {quote}" if quote else ""
+    return {
+        "title": "📐 Ecken Tipp",
+        "color": FARBE_ECKEN,
+        "fields": [
+            {"name": "🏆 Liga", "value": f"{comp} ({country})", "inline": True},
+            {"name": "⚽ Spiel", "value": f"{home} vs {away}", "inline": True},
+            {"name": "📊 Halbzeitstand", "value": f"**{score}**", "inline": True},
+            {"name": "📐 Ecken zur Halbzeit",
+             "value": f"🔵 {home}: **{corners_home}**\n🔴 {away}: **{corners_away}**\n📊 Gesamt: **{corners}**", "inline": False},
+            {"name": "🎯 Empfehlung",
+             "value": f"Unter **{grenze} Ecken** (Gesamtspiel){quote_text}", "inline": False},
+        ],
+        "footer": {"text": f"Fixture • {heute()} {jetzt()}"},
+        "thumbnail": {"url": "https://i.imgur.com/4M34hi2.png"}
+    }
+
+def discord_karten_tipp(home, away, comp, country, score, minute, karten_liste, quote):
+    """Erstellt Discord Embed für Karten-Tipp."""
+    karten_text = "\n".join(karten_liste) if karten_liste else "–"
+    quote_text  = f"\n💶 **Quote:** {quote}" if quote else ""
+    return {
+        "title": "🃏 Karten Signal",
+        "color": FARBE_KARTEN,
+        "fields": [
+            {"name": "🏆 Liga", "value": f"{comp} ({country})", "inline": True},
+            {"name": "⚽ Spiel", "value": f"{home} vs {away}", "inline": True},
+            {"name": "📊 Stand", "value": f"**{score}** | Min. **{minute}'**", "inline": True},
+            {"name": "🃏 Karten bis Minute 30", "value": karten_text, "inline": False},
+            {"name": "🎯 Empfehlung",
+             "value": f"Über **5 Karten** (Gesamtspiel){quote_text}", "inline": False},
+        ],
+        "footer": {"text": f"Fixture • {heute()} {jetzt()}"},
+    }
+
+def discord_torwart_tipp(home, away, comp, country, shots_home, shots_away,
+                          saves_h, saves_a, poss_h, poss_a, min_text, quote):
+    """Erstellt Discord Embed für Torwart-Tipp."""
+    quote_text = f"\n💶 **Quote:** {quote}" if quote else ""
+    return {
+        "title": "🧤 Torwart Alarm",
+        "color": FARBE_TORWART,
+        "fields": [
+            {"name": "🏆 Liga", "value": f"{comp} ({country})", "inline": True},
+            {"name": "⚽ Spiel", "value": f"{home} vs {away}", "inline": True},
+            {"name": "📊 Stand", "value": f"**0:0** | {min_text}", "inline": True},
+            {"name": "🎯 Schüsse aufs Tor",
+             "value": f"Gesamt: **{shots_home+shots_away}** ({shots_home} | {shots_away})", "inline": True},
+            {"name": "🧤 Paraden",
+             "value": f"Gesamt: **{saves_h+saves_a}** ({saves_h} | {saves_a})", "inline": True},
+            {"name": "⚽ Ballbesitz",
+             "value": f"{poss_h}% | {poss_a}%", "inline": True},
+            {"name": "🎯 Empfehlung",
+             "value": f"Mindestens **1 Tor** fällt noch{quote_text}", "inline": False},
+        ],
+        "footer": {"text": f"Fixture • {heute()} {jetzt()}"},
+    }
+
+def discord_auswertung(typ, home, away, gewonnen, details: dict):
+    """Erstellt Discord Embed für Auswertung."""
+    farbe  = FARBE_AUSWERTUNG_GEWONNEN if gewonnen else FARBE_AUSWERTUNG_VERLOREN
+    emoji  = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
+    titel  = {"ecken": "📐 Auswertung – Eckwetten",
+              "karten": "🃏 Auswertung – Karten",
+              "torwart": "🧤 Auswertung – Torwart"}[typ]
+    felder = [{"name": "⚽ Spiel", "value": f"{home} vs {away}", "inline": False}]
+    for k, v in details.items():
+        felder.append({"name": k, "value": v, "inline": True})
+    felder.append({"name": "Ergebnis", "value": f"**{emoji}**", "inline": False})
+    return {
+        "title": titel,
+        "color": farbe,
+        "fields": felder,
+        "footer": {"text": f"Auswertung • {heute()} {jetzt()}"},
+    }
+
+def discord_bericht(titel, felder):
+    """Erstellt Discord Embed für Tages/Wochenbericht."""
+    return {
+        "title": titel,
+        "color": FARBE_BERICHT,
+        "fields": felder,
+        "footer": {"text": f"Bericht • {heute()} {jetzt()}"},
+    }
+
 def send_discord(webhook_url: str, message: str):
-    """Sendet Nachricht an Discord Webhook."""
+    """Fallback: Sendet plain text (für Berichte ohne eigenes Embed)."""
     if not webhook_url or webhook_url.startswith("DISCORD"):
         return
     discord_msg = html_zu_discord(message)
@@ -87,7 +191,7 @@ def send_discord(webhook_url: str, message: str):
         print(f"  [Discord Fehler] {resp.status_code}: {resp.text}")
 
 def send_alle(message: str, webhook: str):
-    """Schickt Nachricht an Telegram UND Discord."""
+    """Schickt Nachricht an Telegram UND Discord (plain text fallback)."""
     send_telegram(message)
     send_discord(webhook, message)
 
@@ -357,7 +461,33 @@ def bot_auswertung_und_berichte():
                             msg = auswertung_torwart(spiel)
                         if msg:
                             send_telegram(msg)
-                            send_discord(webhook, msg)
+                            # Discord Embed für Auswertung
+                            gewonnen = "GEWONNEN" in msg
+                            if typ == "ecken":
+                                hz1 = spiel["hz1_ecken"]
+                                grenze = hz1 * 2 + 2
+                                total = re.search(r"Tatsächlich.*?(\d+)", msg)
+                                total_val = total.group(1) if total else "?"
+                                details = {
+                                    "📐 Ecken HZ1": f"**{hz1}**",
+                                    "🎯 Tipp": f"Unter **{grenze}** Ecken gesamt",
+                                    "📈 Tatsächlich": f"**{total_val}** Ecken"
+                                }
+                            elif typ == "karten":
+                                details = {
+                                    "🃏 Karten bis 30'": f"**{spiel['karten_anzahl']}**",
+                                    "🎯 Tipp": "Über **5** Karten gesamt",
+                                    "📈 Endstand": "siehe Nachricht"
+                                }
+                            else:
+                                score_match = re.search(r"Endstand.*?([\d]+ - [\d]+)", msg)
+                                endstand = score_match.group(1) if score_match else "?"
+                                details = {
+                                    "🎯 Tipp": "Mindestens **1 Tor** fällt noch",
+                                    "📈 Endstand": f"**{endstand}**"
+                                }
+                            embed = discord_auswertung(typ, spiel["home"], spiel["away"], gewonnen, details)
+                            send_discord_embed(webhook, embed)
                             auswertung_done.add(match_id)
                             print(f"  [Auswertung] Gesendet: {spiel['home']} vs {spiel['away']} ({typ})")
                         else:
@@ -394,13 +524,18 @@ def bot_ecken():
                 if corners <= MAX_CORNERS:
                     quote = get_quote(home, away, "ecken")
                     ql    = f"\n💶 Quote: <b>{quote}</b>" if quote else ""
-                    msg   = (f"⚽ <b>Halbzeit-Tipp!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                    corners_home = int(stats.get("corners", {}).get("home", 0))
+                    corners_away = int(stats.get("corners", {}).get("away", 0))
+                    msg   = (f"📐 <b>Ecken Tipp!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                              f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
                              f"📊 Stand: <b>{score}</b>\n"
-                             f"📐 Ecken HZ1: <b>{corners}</b>\n"
+                             f"🔵 {home}: <b>{corners_home}</b>\n"
+                             f"🔴 {away}: <b>{corners_away}</b>\n"
+                             f"📊 Gesamt: <b>{corners}</b>\n"
                              f"🎯 Tipp: Unter <b>{grenze}</b> Ecken gesamt{ql}\n"
                              f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
-                    send_alle(msg, DISCORD_WEBHOOK_ECKEN)
+                    send_telegram(msg)
+                    send_discord_embed(DISCORD_WEBHOOK_ECKEN, discord_ecken_tipp(home, away, comp, country, score, corners, grenze, quote))
                     notified_ecken.add(match_id)
                     beobachtete_spiele[match_id] = {
                         "typ": "ecken", "match_id": match_id,
@@ -452,7 +587,9 @@ def bot_karten():
                            f"━━━━━━━━━━━━━━━━━━━━\n<b>{len(karten)} Karten bis Min. {KARTEN_BIS_MINUTE}:</b>\n{zeilen}"
                            f"🎯 Tipp: Über <b>5</b> Karten gesamt{ql}\n"
                            f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
-                    send_alle(msg, DISCORD_WEBHOOK_KARTEN)
+                    send_telegram(msg)
+                    karten_discord = [f"{karten_emoji(k.get('event'))} {k.get('time')}' {(k.get('player') or {}).get('name', '?')} ({home if k.get('is_home') else away})" for k in karten]
+                    send_discord_embed(DISCORD_WEBHOOK_KARTEN, discord_karten_tipp(home, away, comp, country, score, minute, karten_discord, quote))
                     notified_karten.add(match_id)
                     beobachtete_spiele[match_id] = {
                         "typ": "karten", "match_id": match_id,
@@ -506,7 +643,8 @@ def bot_torwart():
                              f"⚽ Ballbesitz: {poss_home}%|{poss_away}%\n"
                              f"🎯 Tipp: Mindestens <b>1 Tor</b> fällt noch{ql}\n"
                              f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
-                    send_alle(msg, DISCORD_WEBHOOK_TORWART)
+                    send_telegram(msg)
+                    send_discord_embed(DISCORD_WEBHOOK_TORWART, discord_torwart_tipp(home, away, comp, country, shots_home, shots_away, saves_home, saves_away, poss_home, poss_away, min_text, quote))
                     notified_torwart.add(match_id)
                     beobachtete_spiele[match_id] = {
                         "typ": "torwart", "match_id": match_id,
