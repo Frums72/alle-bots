@@ -8,7 +8,7 @@ from datetime import datetime, timezone, timedelta
 # ============================================================
 #  KONFIGURATION – hier deine Daten eintragen
 # ============================================================
-API_FOOTBALL_KEY   = "188a1e4dcf0d2e2329d22a4464213ebe"
+API_FOOTBALL_KEY   = "cfdd80c61b7b01fb9b589052e30a6b34"
 
 TELEGRAM_BOT_TOKEN = "8706066107:AAFAQhT3k0jhTZ7ep-VWHPlskOKJVvsfucQ"
 TELEGRAM_CHAT_ID   = "7272001004"
