@@ -1,4 +1,4 @@
-# v17 - Separate Discord Channels
+# v19 - Auswertungs-Fix: ID-Normalisierung, Cache-TTL 45s, besseres Logging
 import requests
 import re
 import time
@@ -14,18 +14,18 @@ API_SECRET         = "h2wf08YErEQbSAfAn9XIgbzJB3l3P9u6"
 TELEGRAM_BOT_TOKEN = "8706066107:AAFAQhT3k0jhTZ7ep-VWHPlskOKJVvsfucQ"
 TELEGRAM_CHAT_ID   = "7272001004"
 
-DISCORD_WEBHOOK_ECKEN    = "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4"   # #betlab-live-ecken
-DISCORD_WEBHOOK_KARTEN   = "https://discord.com/api/webhooks/1501250542788280451/BZ6r8Y2SEDPgya9skt8Gyzbsoetvq0yPY6pWG5HrUzK9moeL-RXYWAiEwWuIlEy7GBfM"        # #betlab-karten
-DISCORD_WEBHOOK_TORWART  = "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1"    # #betlab-live-goals
-DISCORD_WEBHOOK_BILANZ   = "https://discord.com/api/webhooks/1501251926564667564/fdBE4jOLislDfwpMs2cUURm_4_YzfATKWFmaOjRNEXulHCJu1DB-lUBLqLmm73l-HQ4v"         # #treffer-quote
+DISCORD_WEBHOOK_ECKEN    = "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4"
+DISCORD_WEBHOOK_KARTEN   = "https://discord.com/api/webhooks/1501250542788280451/BZ6r8Y2SEDPgya9skt8Gyzbsoetvq0yPY6pWG5HrUzK9moeL-RXYWAiEwWuIlEy7GBfM"
+DISCORD_WEBHOOK_TORWART  = "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1"
+DISCORD_WEBHOOK_BILANZ   = "https://discord.com/api/webhooks/1501251926564667564/fdBE4jOLislDfwpMs2cUURm_4_YzfATKWFmaOjRNEXulHCJu1DB-lUBLqLmm73l-HQ4v"
 
 ODDS_API_KEY       = "866948de5d6c34ca51faf6bd77e0bb2a"
 EINSATZ            = 10.0
 
 MAX_CORNERS         = 5
 MIN_KARTEN          = 2
-KARTEN_BIS_MINUTE   = 30
-MIN_SHOTS_ON_TARGET = 5
+KARTEN_BIS_MINUTE   = 40
+MIN_SHOTS_ON_TARGET = 3
 FUSSBALL_INTERVAL   = 3
 TAGESBERICHT_UHRZEIT = 22
 # ============================================================
@@ -33,13 +33,18 @@ TAGESBERICHT_UHRZEIT = 22
 LS_BASE = "https://livescore-api.com/api-client"
 LS_AUTH = {"key": API_KEY, "secret": API_SECRET}
 
+# ============================================================
+# FIX #1: Korrekte Event-Typen der LiveScore-API
+# Die API liefert "Yellow Card", "Red Card", "Yellow Red Card"
+# (mit Leerzeichen und Groß/Kleinschreibung, NICHT Unterstriche!)
+# ============================================================
 KARTEN_TYPEN = {"Yellow Card", "Red Card", "Yellow Red Card"}
 
-# Shared Cache - alle Bots teilen eine Live-Liste
+# Shared Cache
 _cache_matches   = []
 _cache_timestamp = 0
 _cache_lock      = threading.Lock()
-CACHE_TTL        = 90  # Sekunden
+CACHE_TTL        = 45  # FIX: Kürzerer Cache damit beendete Spiele schneller erkannt werden
 
 notified_ecken       = set()
 notified_ecken_over  = set()
@@ -103,49 +108,97 @@ def send_discord(webhook_url: str, message: str):
         print(f"  [Discord Fehler] {resp.status_code}: {resp.text}")
 
 # ============================================================
-#  API-FOOTBALL FUNKTIONEN
+# FIX #2: Korrekte Karten-Emoji-Funktion
+# Verwendet jetzt die richtigen LiveScore Event-Typen
+# ============================================================
+def karten_emoji(typ: str) -> str:
+    t = typ.lower().replace(" ", "").replace("_", "")
+    if "yellowred" in t: return "🟨🟥"
+    if "red"       in t: return "🟥"
+    if "yellow"    in t: return "🟨"
+    return "🃏"
+
+# ============================================================
+# FIX #3: Retry-Logik bei API-Fehlern (503, Timeouts etc.)
+# ============================================================
+def api_get_with_retry(url: str, params: dict, max_retries: int = 3) -> requests.Response:
+    for attempt in range(max_retries):
+        try:
+            resp = requests.get(url, params=params, timeout=10)
+            resp.raise_for_status()
+            return resp
+        except requests.exceptions.HTTPError as e:
+            status = e.response.status_code if e.response else 0
+            if status in (503, 502, 504) and attempt < max_retries - 1:
+                wait = 2 ** attempt  # 1s, 2s, 4s
+                print(f"  [API] {status} Fehler – Retry {attempt+1}/{max_retries-1} in {wait}s")
+                time.sleep(wait)
+            else:
+                raise
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            if attempt < max_retries - 1:
+                wait = 2 ** attempt
+                print(f"  [API] Verbindungsfehler – Retry {attempt+1}/{max_retries-1} in {wait}s: {e}")
+                time.sleep(wait)
+            else:
+                raise
+    raise RuntimeError("Alle Retry-Versuche fehlgeschlagen")
+
+# ============================================================
+#  API-FUNKTIONEN (mit Retry)
 # ============================================================
 
 def ls_get_live_matches():
-    resp = requests.get(f"{LS_BASE}/matches/live.json", params=LS_AUTH, timeout=10)
-    resp.raise_for_status()
-    return resp.json().get("data", {}).get("match", []) or []
+    resp    = api_get_with_retry(f"{LS_BASE}/matches/live.json", LS_AUTH)
+    matches = resp.json().get("data", {}).get("match", []) or []
+    # FIX: IDs immer als String normalisieren – API liefert manchmal int, manchmal str
+    for m in matches:
+        if "id" in m:
+            m["id"] = str(m["id"])
+    return matches
 
 def ls_get_statistiken(match_id):
     params = {**LS_AUTH, "match_id": match_id}
-    resp   = requests.get(f"{LS_BASE}/statistics/matches.json", params=params, timeout=10)
-    resp.raise_for_status()
+    resp   = api_get_with_retry(f"{LS_BASE}/statistics/matches.json", params)
     stats  = resp.json().get("data", [])
     result = {"corners_home": 0, "corners_away": 0,
               "shots_on_target_home": 0, "shots_on_target_away": 0,
               "saves_home": 0, "saves_away": 0,
               "possession_home": "?", "possession_away": "?"}
+
+    # DEBUG: Alle Stat-Typen loggen um falsche Feldnamen zu erkennen
+    alle_typen = [s.get("type", "") for s in stats]
+    print(f"  [Stats-Debug] Match {match_id} → Typen: {alle_typen}")
+
     for s in stats:
         val_h = int(s.get("home") or 0)
         val_a = int(s.get("away") or 0)
-        typ   = s.get("type", "")
+        # Feldname normalisieren: Kleinschreibung, Leerzeichen→Unterstrich
+        typ_raw  = s.get("type", "")
+        typ      = typ_raw.lower().replace(" ", "_")
+
         if typ == "corners":
             result["corners_home"] = val_h
             result["corners_away"] = val_a
-        elif typ == "shots_on_target":
+        elif typ in ("shots_on_target", "on_target", "shots_on_goal"):
             result["shots_on_target_home"] = val_h
             result["shots_on_target_away"] = val_a
+            print(f"  [Stats-Debug] Schüsse aufs Tor gefunden als '{typ_raw}': {val_h}|{val_a}")
         elif typ == "saves":
             result["saves_home"] = val_h
             result["saves_away"] = val_a
-        elif typ == "possesion":
+        elif typ in ("possession", "possesion", "ball_possession"):
             result["possession_home"] = str(val_h)
             result["possession_away"] = str(val_a)
+
     return result
 
 def ls_get_events(match_id):
     params = {**LS_AUTH, "id": match_id}
-    resp   = requests.get(f"{LS_BASE}/matches/events.json", params=params, timeout=10)
-    resp.raise_for_status()
+    resp   = api_get_with_retry(f"{LS_BASE}/matches/events.json", params)
     return resp.json().get("data", {}).get("event", []) or []
 
 def get_live_matches():
-    """Max. 1 API-Anfrage alle 90 Sek. - alle Bots teilen den Cache."""
     global _cache_matches, _cache_timestamp
     with _cache_lock:
         now = time.time()
@@ -155,19 +208,11 @@ def get_live_matches():
             print(f"  [Cache] {len(_cache_matches)} Spiele geladen")
         return list(_cache_matches)
 
-
-
 def get_statistiken(match_id):
     return ls_get_statistiken(match_id)
 
 def get_events(match_id):
     return ls_get_events(match_id)
-
-def karten_emoji(typ):
-    if typ == "YELLOW_RED_CARD": return "🟨🟥"
-    if typ == "RED_CARD":        return "🟥"
-    if typ == "YELLOW_CARD":     return "🟨"
-    return "🃏"
 
 def get_quote(home, away, typ):
     if not ODDS_API_KEY:
@@ -434,7 +479,8 @@ def auswertung_karten(spiel):
     GRENZE     = 5
     try:
         events = get_events(match_id)
-        anzahl = len([e for e in events if e.get("event") in {"YELLOW_CARD", "RED_CARD", "YELLOW_RED_CARD"}])
+        # FIX: Korrekte Event-Typen der LiveScore-API verwenden
+        anzahl = len([e for e in events if e.get("event") in KARTEN_TYPEN])
         gewonnen = anzahl > GRENZE
         emoji    = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
         update_statistik("karten", gewonnen, quote)
@@ -457,8 +503,7 @@ def auswertung_torwart(spiel):
     quote    = spiel.get("quote")
     try:
         params = {**LS_AUTH, "id": match_id}
-        resp   = requests.get(f"{LS_BASE}/matches/single.json", params=params, timeout=10)
-        resp.raise_for_status()
+        resp   = api_get_with_retry(f"{LS_BASE}/matches/single.json", params)
         match  = resp.json().get("data", {}).get("match", {})
         score  = match.get("scores", {}).get("score", "0 - 0")
         parts  = score.replace(" ", "").split("-")
@@ -513,13 +558,19 @@ def bot_auswertung_und_berichte():
                 for match_id, spiel in list(beobachtete_spiele.items()):
                     if match_id in auswertung_done:
                         continue
-                    if match_id in live_ids:
-                        spiel_zuletzt_live[match_id] = aktuell
+                    # FIX: ID immer als str vergleichen
+                    mid_str = str(match_id)
+                    if mid_str in live_ids:
+                        spiel_zuletzt_live[mid_str] = aktuell
                         continue
-                    zuletzt        = spiel_zuletzt_live.get(match_id, 0)
+                    zuletzt        = spiel_zuletzt_live.get(mid_str, 0)
                     minuten_weg    = (aktuell - zuletzt) / 60 if zuletzt > 0 else 999
-                    status         = live_status.get(match_id, "")
-                    beendet_status = status in ("FT", "FINISHED", "AET")
+                    status         = live_status.get(mid_str, "")
+                    beendet_status = status in ("FT", "FINISHED", "AET", "Finished", "finished")
+                    # FIX: Detailliertes Logging
+                    print(f"  [Auswertung] {spiel['home']} vs {spiel['away']} | "
+                          f"Status: '{status}' | Weg: {minuten_weg:.1f} Min | "
+                          f"Beendet: {beendet_status}")
                     if beendet_status or minuten_weg >= 3:
                         print(f"  [Auswertung] Beendet: {spiel['home']} vs {spiel['away']}")
                         time.sleep(20)
@@ -581,7 +632,7 @@ def bot_ecken():
             halftime = [m for m in matches if m.get("status") == "HALF TIME BREAK"]
             print(f"[{jetzt()}] [Ecken-Bot] {len(halftime)} Halbzeit-Spiele")
             for game in halftime:
-                match_id = game.get("id")
+                match_id = str(game.get("id"))
                 if match_id in notified_ecken:
                     continue
                 stats        = get_statistiken(match_id)
@@ -641,7 +692,7 @@ def bot_ecken_over():
                     hz1.append(m)
             print(f"[{jetzt()}] [Ecken-Über-Bot] {len(hz1)} laufende HZ1-Spiele")
             for game in hz1:
-                match_id     = game.get("id")
+                match_id     = str(game.get("id"))
                 if match_id in notified_ecken_over:
                     continue
                 stats        = get_statistiken(match_id)
@@ -691,7 +742,7 @@ def bot_karten():
             laufend = [m for m in matches if m.get("status") in ("IN PLAY", "ADDED TIME")]
             print(f"[{jetzt()}] [Karten-Bot] {len(laufend)} laufende Spiele")
             for game in laufend:
-                match_id = game.get("id")
+                match_id = str(game.get("id"))
                 if match_id in notified_karten:
                     continue
                 try:
@@ -701,9 +752,18 @@ def bot_karten():
                 if minute > KARTEN_BIS_MINUTE + 5:
                     continue
                 events  = get_events(match_id)
-                karten  = [e for e in events
-                           if e.get("event") in {"YELLOW_CARD", "RED_CARD", "YELLOW_RED_CARD"}
-                           and (e.get("time") or 999) <= KARTEN_BIS_MINUTE]
+                # FIX: Korrekte Event-Typen + robuste Minutenprüfung (String → int)
+                karten = []
+                for e in events:
+                    if e.get("event") not in KARTEN_TYPEN:
+                        continue
+                    try:
+                        e_min = int(e.get("time") or 999)
+                    except (ValueError, TypeError):
+                        e_min = 999
+                    if e_min <= KARTEN_BIS_MINUTE:
+                        karten.append(e)
+
                 home    = game.get("home", {}).get("name", "?")
                 away    = game.get("away", {}).get("name", "?")
                 comp    = game.get("competition", {}).get("name", "?")
@@ -718,7 +778,7 @@ def bot_karten():
                         spieler  = (k.get("player") or {}).get("name", "?")
                         team     = k.get("home_away", "?")
                         min_k    = k.get("time", "?")
-                        detail   = k.get("event", "YELLOW_CARD")
+                        detail   = k.get("event", "Yellow Card")
                         emoji    = karten_emoji(detail)
                         zeilen.append(f"  {emoji} {min_k}' {spieler} ({team})")
                         karten_discord.append(f"{emoji} {min_k}' {spieler} ({team})")
@@ -755,7 +815,7 @@ def bot_torwart():
             aktiv   = [m for m in matches if m.get("status") in ("IN PLAY", "ADDED TIME", "HALF TIME BREAK")]
             print(f"[{jetzt()}] [Torwart-Bot] {len(aktiv)} aktive Spiele")
             for game in aktiv:
-                match_id = game.get("id")
+                match_id = str(game.get("id"))
                 if match_id in notified_torwart:
                     continue
                 score = game.get("scores", {}).get("score", "")
@@ -811,7 +871,7 @@ def bot_torwart():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v17")
+    print("  ⚽ FUSSBALL BOTS v19")
     print("  Telegram + Discord (3 Webhooks)")
     print("  Ecken Unter + Ecken Über + Karten + Torwart")
     print("  Powered by livescore-api")
