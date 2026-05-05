@@ -1,4 +1,4 @@
-# v13 - Komplett API-Football (livescore-api entfernt)
+# v14 - Shared Cache spart API-Anfragen
 import requests
 import re
 import time
@@ -24,7 +24,7 @@ MAX_CORNERS         = 5
 MIN_KARTEN          = 2
 KARTEN_BIS_MINUTE   = 30
 MIN_SHOTS_ON_TARGET = 5
-FUSSBALL_INTERVAL   = 2
+FUSSBALL_INTERVAL   = 3
 TAGESBERICHT_UHRZEIT = 22
 # ============================================================
 
@@ -32,6 +32,12 @@ AF_BASE    = "https://v3.football.api-sports.io"
 AF_HEADERS = {"x-apisports-key": API_FOOTBALL_KEY}
 
 KARTEN_TYPEN = {"Yellow Card", "Red Card", "Yellow Red Card"}
+
+# Shared Cache - alle Bots teilen eine Live-Liste
+_cache_matches   = []
+_cache_timestamp = 0
+_cache_lock      = threading.Lock()
+CACHE_TTL        = 90  # Sekunden
 
 notified_ecken       = set()
 notified_ecken_over  = set()
@@ -141,9 +147,11 @@ def af_get_events(fixture_id):
     resp.raise_for_status()
     return resp.json().get("response", [])
 
-def get_live_matches():
-    fixtures = af_get_live_matches()
-    matches  = []
+def _parse_fixtures(fixtures):
+    matches    = []
+    status_map = {"HT": "HALF TIME BREAK", "1H": "IN PLAY",
+                  "2H": "IN PLAY", "ET": "ADDED TIME",
+                  "FT": "FT", "AET": "AET"}
     for fix in fixtures:
         status_short = fix.get("fixture", {}).get("status", {}).get("short", "")
         minute       = fix.get("fixture", {}).get("status", {}).get("elapsed") or 0
@@ -151,9 +159,6 @@ def get_live_matches():
         away         = fix.get("teams", {}).get("away", {}).get("name", "?")
         goals_h      = fix.get("goals", {}).get("home") or 0
         goals_a      = fix.get("goals", {}).get("away") or 0
-        status_map   = {"HT": "HALF TIME BREAK", "1H": "IN PLAY",
-                        "2H": "IN PLAY", "ET": "ADDED TIME",
-                        "FT": "FT", "AET": "AET"}
         matches.append({
             "id":          fix["fixture"]["id"],
             "fixture_id":  fix["fixture"]["id"],
@@ -166,6 +171,20 @@ def get_live_matches():
             "scores":      {"score": f"{goals_h} - {goals_a}"},
         })
     return matches
+
+def get_live_matches():
+    """Max. 1 API-Anfrage alle 90 Sek. - alle Bots teilen den Cache."""
+    global _cache_matches, _cache_timestamp
+    with _cache_lock:
+        now = time.time()
+        if now - _cache_timestamp > CACHE_TTL:
+            fixtures         = af_get_live_matches()
+            _cache_matches   = _parse_fixtures(fixtures)
+            _cache_timestamp = now
+            print(f"  [Cache] {len(_cache_matches)} Spiele geladen")
+        return list(_cache_matches)
+
+
 
 def get_statistiken(match_id):
     return af_get_statistiken(match_id)
@@ -826,7 +845,7 @@ def bot_torwart():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v13")
+    print("  ⚽ FUSSBALL BOTS v14")
     print("  Telegram + Discord (3 Webhooks)")
     print("  Ecken Unter + Ecken Über + Karten + Torwart")
     print("  Powered by API-Football")
