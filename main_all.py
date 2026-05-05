@@ -1,4 +1,4 @@
-# v16 - Zurück zu livescore-api
+# v17 - Separate Discord Channels
 import requests
 import re
 import time
@@ -14,9 +14,10 @@ API_SECRET         = "h2wf08YErEQbSAfAn9XIgbzJB3l3P9u6"
 TELEGRAM_BOT_TOKEN = "8706066107:AAFAQhT3k0jhTZ7ep-VWHPlskOKJVvsfucQ"
 TELEGRAM_CHAT_ID   = "7272001004"
 
-DISCORD_WEBHOOK_ECKEN   = "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4"
-DISCORD_WEBHOOK_KARTEN  = "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4"
-DISCORD_WEBHOOK_TORWART = "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4"
+DISCORD_WEBHOOK_ECKEN    = "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4"   # #betlab-live-ecken
+DISCORD_WEBHOOK_KARTEN   = "https://discord.com/api/webhooks/1501250542788280451/BZ6r8Y2SEDPgya9skt8Gyzbsoetvq0yPY6pWG5HrUzK9moeL-RXYWAiEwWuIlEy7GBfM"        # #betlab-karten
+DISCORD_WEBHOOK_TORWART  = "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1"    # #betlab-live-goals
+DISCORD_WEBHOOK_BILANZ   = "https://discord.com/api/webhooks/1501251926564667564/fdBE4jOLislDfwpMs2cUURm_4_YzfATKWFmaOjRNEXulHCJu1DB-lUBLqLmm73l-HQ4v"         # #treffer-quote
 
 ODDS_API_KEY       = "866948de5d6c34ca51faf6bd77e0bb2a"
 EINSATZ            = 10.0
@@ -338,7 +339,7 @@ def send_tagesbericht():
            f"━━━━━━━━━━━━━━━━━━━━\n"
            f"🕐 {jetzt()} Uhr")
     send_telegram(msg)
-    send_discord(DISCORD_WEBHOOK_ECKEN, msg)
+    send_discord(DISCORD_WEBHOOK_BILANZ, msg)
     for t in statistik:
         statistik[t] = {"gewonnen": 0, "verloren": 0, "gewinn": 0.0}
     print(f"  [Bericht] Tagesbericht gesendet ({heute()})")
@@ -365,7 +366,7 @@ def send_wochenbericht():
            f"━━━━━━━━━━━━━━━━━━━━\n"
            f"🕐 {jetzt()} Uhr")
     send_telegram(msg)
-    send_discord(DISCORD_WEBHOOK_ECKEN, msg)
+    send_discord(DISCORD_WEBHOOK_BILANZ, msg)
     for t in wochen_statistik:
         wochen_statistik[t] = {"gewonnen": 0, "verloren": 0, "gewinn": 0.0}
     print(f"  [Bericht] Wochenbericht gesendet")
@@ -810,7 +811,7 @@ def bot_torwart():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v16")
+    print("  ⚽ FUSSBALL BOTS v17")
     print("  Telegram + Discord (3 Webhooks)")
     print("  Ecken Unter + Ecken Über + Karten + Torwart")
     print("  Powered by livescore-api")
