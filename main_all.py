@@ -1,4 +1,4 @@
-# v23 - Liga/Land Filter, Ecken-Durchschnitt Check
+# v25 - Konfidenz-Score, H2H+Form, Gegentipp-Schutz, Quoten-Validierung, CLV
 import requests
 import re
 import time
@@ -23,6 +23,8 @@ DISCORD_WEBHOOK_DRUCK     = "https://discord.com/api/webhooks/150125226663031616
 DISCORD_WEBHOOK_COMEBACK  = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
 DISCORD_WEBHOOK_TORFLUT   = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
 DISCORD_WEBHOOK_ROTKARTE  = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
+DISCORD_WEBHOOK_HZ1TORE  = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
+DISCORD_WEBHOOK_VZTORE   = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
 
 ODDS_API_KEY       = "866948de5d6c34ca51faf6bd77e0bb2a"
 EINSATZ            = 10.0
@@ -53,6 +55,21 @@ LIGA_MIN_TREFFERQUOTE = 0.40 # Ligen unter dieser Quote werden ignoriert
 ECKEN_HISTORY_SPIELE = 5     # Anzahl historischer Spiele für Durchschnitt
 ECKEN_TOLERANZ       = 1.5   # Tipp wird gesendet wenn Grenze > Durchschnitt + Toleranz
 
+# H2H Tore Bots
+H2H_MIN_SPIELE       = 3     # Mindest-H2H-Spiele für Tipp
+H2H_MAX_SPIELE       = 10    # Wie viele H2H-Spiele abgerufen werden
+H2H_SIGNAL_BIS_MIN   = 15    # Nur Signale in den ersten X Minuten eines Spiels
+# HZ1-Tore Schwellenwerte (Über/Unter X.5 Tore)
+HZ1_UEBER_GRENZE     = 1.2   # avg HZ1-Tore > dieser Wert → Tipp Über 1.5
+HZ1_UNTER_GRENZE     = 0.7   # avg HZ1-Tore < dieser Wert → Tipp Unter 0.5
+# Vollzeit-Tore Schwellenwerte
+VZ_UEBER_GRENZE      = 2.7   # avg VZ-Tore > dieser Wert → Tipp Über 2.5
+VZ_UNTER_GRENZE      = 1.8   # avg VZ-Tore < dieser Wert → Tipp Unter 1.5
+
+# Quoten-Validierung & Closing Line Value
+MIN_BOOKMAKER_ANZAHL = 2     # Mindest-Bookmaker die Quote anbieten müssen
+CLV_WARNSCHWELLE     = 0.05  # Wenn Schlusskurs >5% tiefer als Einstieg → CLV negativ
+
 # Neue Parameter
 MIN_DRUCK_ECKEN      = 6    # Mindest-Ecken gesamt für Druck-Signal
 DRUCK_RATIO          = 2.5  # Dominantes Team muss X-mal mehr Ecken haben
@@ -80,6 +97,8 @@ notified_druck      = set()
 notified_comeback   = set()
 notified_torflut    = set()
 notified_rotkarte   = set()
+notified_hz1tore    = set()
+notified_vztore     = set()
 beobachtete_spiele  = {}
 auswertung_done     = set()
 
@@ -94,6 +113,9 @@ FEHLER_ALERT_AB  = 3    # nach X Fehlern Telegram-Alert senden
 _api_calls_log   = []
 _api_calls_lock  = threading.Lock()
 MAX_API_PER_MIN  = 25   # max. API-Calls pro Minute
+
+# Gegentipp-Schutz
+aktive_tipps     = {}   # match_id → list of {markt, richtung, bot}
 
 # Signal-Log für Optimizer
 signal_log       = []   # Liste aller Signale mit Ergebnis
@@ -116,6 +138,8 @@ statistik = {
     "comeback": {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
     "torflut":  {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
     "rotkarte": {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
+    "hz1tore":  {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
+    "vztore":   {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
 }
 wochen_statistik = {k: {"gewonnen": 0, "verloren": 0, "gewinn": 0.0} for k in statistik}
 
@@ -519,6 +543,195 @@ def ecken_tipp_sinnvoll(game: dict, grenze: float) -> bool:
     print(f"  [Ecken-Avg] Heim ⌀{avg_home} | Gast ⌀{avg_away} | Erwartet: {erwartet} | Grenze: {grenze} | Sinnvoll: {sinnvoll}")
     return sinnvoll
 
+# ── H2H Tore ─────────────────────────────────────────────────
+_h2h_cache = {}
+H2H_TTL    = 3600
+
+def get_h2h_daten(team1_id: str, team2_id: str) -> list:
+    """Holt H2H-Geschichte beider Teams (gecacht, 1h)."""
+    key = f"{min(team1_id, team2_id)}_{max(team1_id, team2_id)}"
+    now = time.time()
+    if key in _h2h_cache and now - _h2h_cache[key]["ts"] < H2H_TTL:
+        return _h2h_cache[key]["data"]
+    try:
+        params  = {**LS_AUTH, "team1_id": team1_id, "team2_id": team2_id,
+                   "number": H2H_MAX_SPIELE}
+        resp    = api_get_with_retry(f"{LS_BASE}/matches/h2h.json", params)
+        matches = resp.json().get("data", {}).get("match", []) or []
+        _h2h_cache[key] = {"data": matches, "ts": now}
+        print(f"  [H2H] {team1_id} vs {team2_id}: {len(matches)} Spiele gefunden")
+        return matches
+    except Exception as e:
+        print(f"  [H2H] Fehler: {e}")
+        return []
+
+def analysiere_h2h_tore(matches: list) -> dict | None:
+    """Analysiert H2H-Spiele und berechnet Tor-Durchschnitte für HZ1 und VZ."""
+    if len(matches) < H2H_MIN_SPIELE:
+        return None
+    hz1_liste = []
+    vz_liste  = []
+    for m in matches:
+        score = (m.get("scores") or {}).get("score", "")
+        ht    = (m.get("scores") or {}).get("ht_score", "")
+        h, a  = parse_score(score)
+        if h + a == 0 and not score:
+            continue
+        vz_liste.append(h + a)
+        if ht:
+            hh, ha = parse_score(ht)
+            hz1_liste.append(hh + ha)
+    if len(vz_liste) < H2H_MIN_SPIELE:
+        return None
+    return {
+        "avg_vz":     round(sum(vz_liste) / len(vz_liste), 2),
+        "avg_hz1":    round(sum(hz1_liste) / len(hz1_liste), 2) if len(hz1_liste) >= H2H_MIN_SPIELE else None,
+        "spiele":     len(vz_liste),
+        "hz1_spiele": len(hz1_liste),
+    }
+
+def tipp_aus_avg(avg: float, ueber_grenze: float, unter_grenze: float):
+    if avg > ueber_grenze:
+        linie = int(avg - 0.5) + 0.5
+        return ("über", linie)
+    elif avg < unter_grenze:
+        linie = int(avg) + 0.5
+        return ("unter", linie)
+    return None
+
+# ── Konfidenz-Score (1-10) ───────────────────────────────────
+def berechne_konfidenz(typ, liga, quote, h2h_spiele=0,
+                        wetter_schlecht=False, bookmaker_anzahl=0,
+                        form_uebereinstimmung=True):
+    score = 5
+    if liga in liga_statistik:
+        s   = liga_statistik[liga]
+        ges = s["gewonnen"] + s["verloren"]
+        if ges >= 5:
+            hit = s["gewonnen"] / ges
+            if hit >= 0.65:   score += 2
+            elif hit >= 0.55: score += 1
+            elif hit <= 0.35: score -= 2
+            elif hit <= 0.45: score -= 1
+    if h2h_spiele >= 8:   score += 1
+    elif 0 < h2h_spiele < 3: score -= 1
+    if not form_uebereinstimmung: score -= 2
+    if wetter_schlecht:           score -= 1
+    if quote:
+        if quote >= 2.0:   score += 1
+        elif quote < 1.35: score -= 1
+    if bookmaker_anzahl >= 4:   score += 1
+    elif bookmaker_anzahl == 1: score -= 1
+    return max(1, min(10, score))
+
+def konfidenz_emoji(score):
+    if score >= 8: return "🟢"
+    if score >= 6: return "🟡"
+    if score >= 4: return "🟠"
+    return "🔴"
+
+# ── Quoten-Validierung ───────────────────────────────────────
+def get_quote_details(home, away):
+    if not ODDS_API_KEY:
+        return {"quote": None, "avg_quote": None, "bookmaker_anzahl": 0}
+    try:
+        url    = "https://api.the-odds-api.com/v4/sports/soccer/odds/"
+        params = {"apiKey": ODDS_API_KEY, "regions": "eu",
+                  "markets": "totals", "oddsFormat": "decimal"}
+        resp   = requests.get(url, params=params, timeout=8)
+        if resp.status_code != 200:
+            return {"quote": None, "avg_quote": None, "bookmaker_anzahl": 0}
+        alle_quotes = []
+        for game in resp.json():
+            h = game.get("home_team", "").lower()
+            a = game.get("away_team", "").lower()
+            if home.lower()[:4] in h or away.lower()[:4] in a:
+                for bookmaker in game.get("bookmakers", []):
+                    for market in bookmaker.get("markets", []):
+                        if market.get("key") == "totals":
+                            for outcome in market.get("outcomes", []):
+                                q = outcome.get("price", 0)
+                                if q > 1.0:
+                                    alle_quotes.append(round(q, 2))
+        if not alle_quotes:
+            return {"quote": None, "avg_quote": None, "bookmaker_anzahl": 0}
+        return {
+            "quote":            max(alle_quotes),
+            "avg_quote":        round(sum(alle_quotes) / len(alle_quotes), 2),
+            "bookmaker_anzahl": len(alle_quotes),
+        }
+    except:
+        return {"quote": None, "avg_quote": None, "bookmaker_anzahl": 0}
+
+def get_quote(home, away, typ):
+    """Wrapper: gibt nur beste Quote zurück (nutzt get_quote_details intern)."""
+    d = get_quote_details(home, away)
+    return d["quote"]
+
+# ── Gegentipp-Schutz ────────────────────────────────────────
+def gegentipp_registrieren(match_id, markt, richtung, bot):
+    aktive_tipps.setdefault(match_id, [])
+    aktive_tipps[match_id].append({"markt": markt, "richtung": richtung, "bot": bot})
+
+def gegentipp_check(match_id, markt, richtung, bot):
+    for tipp in aktive_tipps.get(match_id, []):
+        if tipp["markt"] == markt and tipp["richtung"] != richtung:
+            print(f"  [Gegentipp] Widerspruch: {bot} ({richtung}) vs {tipp['bot']} ({tipp['richtung']}) fuer Match {match_id}")
+            return False
+    return True
+
+# ── H2H + Saisonform ────────────────────────────────────────
+def get_team_saisonform(team_id):
+    try:
+        params  = {**LS_AUTH, "team_id": team_id, "number": 5}
+        resp    = api_get_with_retry(f"{LS_BASE}/matches/history.json", params)
+        matches = resp.json().get("data", {}).get("match", []) or []
+        tore    = []
+        for m in matches:
+            score = (m.get("scores") or {}).get("score", "")
+            h, a  = parse_score(score)
+            if h + a > 0 or score:
+                tore.append(h + a)
+        return round(sum(tore) / len(tore), 2) if len(tore) >= 3 else None
+    except:
+        return None
+
+def form_stimmt_ueberein(home_id, away_id, h2h_avg, richtung):
+    form_home = get_team_saisonform(home_id)
+    form_away = get_team_saisonform(away_id)
+    if form_home is None or form_away is None:
+        return True
+    form_avg  = (form_home + form_away) / 2
+    h2h_hoch  = h2h_avg > 2.5
+    form_hoch = form_avg > 2.5
+    if richtung == "über":
+        ok = h2h_hoch and form_hoch
+    else:
+        ok = (not h2h_hoch) and (not form_hoch)
+    if not ok:
+        print(f"  [Form] H2H {h2h_avg} vs Form {form_avg:.1f} weichen ab")
+    return ok
+
+# ── Closing Line Value ───────────────────────────────────────
+def clv_auswerten(spiel):
+    einstieg = spiel.get("quote")
+    if not einstieg:
+        return ""
+    try:
+        details = get_quote_details(spiel["home"], spiel["away"])
+        schluss = details.get("avg_quote")
+        if not schluss:
+            return ""
+        diff = round((einstieg - schluss) / schluss, 3)
+        if diff > CLV_WARNSCHWELLE:
+            return f"\n📊 CLV: Guter Einstieg! {einstieg} -> Schluss {schluss} (+{round(diff*100,1)}%)"
+        elif diff < -CLV_WARNSCHWELLE:
+            return f"\n📊 CLV: Quote gesunken: {einstieg} -> Schluss {schluss} ({round(diff*100,1)}%)"
+        return f"\n📊 CLV: Quote stabil: {einstieg} -> Schluss {schluss}"
+    except:
+        return ""
+
+
 def signal_eintragen(match_id, typ, home, away, liga, hz1_wert, grenze, quote, einsatz):
     """Trägt ein neues Signal im Log ein."""
     signal_log.append({
@@ -551,6 +764,8 @@ FARBE_DRUCK               = 0x3498DB
 FARBE_COMEBACK            = 0xE67E22
 FARBE_TORFLUT             = 0xFF6B6B
 FARBE_ROTKARTE            = 0xC0392B
+FARBE_HZ1TORE             = 0x27AE60
+FARBE_VZTORE              = 0x8E44AD
 FARBE_AUSWERTUNG_GEWONNEN = 0x2ECC71
 FARBE_AUSWERTUNG_VERLOREN = 0xE74C3C
 
@@ -679,6 +894,42 @@ def discord_rotkarte_tipp(home, away, comp, country, score, minute,
         "footer": {"text": f"Fixture • {heute()} {jetzt()}"},
     }
 
+def discord_hz1tore_tipp(home, away, comp, country, richtung, linie,
+                          avg_hz1, spiele, quote):
+    qt = f"\n💶 **Quote:** {quote}" if quote else ""
+    pfeil = "📈" if richtung == "über" else "📉"
+    return {
+        "title": f"🥅 HZ1-Tore Signal ({richtung.upper()} {linie})",
+        "color": FARBE_HZ1TORE,
+        "fields": [
+            {"name": "🏆 Liga",        "value": f"{comp} ({country})", "inline": True},
+            {"name": "⚽ Spiel",       "value": f"{home} vs {away}",   "inline": True},
+            {"name": "📊 H2H Basis",   "value": f"**{spiele}** Spiele", "inline": True},
+            {"name": f"{pfeil} H2H Ø HZ1-Tore", "value": f"**{avg_hz1}** Tore", "inline": True},
+            {"name": "🎯 Empfehlung",
+             "value": f"**{richtung.capitalize()} {linie}** Tore (HZ1){qt}", "inline": False},
+        ],
+        "footer": {"text": f"H2H-Analyse • {heute()} {jetzt()}"},
+    }
+
+def discord_vztore_tipp(home, away, comp, country, richtung, linie,
+                         avg_vz, spiele, quote):
+    qt = f"\n💶 **Quote:** {quote}" if quote else ""
+    pfeil = "📈" if richtung == "über" else "📉"
+    return {
+        "title": f"🏆 Vollzeit-Tore Signal ({richtung.upper()} {linie})",
+        "color": FARBE_VZTORE,
+        "fields": [
+            {"name": "🏆 Liga",         "value": f"{comp} ({country})", "inline": True},
+            {"name": "⚽ Spiel",        "value": f"{home} vs {away}",   "inline": True},
+            {"name": "📊 H2H Basis",    "value": f"**{spiele}** Spiele", "inline": True},
+            {"name": f"{pfeil} H2H Ø VZ-Tore", "value": f"**{avg_vz}** Tore", "inline": True},
+            {"name": "🎯 Empfehlung",
+             "value": f"**{richtung.capitalize()} {linie}** Tore (Vollzeit){qt}", "inline": False},
+        ],
+        "footer": {"text": f"H2H-Analyse • {heute()} {jetzt()}"},
+    }
+
 def discord_auswertung(typ, home, away, gewonnen, details: dict):
     farbe = FARBE_AUSWERTUNG_GEWONNEN if gewonnen else FARBE_AUSWERTUNG_VERLOREN
     emoji = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
@@ -691,6 +942,8 @@ def discord_auswertung(typ, home, away, gewonnen, details: dict):
         "comeback": "🔄 Auswertung – Comeback",
         "torflut":  "🌊 Auswertung – Torflut",
         "rotkarte": "🟥 Auswertung – Rote Karte",
+        "hz1tore":  "🥅 Auswertung – HZ1 Tore",
+        "vztore":   "🏆 Auswertung – Vollzeit Tore",
     }.get(typ, "📊 Auswertung")
     felder = [{"name": "⚽ Spiel", "value": f"{home} vs {away}", "inline": False}]
     for k, v in details.items():
@@ -798,6 +1051,8 @@ def send_tagesbericht():
            f"🔄 {statistik_zeile('Comeback',      statistik['comeback'])}\n"
            f"🌊 {statistik_zeile('Torflut',       statistik['torflut'])}\n"
            f"🟥 {statistik_zeile('Rote Karte',    statistik['rotkarte'])}\n"
+           f"🥅 {statistik_zeile('HZ1-Tore',      statistik['hz1tore'])}\n"
+           f"🏆 {statistik_zeile('VZ-Tore',        statistik['vztore'])}\n"
            f"━━━━━━━━━━━━━━━━━━━━\n"
            f"🕐 <b>Beste Uhrzeiten:</b> {stunden_text}\n"
            f"🏆 <b>Beste Ligen:</b>\n{ligen_text}\n"
@@ -831,6 +1086,8 @@ def send_wochenbericht():
            f"🔄 {statistik_zeile('Comeback',      wochen_statistik['comeback'])}\n"
            f"🌊 {statistik_zeile('Torflut',       wochen_statistik['torflut'])}\n"
            f"🟥 {statistik_zeile('Rote Karte',    wochen_statistik['rotkarte'])}\n"
+           f"🥅 {statistik_zeile('HZ1-Tore',      wochen_statistik['hz1tore'])}\n"
+           f"🏆 {statistik_zeile('VZ-Tore',        wochen_statistik['vztore'])}\n"
            f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
     send_telegram(msg)
     send_discord(DISCORD_WEBHOOK_BILANZ, msg)
@@ -853,7 +1110,8 @@ def auswertung_ecken(spiel):
         gewonnen    = total_ecken < grenze
         update_statistik("ecken", gewonnen, quote)
         emoji = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
-        ql = f"💶 Quote: <b>{quote}</b> → Gewinn: <b>+{round((quote-1)*EINSATZ,2)}€</b>\n" if quote and gewonnen else ""
+        ql  = f"💶 Quote: <b>{quote}</b> → Gewinn: <b>+{round((quote-1)*EINSATZ,2)}€</b>\n" if quote and gewonnen else ""
+        clv = clv_auswerten(spiel)
         return (f"📊 <b>Auswertung – Ecken Unter</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                 f"📌 {home} vs {away}\n📐 Ecken HZ1: <b>{hz1_ecken}</b>\n"
                 f"🎯 Tipp: Unter <b>{grenze}</b> Ecken\n📈 Tatsächlich: <b>{total_ecken}</b>{ql}\n"
@@ -1018,6 +1276,65 @@ def auswertung_rotkarte(spiel):
         print(f"  [Auswertung] Rote Karte Fehler: {e}")
         return None
 
+def auswertung_hz1tore(spiel):
+    match_id  = spiel["match_id"]
+    richtung  = spiel["richtung"]
+    linie     = spiel["linie"]
+    home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
+    try:
+        match = ls_get_single_match(match_id)
+        ht    = (match.get("scores") or {}).get("ht_score", "")
+        if not ht:
+            # HZ1 Score nicht verfügbar – aus Endstand schätzen
+            score = match.get("scores", {}).get("score", "0 - 0")
+            print(f"  [Auswertung] Hz1Tore: kein HZ1-Score, nutze Endstand {score}")
+            return None
+        hh, ha   = parse_score(ht)
+        hz1_tore = hh + ha
+        if richtung == "über":
+            gewonnen = hz1_tore > linie
+        else:
+            gewonnen = hz1_tore < linie
+        update_statistik("hz1tore", gewonnen, quote, liga=spiel.get("liga"), match_id=match_id)
+        emoji = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
+        ql = f"💶 Quote: <b>{quote}</b> → Gewinn: <b>+{round((quote-1)*spiel.get('einsatz', EINSATZ),2)}€</b>\n" if quote and gewonnen else ""
+        clv = clv_auswerten(spiel)
+        return (f"📊 <b>Auswertung – HZ1 Tore</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                f"📌 {home} vs {away}\n"
+                f"🎯 Tipp: {richtung.capitalize()} <b>{linie}</b> Tore (HZ1)\n"
+                f"📈 HZ1-Ergebnis: <b>{ht}</b> ({hz1_tore} Tore)\n{ql}{clv}"
+                f"━━━━━━━━━━━━━━━━━━━━\n{emoji}\n🕐 {jetzt()} Uhr")
+    except Exception as e:
+        print(f"  [Auswertung] HZ1-Tore Fehler: {e}")
+        return None
+
+def auswertung_vztore(spiel):
+    match_id  = spiel["match_id"]
+    richtung  = spiel["richtung"]
+    linie     = spiel["linie"]
+    home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
+    try:
+        match    = ls_get_single_match(match_id)
+        score    = match.get("scores", {}).get("score", "0 - 0")
+        h, a     = parse_score(score)
+        vz_tore  = h + a
+        if richtung == "über":
+            gewonnen = vz_tore > linie
+        else:
+            gewonnen = vz_tore < linie
+        update_statistik("vztore", gewonnen, quote, liga=spiel.get("liga"), match_id=match_id)
+        emoji = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
+        ql = f"💶 Quote: <b>{quote}</b> → Gewinn: <b>+{round((quote-1)*spiel.get('einsatz', EINSATZ),2)}€</b>\n" if quote and gewonnen else ""
+        clv = clv_auswerten(spiel)
+        return (f"📊 <b>Auswertung – Vollzeit Tore</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                f"📌 {home} vs {away}\n"
+                f"🎯 Tipp: {richtung.capitalize()} <b>{linie}</b> Tore (VZ)\n"
+                f"📈 Endstand: <b>{score}</b> ({vz_tore} Tore)\n{ql}{clv}"
+                f"━━━━━━━━━━━━━━━━━━━━\n{emoji}\n🕐 {jetzt()} Uhr")
+    except Exception as e:
+        print(f"  [Auswertung] VZ-Tore Fehler: {e}")
+        return None
+
 # ============================================================
 #  AUSWERTUNGS- & BERICHT-THREAD
 # ============================================================
@@ -1077,6 +1394,8 @@ def bot_auswertung_und_berichte():
                             "comeback": auswertung_comeback,
                             "torflut":  auswertung_torflut,
                             "rotkarte": auswertung_rotkarte,
+                            "hz1tore":  auswertung_hz1tore,
+                            "vztore":   auswertung_vztore,
                         }.get(typ)
                         msg = auswertung_fn(spiel) if auswertung_fn else None
                         if msg:
@@ -1124,21 +1443,35 @@ def bot_ecken():
                     # Liga-Filter
                     if not liga_erlaubt(comp):
                         continue
-                    quote = get_quote(home, away, "ecken")
-                    # Mindest-Quote Filter
-                    if quote and quote < MIN_QUOTE:
-                        print(f"  [Ecken-Bot] Quote zu niedrig: {quote} < {MIN_QUOTE} – übersprungen")
+                    # Quoten-Details (beste Quote + Bookmaker-Anzahl)
+                    qd      = get_quote_details(home, away)
+                    quote   = qd["quote"]
+                    bm_anz  = qd["bookmaker_anzahl"]
+                    # Mindest-Liquidität: mind. MIN_BOOKMAKER_ANZAHL Bookmaker
+                    if bm_anz > 0 and bm_anz < MIN_BOOKMAKER_ANZAHL:
+                        print(f"  [Ecken-Bot] Zu wenig Bookmaker ({bm_anz}) – übersprungen")
                         continue
-                    # Wetter-Anpassung: bei schlechtem Wetter Grenze erhöhen
-                    wetter_bonus = 1 if schlechtes_wetter(country) else 0
+                    if quote and quote < MIN_QUOTE:
+                        print(f"  [Ecken-Bot] Quote zu niedrig: {quote} – übersprungen")
+                        continue
+                    # Gegentipp-Schutz
+                    if not gegentipp_check(match_id, "ecken", "unter", "Ecken-Bot"):
+                        continue
+                    # Wetter-Anpassung
+                    schlecht = schlechtes_wetter(country)
+                    wetter_bonus = 1 if schlecht else 0
                     grenze = corners * 2 + 3 + wetter_bonus
                     # Ecken-Durchschnitt Check
                     if not ecken_tipp_sinnvoll(game, grenze):
-                        print(f"  [Ecken-Bot] Durchschnitt zu hoch – Tipp nicht sinnvoll, übersprungen")
+                        print(f"  [Ecken-Bot] Durchschnitt passt nicht – übersprungen")
                         continue
+                    konfidenz = berechne_konfidenz("ecken", comp, quote,
+                        wetter_schlecht=schlecht, bookmaker_anzahl=bm_anz)
                     einsatz = kelly_einsatz(quote, "ecken") if quote else EINSATZ
+                    einsatz = kelly_einsatz(quote, "ecken") if quote else EINSATZ
+                    ke    = konfidenz_emoji(konfidenz)
                     ql    = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
-                    msg   = (f"📐 <b>Ecken Tipp!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                    msg   = (f"📐 <b>Ecken Tipp!</b> {ke} Konfidenz: <b>{konfidenz}/10</b>\n\n━━━━━━━━━━━━━━━━━━━━\n"
                              f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
                              f"📊 Stand: <b>{score}</b>\n"
                              f"🔵 {home}: <b>{corners_home}</b> | 🔴 {away}: <b>{corners_away}</b>\n"
@@ -1157,7 +1490,8 @@ def bot_ecken():
                         "webhook": DISCORD_WEBHOOK_ECKEN
                     }
                     signal_eintragen(match_id, "ecken", home, away, comp, corners, grenze, quote, einsatz)
-                    print(f"  [Ecken-Bot] OK: {home} vs {away} ({corners} Ecken | Grenze: {grenze} | Einsatz: {einsatz}€)")
+                    gegentipp_registrieren(match_id, "ecken", "unter", "Ecken-Bot")
+                    print(f"  [Ecken-Bot] OK: {home} vs {away} ({corners} Ecken | Grenze: {grenze} | K:{konfidenz}/10)")
                 time.sleep(0.5)
             bot_fehler_reset("Ecken-Bot")
         except Exception as e:
@@ -1625,6 +1959,176 @@ def bot_rotkarte():
             bot_fehler_melden("Rotkarte-Bot", e)
         time.sleep(FUSSBALL_INTERVAL * 60)
 
+def bot_hz1tore():
+    """Analysiert H2H-Daten beim Spielstart und tippt auf HZ1-Tore."""
+    print(f"[HZ1-Tore-Bot] Gestartet | H2H-Analyse bis Minute {H2H_SIGNAL_BIS_MIN}")
+    while True:
+        try:
+            matches = get_live_matches()
+            frisch  = [m for m in matches
+                       if m.get("status") == "IN PLAY"
+                       and 1 <= _safe_int(m.get("time", 0)) <= H2H_SIGNAL_BIS_MIN]
+            print(f"[{jetzt()}] [HZ1-Tore-Bot] {len(frisch)} Spiele in Min. 1-{H2H_SIGNAL_BIS_MIN}")
+            for game in frisch:
+                match_id = str(game.get("id"))
+                if match_id in notified_hz1tore:
+                    continue
+                if not tipp_erlaubt(match_id, "HZ1-Tore-Bot"):
+                    continue
+                home    = game.get("home", {}).get("name", "?")
+                away    = game.get("away", {}).get("name", "?")
+                comp    = game.get("competition", {}).get("name", "?")
+                country = (game.get("country") or {}).get("name", "International")
+                minute  = game.get("time", "?")
+                if not liga_erlaubt(comp):
+                    continue
+                # Team-IDs holen
+                home_id = str((game.get("home") or {}).get("id", ""))
+                away_id = str((game.get("away") or {}).get("id", ""))
+                if not home_id or not away_id:
+                    continue
+                # H2H-Daten laden
+                h2h = get_h2h_daten(home_id, away_id)
+                ana = analysiere_h2h_tore(h2h)
+                if not ana or ana["avg_hz1"] is None:
+                    print(f"  [HZ1-Tore-Bot] Zu wenig H2H-Daten für {home} vs {away}")
+                    continue
+                # Tipp bestimmen
+                tipp = tipp_aus_avg(ana["avg_hz1"], HZ1_UEBER_GRENZE, HZ1_UNTER_GRENZE)
+                if not tipp:
+                    print(f"  [HZ1-Tore-Bot] kein klarer Tipp – übersprungen")
+                    continue
+                richtung, linie = tipp
+                # Gegentipp-Schutz
+                if not gegentipp_check(match_id, "hz1tore", richtung, "HZ1-Tore-Bot"):
+                    continue
+                # Saisonform muss mit H2H übereinstimmen
+                form_ok = form_stimmt_ueberein(home_id, away_id, ana["avg_hz1"], richtung)
+                # Quoten-Details
+                qd      = get_quote_details(home, away)
+                quote   = qd["quote"]
+                bm_anz  = qd["bookmaker_anzahl"]
+                if bm_anz > 0 and bm_anz < MIN_BOOKMAKER_ANZAHL:
+                    continue
+                if quote and quote < MIN_QUOTE:
+                    continue
+                einsatz   = kelly_einsatz(quote, "hz1tore") if quote else EINSATZ
+                konfidenz = berechne_konfidenz("hz1tore", comp, quote,
+                    h2h_spiele=ana["hz1_spiele"], bookmaker_anzahl=bm_anz,
+                    form_uebereinstimmung=form_ok)
+                ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
+                msg     = (f"🥅 <b>HZ1-Tore Signal!</b> {konfidenz_emoji(konfidenz)} Konfidenz: <b>{konfidenz}/10</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                           f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
+                           f"⏱️ Minute: <b>{minute}'</b>\n"
+                           f"━━━━━━━━━━━━━━━━━━━━\n"
+                           f"📊 H2H: <b>{ana['hz1_spiele']}</b> Spiele analysiert\n"
+                           f"📈 Ø HZ1-Tore: <b>{ana['avg_hz1']}</b>\n"
+                           f"🎯 Tipp: {richtung.capitalize()} <b>{linie}</b> Tore (HZ1){ql}\n"
+                           f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
+                send_telegram(msg)
+                send_discord_embed(DISCORD_WEBHOOK_HZ1TORE,
+                    discord_hz1tore_tipp(home, away, comp, country, richtung, linie,
+                                         ana["avg_hz1"], ana["hz1_spiele"], quote))
+                notified_hz1tore.add(match_id)
+                beobachtete_spiele[match_id] = {
+                    "typ": "hz1tore", "match_id": match_id,
+                    "home": home, "away": away, "liga": comp,
+                    "richtung": richtung, "linie": linie,
+                    "quote": quote, "einsatz": einsatz,
+                    "webhook": DISCORD_WEBHOOK_HZ1TORE
+                }
+                signal_eintragen(match_id, "hz1tore", home, away, comp,
+                                  ana["avg_hz1"], linie, quote, einsatz)
+                gegentipp_registrieren(match_id, "hz1tore", richtung, "HZ1-Tore-Bot")
+                print(f"  [HZ1-Tore-Bot] OK: {home} vs {away} | {richtung} {linie} (Ø {ana['avg_hz1']})")
+                time.sleep(0.5)
+            bot_fehler_reset("HZ1-Tore-Bot")
+        except Exception as e:
+            bot_fehler_melden("HZ1-Tore-Bot", e)
+        time.sleep(FUSSBALL_INTERVAL * 60)
+
+def bot_vztore():
+    """Analysiert H2H-Daten beim Spielstart und tippt auf Vollzeit-Tore."""
+    print(f"[VZ-Tore-Bot] Gestartet | H2H-Analyse bis Minute {H2H_SIGNAL_BIS_MIN}")
+    while True:
+        try:
+            matches = get_live_matches()
+            frisch  = [m for m in matches
+                       if m.get("status") == "IN PLAY"
+                       and 1 <= _safe_int(m.get("time", 0)) <= H2H_SIGNAL_BIS_MIN]
+            print(f"[{jetzt()}] [VZ-Tore-Bot] {len(frisch)} Spiele in Min. 1-{H2H_SIGNAL_BIS_MIN}")
+            for game in frisch:
+                match_id = str(game.get("id"))
+                if match_id in notified_vztore:
+                    continue
+                if not tipp_erlaubt(match_id, "VZ-Tore-Bot"):
+                    continue
+                home    = game.get("home", {}).get("name", "?")
+                away    = game.get("away", {}).get("name", "?")
+                comp    = game.get("competition", {}).get("name", "?")
+                country = (game.get("country") or {}).get("name", "International")
+                minute  = game.get("time", "?")
+                if not liga_erlaubt(comp):
+                    continue
+                home_id = str((game.get("home") or {}).get("id", ""))
+                away_id = str((game.get("away") or {}).get("id", ""))
+                if not home_id or not away_id:
+                    continue
+                h2h = get_h2h_daten(home_id, away_id)
+                ana = analysiere_h2h_tore(h2h)
+                if not ana:
+                    print(f"  [VZ-Tore-Bot] Zu wenig H2H-Daten für {home} vs {away}")
+                    continue
+                tipp = tipp_aus_avg(ana["avg_vz"], VZ_UEBER_GRENZE, VZ_UNTER_GRENZE)
+                if not tipp:
+                    print(f"  [VZ-Tore-Bot] kein klarer Tipp – übersprungen")
+                    continue
+                richtung, linie = tipp
+                if not gegentipp_check(match_id, "vztore", richtung, "VZ-Tore-Bot"):
+                    continue
+                form_ok   = form_stimmt_ueberein(home_id, away_id, ana["avg_vz"], richtung)
+                qd        = get_quote_details(home, away)
+                quote     = qd["quote"]
+                bm_anz    = qd["bookmaker_anzahl"]
+                if bm_anz > 0 and bm_anz < MIN_BOOKMAKER_ANZAHL:
+                    continue
+                if quote and quote < MIN_QUOTE:
+                    continue
+                einsatz   = kelly_einsatz(quote, "vztore") if quote else EINSATZ
+                konfidenz = berechne_konfidenz("vztore", comp, quote,
+                    h2h_spiele=ana["spiele"], bookmaker_anzahl=bm_anz,
+                    form_uebereinstimmung=form_ok)
+                ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
+                msg     = (f"🏆 <b>Vollzeit-Tore Signal!</b> {konfidenz_emoji(konfidenz)} Konfidenz: <b>{konfidenz}/10</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                           f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
+                           f"⏱️ Minute: <b>{minute}'</b>\n"
+                           f"━━━━━━━━━━━━━━━━━━━━\n"
+                           f"📊 H2H: <b>{ana['spiele']}</b> Spiele analysiert\n"
+                           f"📈 Ø VZ-Tore: <b>{ana['avg_vz']}</b>\n"
+                           f"🎯 Tipp: {richtung.capitalize()} <b>{linie}</b> Tore (VZ){ql}\n"
+                           f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
+                send_telegram(msg)
+                send_discord_embed(DISCORD_WEBHOOK_VZTORE,
+                    discord_vztore_tipp(home, away, comp, country, richtung, linie,
+                                        ana["avg_vz"], ana["spiele"], quote))
+                notified_vztore.add(match_id)
+                beobachtete_spiele[match_id] = {
+                    "typ": "vztore", "match_id": match_id,
+                    "home": home, "away": away, "liga": comp,
+                    "richtung": richtung, "linie": linie,
+                    "quote": quote, "einsatz": einsatz,
+                    "webhook": DISCORD_WEBHOOK_VZTORE
+                }
+                signal_eintragen(match_id, "vztore", home, away, comp,
+                                  ana["avg_vz"], linie, quote, einsatz)
+                gegentipp_registrieren(match_id, "vztore", richtung, "VZ-Tore-Bot")
+                print(f"  [VZ-Tore-Bot] OK: {home} vs {away} | {richtung} {linie} (Ø {ana['avg_vz']})")
+                time.sleep(0.5)
+            bot_fehler_reset("VZ-Tore-Bot")
+        except Exception as e:
+            bot_fehler_melden("VZ-Tore-Bot", e)
+        time.sleep(FUSSBALL_INTERVAL * 60)
+
 # ============================================================
 #  WATCHDOG
 # ============================================================
@@ -1659,8 +2163,8 @@ def bot_watchdog():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v23")
-    print("  Liga-Filter · Ecken-Durchschnitt Check")
+    print("  ⚽ FUSSBALL BOTS v25")
+    print("  Konfidenz · Gegentipp · CLV · Quoten-Validierung")
     print("=" * 50 + "\n")
 
     statistik_laden()
@@ -1674,6 +2178,8 @@ if __name__ == "__main__":
         ("Comeback-Bot",     bot_comeback),
         ("Torflut-Bot",      bot_torflut),
         ("Rotkarte-Bot",     bot_rotkarte),
+        ("HZ1-Tore-Bot",    bot_hz1tore),
+        ("VZ-Tore-Bot",     bot_vztore),
         ("Auswertung-Bot",   bot_auswertung_und_berichte),
     ]
 
