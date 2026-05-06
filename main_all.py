@@ -187,7 +187,13 @@ def ls_get_statistiken(match_id):
 def ls_get_events(match_id):
     params = {**LS_AUTH, "id": match_id}
     resp   = api_get_with_retry(f"{LS_BASE}/matches/events.json", params)
-    return resp.json().get("data", {}).get("event", []) or []
+    events = resp.json().get("data", {}).get("event", []) or []
+    # DEBUG: Ersten Event ausgeben um Feldnamen zu prüfen
+    if events:
+        print(f"  [Events-Debug] Match {match_id} | Beispiel-Event: {events[0]}")
+    else:
+        print(f"  [Events-Debug] Match {match_id} | Keine Events gefunden")
+    return events
 
 def get_live_matches():
     global _cache_matches, _cache_timestamp
@@ -414,7 +420,7 @@ def send_wochenbericht():
 def auswertung_ecken(spiel):
     match_id  = spiel["match_id"]
     hz1_ecken = spiel["hz1_ecken"]
-    grenze    = hz1_ecken * 2 + 2
+    grenze    = hz1_ecken * 2 + 3
     home      = spiel["home"]
     away      = spiel["away"]
     quote     = spiel.get("quote")
@@ -581,7 +587,7 @@ def bot_auswertung_und_berichte():
                             gewonnen = "GEWONNEN" in msg
                             if typ in ("ecken", "ecken_over"):
                                 hz1 = spiel["hz1_ecken"]
-                                grenze = hz1 * 2 + 2 if typ == "ecken" else 14
+                                grenze = hz1 * 2 + 3 if typ == "ecken" else 14
                                 total = re.search(r"Tatsächlich.*?(\d+)", msg)
                                 total_val = total.group(1) if total else "?"
                                 details = {
@@ -635,7 +641,7 @@ def bot_ecken():
                 comp         = game.get("competition", {}).get("name", "?")
                 country      = (game.get("country") or {}).get("name", "International")
                 score        = game.get("scores", {}).get("score", "?")
-                grenze       = corners * 2 + 2
+                grenze       = corners * 2 + 3
 
                 if corners == 0:
                     continue
