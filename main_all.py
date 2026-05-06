@@ -560,7 +560,8 @@ def get_h2h_daten(team1_id: str, team2_id: str) -> list:
         resp    = api_get_with_retry(f"{LS_BASE}/matches/h2h.json", params)
         matches = resp.json().get("data", {}).get("match", []) or []
         _h2h_cache[key] = {"data": matches, "ts": now}
-        print(f"  [H2H] {team1_id} vs {team2_id}: {len(matches)} Spiele gefunden")
+        if len(matches) > 0:
+            print(f"  [H2H] {team1_id} vs {team2_id}: {len(matches)} Spiele gefunden")
         return matches
     except Exception as e:
         print(f"  [H2H] Fehler: {e}")
@@ -857,7 +858,6 @@ def dynamischer_sleep(matches: list = None):
         for m in (matches or []):
             minute = _safe_int(m.get("time", 0))
             if 43 <= minute <= 47 or 87 <= minute <= 93:
-                print(f"  [Intervall] Kritische Minute {minute}' – prüfe in 60s")
                 time.sleep(60)
                 return
     except:
@@ -1825,8 +1825,9 @@ def bot_torwart():
     while True:
         try:
             matches = get_live_matches()
-            aktiv   = [m for m in matches if m.get("status") in ("IN PLAY", "ADDED TIME", "HALF TIME BREAK")]
-            print(f"[{jetzt()}] [Torwart-Bot] {len(aktiv)} aktive Spiele")
+            aktiv   = [m for m in matches if m.get("status") in ("IN PLAY", "ADDED TIME", "HALF TIME BREAK")
+                       and (_safe_int(m.get("time", 0)) >= 20 or m.get("status") == "HALF TIME BREAK")]
+            print(f"[{jetzt()}] [Torwart-Bot] {len(aktiv)} aktive Spiele (ab Min. 20)")
             for game in aktiv:
                 match_id = str(game.get("id"))
                 if match_id in notified_torwart:
@@ -1844,7 +1845,8 @@ def bot_torwart():
                 shots_away = stats["shots_on_target_away"]
                 shots_ges  = shots_home + shots_away
                 if shots_ges < MIN_SHOTS_ON_TARGET:
-                    print(f"  [Torwart-Bot] {home} vs {away} | Schüsse: {shots_ges}/{MIN_SHOTS_ON_TARGET} (API hat {'keine Daten' if shots_ges == 0 else 'zu wenig'})")
+                    if shots_ges > 0:  # nur loggen wenn Daten da aber zu wenig
+                        print(f"  [Torwart-Bot] {home} vs {away} | Schüsse: {shots_ges}/{MIN_SHOTS_ON_TARGET} (zu wenig)")
                     continue
                 if not tipp_erlaubt(match_id, "Torwart-Bot"):
                     continue
@@ -1939,8 +1941,6 @@ def bot_druck():
                     fk_stark     = f_away
                     fk_schwach   = f_home
                 if not druck_team:
-                    if gesamt_ecken >= MIN_DRUCK_ECKEN:
-                        print(f"  [Druck-Bot] {game.get('home',{}).get('name','?')} | Kein dominantes Team (Ecken: {c_home}:{c_away})")
                     continue
                 if not tipp_erlaubt(match_id, "Druck-Bot"):
                     continue
@@ -2226,8 +2226,7 @@ def bot_tore_analyse():
                 h2h = get_h2h_daten(home_id, away_id)
                 ana = analysiere_h2h_tore(h2h)
                 if not ana:
-                    print(f"  [Tore-Bot] Zu wenig H2H-Daten für {home} vs {away}")
-                    continue
+                    continue  # Kein H2H → still überspringen
 
                 qd     = get_quote_details(home, away)
                 quote  = qd["quote"]
@@ -2326,299 +2325,6 @@ def bot_tore_analyse():
 
 _bot_targets = {}  # thread_name → target_function (wird beim Start befüllt)
 
-def bot_watchdog():
-    while True:
-        try:
-            matches = get_live_matches()
-            frisch  = [m for m in matches
-                       if m.get("status") == "IN PLAY"
-                       and 1 <= _safe_int(m.get("time", 0)) <= H2H_SIGNAL_BIS_MIN]
-            print(f"[{jetzt()}] [HZ1-Tore-Bot] {len(frisch)} Spiele in Min. 1-{H2H_SIGNAL_BIS_MIN}")
-            for game in frisch:
-                match_id = str(game.get("id"))
-                if match_id in notified_hz1tore:
-                    continue
-                if not tipp_erlaubt(match_id, "HZ1-Tore-Bot"):
-                    continue
-                home    = game.get("home", {}).get("name", "?")
-                away    = game.get("away", {}).get("name", "?")
-                comp    = game.get("competition", {}).get("name", "?")
-                country = (game.get("country") or {}).get("name", "International")
-                minute  = game.get("time", "?")
-                if not liga_erlaubt(comp):
-                    continue
-                # Team-IDs holen
-                home_id = str((game.get("home") or {}).get("id", ""))
-                away_id = str((game.get("away") or {}).get("id", ""))
-                if not home_id or not away_id:
-                    continue
-                # H2H-Daten laden
-                h2h = get_h2h_daten(home_id, away_id)
-                ana = analysiere_h2h_tore(h2h)
-                if not ana or ana["avg_hz1"] is None:
-                    print(f"  [HZ1-Tore-Bot] Zu wenig H2H-Daten für {home} vs {away}")
-                    continue
-                # Tipp bestimmen
-                tipp = tipp_aus_avg(ana["avg_hz1"], HZ1_UEBER_GRENZE, HZ1_UNTER_GRENZE)
-                if not tipp:
-                    print(f"  [HZ1-Tore-Bot] kein klarer Tipp – übersprungen")
-                    continue
-                richtung, linie = tipp
-                # Gegentipp-Schutz
-                if not gegentipp_check(match_id, "hz1tore", richtung, "HZ1-Tore-Bot"):
-                    continue
-                # Saisonform muss mit H2H übereinstimmen
-                form_ok = form_stimmt_ueberein(home_id, away_id, ana["avg_hz1"], richtung)
-                # Quoten-Details
-                qd      = get_quote_details(home, away)
-                quote   = qd["quote"]
-                bm_anz  = qd["bookmaker_anzahl"]
-                if bm_anz > 0 and bm_anz < MIN_BOOKMAKER_ANZAHL:
-                    continue
-                if quote and quote < MIN_QUOTE:
-                    continue
-                einsatz   = kelly_einsatz(quote, "hz1tore") if quote else EINSATZ
-                konfidenz = berechne_konfidenz("hz1tore", comp, quote,
-                    h2h_spiele=ana["hz1_spiele"], bookmaker_anzahl=bm_anz,
-                    form_uebereinstimmung=form_ok)
-                # Claude Review
-                analyse_hz1 = f"H2H Ø HZ1-Tore: {ana['avg_hz1']} ({ana['hz1_spiele']} Spiele)\nTipp: {richtung} {linie} Tore"
-                cl_ok_hz1, cl_text_hz1 = claude_tipp_review(home, away, "hz1tore", analyse_hz1)
-                if not cl_ok_hz1:
-                    konfidenz = max(1, konfidenz - 2)
-                cl_hz1  = f"\n🤖 Claude: <b>{cl_text_hz1}</b>" if cl_text_hz1 else ""
-                ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
-                msg     = (f"🥅 <b>HZ1-Tore Signal!</b> {konfidenz_emoji(konfidenz)} Konfidenz: <b>{konfidenz}/10</b>\n━━━━━━━━━━━━━━━━━━━━\n"
-                           f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
-                           f"⏱️ Minute: <b>{minute}'</b>\n"
-                           f"━━━━━━━━━━━━━━━━━━━━\n"
-                           f"📊 H2H: <b>{ana['hz1_spiele']}</b> Spiele analysiert\n"
-                           f"📈 Ø HZ1-Tore: <b>{ana['avg_hz1']}</b>\n"
-                           f"🎯 Tipp: {richtung.capitalize()} <b>{linie}</b> Tore (HZ1){ql}{cl_hz1}\n"
-                           f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
-                send_telegram(msg)
-                send_discord_embed(DISCORD_WEBHOOK_HZ1TORE,
-                    discord_hz1tore_tipp(home, away, comp, country, richtung, linie,
-                                         ana["avg_hz1"], ana["hz1_spiele"], quote))
-                notified_hz1tore.add(match_id)
-                beobachtete_spiele[match_id] = {
-                    "typ": "hz1tore", "match_id": match_id,
-                    "home": home, "away": away, "liga": comp,
-                    "richtung": richtung, "linie": linie,
-                    "quote": quote, "einsatz": einsatz,
-                    "webhook": DISCORD_WEBHOOK_HZ1TORE
-                ,
-                        "signal_zeit": time.time()
-                    }
-                signal_eintragen(match_id, "hz1tore", home, away, comp,
-                                  ana["avg_hz1"], linie, quote, einsatz)
-                gegentipp_registrieren(match_id, "hz1tore", richtung, "HZ1-Tore-Bot")
-                print(f"  [HZ1-Tore-Bot] OK: {home} vs {away} | {richtung} {linie} (Ø {ana['avg_hz1']})")
-                time.sleep(0.5)
-            bot_fehler_reset("HZ1-Tore-Bot")
-        except Exception as e:
-            bot_fehler_melden("HZ1-Tore-Bot", e)
-        try:
-            dynamischer_sleep(get_live_matches())
-        except:
-            time.sleep(FUSSBALL_INTERVAL * 60)
-
-# ============================================================
-#  WATCHDOG
-# ============================================================
-
-_bot_targets = {}  # thread_name → target_function (wird beim Start befüllt)
-
-def bot_watchdog():
-    while True:
-        try:
-            matches = get_live_matches()
-            frisch  = [m for m in matches
-                       if m.get("status") == "IN PLAY"
-                       and 1 <= _safe_int(m.get("time", 0)) <= H2H_SIGNAL_BIS_MIN]
-            print(f"[{jetzt()}] [HZ1-Tore-Bot] {len(frisch)} Spiele in Min. 1-{H2H_SIGNAL_BIS_MIN}")
-            for game in frisch:
-                match_id = str(game.get("id"))
-                if match_id in notified_hz1tore:
-                    continue
-                if not tipp_erlaubt(match_id, "HZ1-Tore-Bot"):
-                    continue
-                home    = game.get("home", {}).get("name", "?")
-                away    = game.get("away", {}).get("name", "?")
-                comp    = game.get("competition", {}).get("name", "?")
-                country = (game.get("country") or {}).get("name", "International")
-                minute  = game.get("time", "?")
-                if not liga_erlaubt(comp):
-                    continue
-                # Team-IDs holen
-                home_id = str((game.get("home") or {}).get("id", ""))
-                away_id = str((game.get("away") or {}).get("id", ""))
-                if not home_id or not away_id:
-                    continue
-                # H2H-Daten laden
-                h2h = get_h2h_daten(home_id, away_id)
-                ana = analysiere_h2h_tore(h2h)
-                if not ana or ana["avg_hz1"] is None:
-                    print(f"  [HZ1-Tore-Bot] Zu wenig H2H-Daten für {home} vs {away}")
-                    continue
-                # Tipp bestimmen
-                tipp = tipp_aus_avg(ana["avg_hz1"], HZ1_UEBER_GRENZE, HZ1_UNTER_GRENZE)
-                if not tipp:
-                    print(f"  [HZ1-Tore-Bot] kein klarer Tipp – übersprungen")
-                    continue
-                richtung, linie = tipp
-                # Gegentipp-Schutz
-                if not gegentipp_check(match_id, "hz1tore", richtung, "HZ1-Tore-Bot"):
-                    continue
-                # Saisonform muss mit H2H übereinstimmen
-                form_ok = form_stimmt_ueberein(home_id, away_id, ana["avg_hz1"], richtung)
-                # Quoten-Details
-                qd      = get_quote_details(home, away)
-                quote   = qd["quote"]
-                bm_anz  = qd["bookmaker_anzahl"]
-                if bm_anz > 0 and bm_anz < MIN_BOOKMAKER_ANZAHL:
-                    continue
-                if quote and quote < MIN_QUOTE:
-                    continue
-                einsatz   = kelly_einsatz(quote, "hz1tore") if quote else EINSATZ
-                konfidenz = berechne_konfidenz("hz1tore", comp, quote,
-                    h2h_spiele=ana["hz1_spiele"], bookmaker_anzahl=bm_anz,
-                    form_uebereinstimmung=form_ok)
-                # Claude Review
-                analyse_hz1 = f"H2H Ø HZ1-Tore: {ana['avg_hz1']} ({ana['hz1_spiele']} Spiele)\nTipp: {richtung} {linie} Tore"
-                cl_ok_hz1, cl_text_hz1 = claude_tipp_review(home, away, "hz1tore", analyse_hz1)
-                if not cl_ok_hz1:
-                    konfidenz = max(1, konfidenz - 2)
-                cl_hz1  = f"\n🤖 Claude: <b>{cl_text_hz1}</b>" if cl_text_hz1 else ""
-                ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
-                msg     = (f"🥅 <b>HZ1-Tore Signal!</b> {konfidenz_emoji(konfidenz)} Konfidenz: <b>{konfidenz}/10</b>\n━━━━━━━━━━━━━━━━━━━━\n"
-                           f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
-                           f"⏱️ Minute: <b>{minute}'</b>\n"
-                           f"━━━━━━━━━━━━━━━━━━━━\n"
-                           f"📊 H2H: <b>{ana['hz1_spiele']}</b> Spiele analysiert\n"
-                           f"📈 Ø HZ1-Tore: <b>{ana['avg_hz1']}</b>\n"
-                           f"🎯 Tipp: {richtung.capitalize()} <b>{linie}</b> Tore (HZ1){ql}{cl_hz1}\n"
-                           f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
-                send_telegram(msg)
-                send_discord_embed(DISCORD_WEBHOOK_HZ1TORE,
-                    discord_hz1tore_tipp(home, away, comp, country, richtung, linie,
-                                         ana["avg_hz1"], ana["hz1_spiele"], quote))
-                notified_hz1tore.add(match_id)
-                beobachtete_spiele[match_id] = {
-                    "typ": "hz1tore", "match_id": match_id,
-                    "home": home, "away": away, "liga": comp,
-                    "richtung": richtung, "linie": linie,
-                    "quote": quote, "einsatz": einsatz,
-                    "webhook": DISCORD_WEBHOOK_HZ1TORE
-                ,
-                        "signal_zeit": time.time()
-                    }
-                signal_eintragen(match_id, "hz1tore", home, away, comp,
-                                  ana["avg_hz1"], linie, quote, einsatz)
-                gegentipp_registrieren(match_id, "hz1tore", richtung, "HZ1-Tore-Bot")
-                print(f"  [HZ1-Tore-Bot] OK: {home} vs {away} | {richtung} {linie} (Ø {ana['avg_hz1']})")
-                time.sleep(0.5)
-            bot_fehler_reset("HZ1-Tore-Bot")
-        except Exception as e:
-            bot_fehler_melden("HZ1-Tore-Bot", e)
-        try:
-            dynamischer_sleep(get_live_matches())
-        except:
-            time.sleep(FUSSBALL_INTERVAL * 60)
-
-def bot_vztore():
-    """Analysiert H2H-Daten beim Spielstart und tippt auf Vollzeit-Tore."""
-    print(f"[VZ-Tore-Bot] Gestartet | H2H-Analyse bis Minute {H2H_SIGNAL_BIS_MIN}")
-    while True:
-        try:
-            matches = get_live_matches()
-            frisch  = [m for m in matches
-                       if m.get("status") == "IN PLAY"
-                       and 1 <= _safe_int(m.get("time", 0)) <= H2H_SIGNAL_BIS_MIN]
-            print(f"[{jetzt()}] [VZ-Tore-Bot] {len(frisch)} Spiele in Min. 1-{H2H_SIGNAL_BIS_MIN}")
-            for game in frisch:
-                match_id = str(game.get("id"))
-                if match_id in notified_vztore:
-                    continue
-                if not tipp_erlaubt(match_id, "VZ-Tore-Bot"):
-                    continue
-                home    = game.get("home", {}).get("name", "?")
-                away    = game.get("away", {}).get("name", "?")
-                comp    = game.get("competition", {}).get("name", "?")
-                country = (game.get("country") or {}).get("name", "International")
-                minute  = game.get("time", "?")
-                if not liga_erlaubt(comp):
-                    continue
-                home_id = str((game.get("home") or {}).get("id", ""))
-                away_id = str((game.get("away") or {}).get("id", ""))
-                if not home_id or not away_id:
-                    continue
-                h2h = get_h2h_daten(home_id, away_id)
-                ana = analysiere_h2h_tore(h2h)
-                if not ana:
-                    print(f"  [VZ-Tore-Bot] Zu wenig H2H-Daten für {home} vs {away}")
-                    continue
-                tipp = tipp_aus_avg(ana["avg_vz"], VZ_UEBER_GRENZE, VZ_UNTER_GRENZE)
-                if not tipp:
-                    print(f"  [VZ-Tore-Bot] kein klarer Tipp – übersprungen")
-                    continue
-                richtung, linie = tipp
-                if not gegentipp_check(match_id, "vztore", richtung, "VZ-Tore-Bot"):
-                    continue
-                form_ok   = form_stimmt_ueberein(home_id, away_id, ana["avg_vz"], richtung)
-                qd        = get_quote_details(home, away)
-                quote     = qd["quote"]
-                bm_anz    = qd["bookmaker_anzahl"]
-                if bm_anz > 0 and bm_anz < MIN_BOOKMAKER_ANZAHL:
-                    continue
-                if quote and quote < MIN_QUOTE:
-                    continue
-                einsatz   = kelly_einsatz(quote, "vztore") if quote else EINSATZ
-                konfidenz = berechne_konfidenz("vztore", comp, quote,
-                    h2h_spiele=ana["spiele"], bookmaker_anzahl=bm_anz,
-                    form_uebereinstimmung=form_ok)
-                # Claude Review
-                analyse_vz = f"H2H Ø VZ-Tore: {ana['avg_vz']} ({ana['spiele']} Spiele)\nTipp: {richtung} {linie} Tore"
-                cl_ok_vz, cl_text_vz = claude_tipp_review(home, away, "vztore", analyse_vz)
-                if not cl_ok_vz:
-                    konfidenz = max(1, konfidenz - 2)
-                cl_vz   = f"\n🤖 Claude: <b>{cl_text_vz}</b>" if cl_text_vz else ""
-                ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
-                msg     = (f"🏆 <b>Vollzeit-Tore Signal!</b> {konfidenz_emoji(konfidenz)} Konfidenz: <b>{konfidenz}/10</b>\n━━━━━━━━━━━━━━━━━━━━\n"
-                           f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
-                           f"⏱️ Minute: <b>{minute}'</b>\n"
-                           f"━━━━━━━━━━━━━━━━━━━━\n"
-                           f"📊 H2H: <b>{ana['spiele']}</b> Spiele analysiert\n"
-                           f"📈 Ø VZ-Tore: <b>{ana['avg_vz']}</b>\n"
-                           f"🎯 Tipp: {richtung.capitalize()} <b>{linie}</b> Tore (VZ){ql}{cl_vz}\n"
-                           f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
-                send_telegram(msg)
-                send_discord_embed(DISCORD_WEBHOOK_VZTORE,
-                    discord_vztore_tipp(home, away, comp, country, richtung, linie,
-                                        ana["avg_vz"], ana["spiele"], quote))
-                notified_vztore.add(match_id)
-                beobachtete_spiele[match_id] = {
-                    "typ": "vztore", "match_id": match_id,
-                    "home": home, "away": away, "liga": comp,
-                    "richtung": richtung, "linie": linie,
-                    "quote": quote, "einsatz": einsatz,
-                    "webhook": DISCORD_WEBHOOK_VZTORE
-                ,
-                        "signal_zeit": time.time()
-                    }
-                signal_eintragen(match_id, "vztore", home, away, comp,
-                                  ana["avg_vz"], linie, quote, einsatz)
-                gegentipp_registrieren(match_id, "vztore", richtung, "VZ-Tore-Bot")
-                print(f"  [VZ-Tore-Bot] OK: {home} vs {away} | {richtung} {linie} (Ø {ana['avg_vz']})")
-                time.sleep(0.5)
-            bot_fehler_reset("VZ-Tore-Bot")
-        except Exception as e:
-            bot_fehler_melden("VZ-Tore-Bot", e)
-        try:
-            dynamischer_sleep(get_live_matches())
-        except:
-            time.sleep(FUSSBALL_INTERVAL * 60)
-
 # ============================================================
 #  WATCHDOG
 # ============================================================
@@ -2668,7 +2374,7 @@ if __name__ == "__main__":
         ("Comeback-Bot",     bot_comeback),
         ("Torflut-Bot",      bot_torflut),
         ("Rotkarte-Bot",     bot_rotkarte),
-        ("Tore-Bot",        bot_tore_analyse),
+        ("Tore-Bot",         bot_tore_analyse),
         ("Auswertung-Bot",   bot_auswertung_und_berichte),
     ]
 
