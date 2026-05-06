@@ -19,12 +19,12 @@ DISCORD_WEBHOOK_KARTEN    = "https://discord.com/api/webhooks/150125054278828045
 DISCORD_WEBHOOK_TORWART   = "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1"
 DISCORD_WEBHOOK_BILANZ    = "https://discord.com/api/webhooks/1501251926564667564/fdBE4jOLislDfwpMs2cUURm_4_YzfATKWFmaOjRNEXulHCJu1DB-lUBLqLmm73l-HQ4v"
 # Neue Webhooks – bitte in Discord erstellen und hier eintragen:
-DISCORD_WEBHOOK_DRUCK     = "DISCORD_WEBHOOK_DRUCK_HIER_EINTRAGEN"
-DISCORD_WEBHOOK_COMEBACK  = "DISCORD_WEBHOOK_COMEBACK_HIER_EINTRAGEN"
-DISCORD_WEBHOOK_TORFLUT   = "DISCORD_WEBHOOK_TORFLUT_HIER_EINTRAGEN"
-DISCORD_WEBHOOK_ROTKARTE  = "DISCORD_WEBHOOK_ROTKARTE_HIER_EINTRAGEN"
-DISCORD_WEBHOOK_HZ1TORE  = "DISCORD_WEBHOOK_HZ1TORE_HIER_EINTRAGEN"
-DISCORD_WEBHOOK_VZTORE   = "DISCORD_WEBHOOK_VZTORE_HIER_EINTRAGEN"
+DISCORD_WEBHOOK_DRUCK     = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
+DISCORD_WEBHOOK_COMEBACK  = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
+DISCORD_WEBHOOK_TORFLUT   = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
+DISCORD_WEBHOOK_ROTKARTE  = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
+DISCORD_WEBHOOK_HZ1TORE  = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
+DISCORD_WEBHOOK_VZTORE   = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
 
 ODDS_API_KEY       = "866948de5d6c34ca51faf6bd77e0bb2a"
 ANTHROPIC_API_KEY  = "ANTHROPIC_API_KEY_HIER_EINTRAGEN"  # claude.ai → API Keys
@@ -68,7 +68,7 @@ VZ_UEBER_GRENZE      = 2.7   # avg VZ-Tore > dieser Wert → Tipp Über 2.5
 VZ_UNTER_GRENZE      = 1.8   # avg VZ-Tore < dieser Wert → Tipp Unter 1.5
 
 # Quoten-Validierung & Closing Line Value
-MIN_BOOKMAKER_ANZAHL = 2     # Mindest-Bookmaker die Quote anbieten müssen
+MIN_BOOKMAKER_ANZAHL = 0     # 0 = deaktiviert (viele kleine Ligen haben keine Odds)
 CLV_WARNSCHWELLE     = 0.05  # Wenn Schlusskurs >5% tiefer als Einstieg → CLV negativ
 
 # Neue Parameter
@@ -848,17 +848,20 @@ def claude_tipp_review(home: str, away: str, typ: str, analyse: str) -> tuple:
         return True, ""
 
 # ── Dynamisches Intervall ────────────────────────────────────
-def dynamischer_sleep(matches: list):
+def dynamischer_sleep(matches: list = None):
     """
     Schläft kürzer wenn Spiele kurz vor Halbzeit oder Spielende sind.
     Normal: 3 Min | Kritische Minuten (43-46, 87-92): 1 Min
     """
-    for m in matches:
-        minute = _safe_int(m.get("time", 0))
-        if 43 <= minute <= 47 or 87 <= minute <= 93:
-            print(f"  [Intervall] Kritische Minute {minute}' – prüfe in 60s")
-            time.sleep(60)
-            return
+    try:
+        for m in (matches or []):
+            minute = _safe_int(m.get("time", 0))
+            if 43 <= minute <= 47 or 87 <= minute <= 93:
+                print(f"  [Intervall] Kritische Minute {minute}' – prüfe in 60s")
+                time.sleep(60)
+                return
+    except:
+        pass
     time.sleep(FUSSBALL_INTERVAL * 60)
 
 def signal_eintragen(match_id, typ, home, away, liga, hz1_wert, grenze, quote, einsatz):
@@ -1581,6 +1584,7 @@ def bot_ecken():
                 score   = game.get("scores", {}).get("score", "?")
                 grenze  = corners * 2 + 3
                 if corners == 0:
+                    print(f"  [Ecken-Bot] {home} vs {away} | Keine Ecken-Statistik von API")
                     continue
                 if corners <= MAX_CORNERS:
                     if not tipp_erlaubt(match_id, "Ecken-Bot"):
@@ -1599,6 +1603,7 @@ def bot_ecken():
                     if quote and quote < MIN_QUOTE:
                         print(f"  [Ecken-Bot] Quote zu niedrig: {quote} – übersprungen")
                         continue
+                    # Kein Skip wenn keine Quote vorhanden – Signal trotzdem senden
                     # Gegentipp-Schutz
                     if not gegentipp_check(match_id, "ecken", "unter", "Ecken-Bot"):
                         continue
@@ -1656,7 +1661,10 @@ def bot_ecken():
             bot_fehler_reset("Ecken-Bot")
         except Exception as e:
             bot_fehler_melden("Ecken-Bot", e)
-        dynamischer_sleep(get_live_matches())
+        try:
+            dynamischer_sleep(get_live_matches())
+        except:
+            time.sleep(FUSSBALL_INTERVAL * 60)
 
 def bot_ecken_over():
     print(f"[Ecken-Über-Bot] Gestartet | Signal sobald 7 Ecken in laufender HZ1")
@@ -1713,7 +1721,10 @@ def bot_ecken_over():
             bot_fehler_reset("Ecken-Über-Bot")
         except Exception as e:
             bot_fehler_melden("Ecken-Über-Bot", e)
-        dynamischer_sleep(get_live_matches())
+        try:
+            dynamischer_sleep(get_live_matches())
+        except:
+            time.sleep(FUSSBALL_INTERVAL * 60)
 
 def bot_karten():
     print(f"[Karten-Bot] Gestartet | mind. {MIN_KARTEN} Karten bis Minute {KARTEN_BIS_MINUTE}")
@@ -1776,7 +1787,10 @@ def bot_karten():
             bot_fehler_reset("Karten-Bot")
         except Exception as e:
             bot_fehler_melden("Karten-Bot", e)
-        dynamischer_sleep(get_live_matches())
+        try:
+            dynamischer_sleep(get_live_matches())
+        except:
+            time.sleep(FUSSBALL_INTERVAL * 60)
 
 def bot_torwart():
     print(f"[Torwart-Bot] Gestartet | 0:0 + mind. {MIN_SHOTS_ON_TARGET} Schüsse")
@@ -1797,6 +1811,8 @@ def bot_torwart():
                 shots_away = stats["shots_on_target_away"]
                 shots_ges  = shots_home + shots_away
                 if shots_ges < MIN_SHOTS_ON_TARGET:
+                    if shots_ges > 0:
+                        print(f"  [Torwart-Bot] {game.get('home',{}).get('name','?')} vs {game.get('away',{}).get('name','?')} | Zu wenig Schüsse: {shots_ges}/{MIN_SHOTS_ON_TARGET}")
                     continue
                 if not tipp_erlaubt(match_id, "Torwart-Bot"):
                     continue
@@ -1840,7 +1856,10 @@ def bot_torwart():
             bot_fehler_reset("Torwart-Bot")
         except Exception as e:
             bot_fehler_melden("Torwart-Bot", e)
-        dynamischer_sleep(get_live_matches())
+        try:
+            dynamischer_sleep(get_live_matches())
+        except:
+            time.sleep(FUSSBALL_INTERVAL * 60)
 
 # ============================================================
 #  NEUE BOTS
@@ -1888,6 +1907,8 @@ def bot_druck():
                     fk_stark     = f_away
                     fk_schwach   = f_home
                 if not druck_team:
+                    if gesamt_ecken >= MIN_DRUCK_ECKEN:
+                        print(f"  [Druck-Bot] {game.get('home',{}).get('name','?')} | Kein dominantes Team (Ecken: {c_home}:{c_away})")
                     continue
                 if not tipp_erlaubt(match_id, "Druck-Bot"):
                     continue
@@ -1925,7 +1946,10 @@ def bot_druck():
             bot_fehler_reset("Druck-Bot")
         except Exception as e:
             bot_fehler_melden("Druck-Bot", e)
-        dynamischer_sleep(get_live_matches())
+        try:
+            dynamischer_sleep(get_live_matches())
+        except:
+            time.sleep(FUSSBALL_INTERVAL * 60)
 
 def bot_comeback():
     """Signal wenn rückliegendes Team mehr Schüsse & Ballbesitz hat als das führende."""
@@ -1963,6 +1987,7 @@ def bot_comeback():
                     shots_r, shots_f = shots_a, shots_h
                     poss_r           = poss_a
                 if shots_r <= shots_f or poss_r <= 50:
+                    print(f"  [Comeback-Bot] {home} vs {away} | Kein Comeback-Muster (Schüsse: {shots_r}:{shots_f}, Besitz: {poss_r}%)")
                     continue
                 if not tipp_erlaubt(match_id, "Comeback-Bot"):
                     continue
@@ -1997,7 +2022,10 @@ def bot_comeback():
             bot_fehler_reset("Comeback-Bot")
         except Exception as e:
             bot_fehler_melden("Comeback-Bot", e)
-        dynamischer_sleep(get_live_matches())
+        try:
+            dynamischer_sleep(get_live_matches())
+        except:
+            time.sleep(FUSSBALL_INTERVAL * 60)
 
 def bot_torflut():
     """Signal wenn HZ1 bereits 3+ Tore hatte."""
@@ -2048,7 +2076,10 @@ def bot_torflut():
             bot_fehler_reset("Torflut-Bot")
         except Exception as e:
             bot_fehler_melden("Torflut-Bot", e)
-        dynamischer_sleep(get_live_matches())
+        try:
+            dynamischer_sleep(get_live_matches())
+        except:
+            time.sleep(FUSSBALL_INTERVAL * 60)
 
 def bot_rotkarte():
     """Signal nach einer Roten Karte – Tipp auf Tor des Überzahl-Teams."""
@@ -2117,7 +2148,10 @@ def bot_rotkarte():
             bot_fehler_reset("Rotkarte-Bot")
         except Exception as e:
             bot_fehler_melden("Rotkarte-Bot", e)
-        dynamischer_sleep(get_live_matches())
+        try:
+            dynamischer_sleep(get_live_matches())
+        except:
+            time.sleep(FUSSBALL_INTERVAL * 60)
 
 def bot_hz1tore():
     """Analysiert H2H-Daten beim Spielstart und tippt auf HZ1-Tore."""
@@ -2211,7 +2245,10 @@ def bot_hz1tore():
             bot_fehler_reset("HZ1-Tore-Bot")
         except Exception as e:
             bot_fehler_melden("HZ1-Tore-Bot", e)
-        dynamischer_sleep(get_live_matches())
+        try:
+            dynamischer_sleep(get_live_matches())
+        except:
+            time.sleep(FUSSBALL_INTERVAL * 60)
 
 def bot_vztore():
     """Analysiert H2H-Daten beim Spielstart und tippt auf Vollzeit-Tore."""
@@ -2299,7 +2336,10 @@ def bot_vztore():
             bot_fehler_reset("VZ-Tore-Bot")
         except Exception as e:
             bot_fehler_melden("VZ-Tore-Bot", e)
-        dynamischer_sleep(get_live_matches())
+        try:
+            dynamischer_sleep(get_live_matches())
+        except:
+            time.sleep(FUSSBALL_INTERVAL * 60)
 
 # ============================================================
 #  WATCHDOG
