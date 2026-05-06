@@ -1522,8 +1522,15 @@ def bot_auswertung_und_berichte():
                         leerer_status[match_id] = leerer_status.get(match_id, 0) + 1
                         print(f"  [Auswertung] {spiel['home']} vs {spiel['away']} | Kein Status ({leerer_status[match_id]}x)")
                         if leerer_status[match_id] >= 8:
-                            print(f"  [Auswertung] ⚠️ Kein Status nach 3 Versuchen – werte aus")
-                            status = "FT"  # Als beendet werten
+                            # Doppel-Check: ist das Spiel noch in der Live-Liste?
+                            alle_live = get_live_matches()
+                            live_ids  = {m.get("id") for m in alle_live}
+                            if match_id in live_ids:
+                                print(f"  [Auswertung] {spiel['home']} vs {spiel['away']} | Noch in Live-Liste – warte weiter")
+                                leerer_status[match_id] = 0  # Reset – Spiel läuft noch
+                                continue
+                            print(f"  [Auswertung] ⚠️ Kein Status + nicht live – werte aus")
+                            status = "FT"
                         else:
                             continue
 
@@ -1541,12 +1548,12 @@ def bot_auswertung_und_berichte():
                         "hz1tore":    35,  # Signal Min. 1-15 → HZ1 Ende ~30-45 Min weg
                         "vztore":     75,  # Signal Min. 1-15 → ganzes Spiel abwarten
                         "karten":     75,  # Signal Min. 1-40 → ganzes Spiel abwarten
-                        "torwart":    15,  # 0:0 Signal → kurze Wartezeit
-                        "comeback":   15,  # In-Game Signal → kurze Wartezeit
-                        "druck":      15,  # In-Game Signal → kurze Wartezeit
-                        "rotkarte":   15,  # In-Game Signal → kurze Wartezeit
-                        "ecken_over": 15,  # In-Game Signal → kurze Wartezeit
-                    }.get(spiel.get("typ", ""), 20)
+                        "torwart":    30,  # 0:0 Signal → mind. 30 Min warten
+                        "comeback":   25,  # In-Game Signal → mind. 25 Min warten
+                        "druck":      25,  # In-Game Signal → mind. 25 Min warten
+                        "rotkarte":   20,  # In-Game Signal → mind. 20 Min warten
+                        "ecken_over": 20,  # In-Game Signal → mind. 20 Min warten
+                    }.get(spiel.get("typ", ""), 25)
                     if signal_zeit > 0 and minuten_seit_signal < min_warte:
                         print(f"  [Auswertung] {spiel['home']} vs {spiel['away']} | Warte noch {min_warte - minuten_seit_signal:.0f} Min. ({spiel.get('typ')})")
                         leerer_status.pop(match_id, None)
@@ -1929,12 +1936,16 @@ def bot_druck():
                 # Dominantes Team bestimmen
                 druck_team = None
                 if c_away > 0 and c_home / c_away >= DRUCK_RATIO:
+                    if c_away < 3:  # Schwächeres Team muss mind. 3 Ecken haben
+                        continue
                     druck_team   = game.get("home", {}).get("name", "?")
                     ecken_stark  = c_home
                     ecken_schwach = c_away
                     fk_stark     = f_home
                     fk_schwach   = f_away
                 elif c_home > 0 and c_away / c_home >= DRUCK_RATIO:
+                    if c_home < 3:  # Schwächeres Team muss mind. 3 Ecken haben
+                        continue
                     druck_team   = game.get("away", {}).get("name", "?")
                     ecken_stark  = c_away
                     ecken_schwach = c_home
