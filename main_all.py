@@ -1521,7 +1521,7 @@ def bot_auswertung_und_berichte():
                     if status == "" and minute == 0:
                         leerer_status[match_id] = leerer_status.get(match_id, 0) + 1
                         print(f"  [Auswertung] {spiel['home']} vs {spiel['away']} | Kein Status ({leerer_status[match_id]}x)")
-                        if leerer_status[match_id] >= 3:
+                        if leerer_status[match_id] >= 8:
                             print(f"  [Auswertung] ⚠️ Kein Status nach 3 Versuchen – werte aus")
                             status = "FT"  # Als beendet werten
                         else:
@@ -1530,6 +1530,26 @@ def bot_auswertung_und_berichte():
                     if status not in FT_STATI:
                         print(f"  [Auswertung] {spiel['home']} vs {spiel['away']} | {status} | {minute}'")
                         leerer_status.pop(match_id, None)  # Status wieder da → Zähler zurück
+                        continue
+
+                    # Mindest-Wartezeit je nach Tipp-Typ
+                    signal_zeit = spiel.get("signal_zeit", 0)
+                    minuten_seit_signal = (time.time() - signal_zeit) / 60
+                    min_warte = {
+                        "ecken":      50,  # Halbzeit-Signal → 2. HZ dauert ~45 Min
+                        "torflut":    50,  # Halbzeit-Signal → 2. HZ dauert ~45 Min
+                        "hz1tore":    35,  # Signal Min. 1-15 → HZ1 Ende ~30-45 Min weg
+                        "vztore":     75,  # Signal Min. 1-15 → ganzes Spiel abwarten
+                        "karten":     75,  # Signal Min. 1-40 → ganzes Spiel abwarten
+                        "torwart":    15,  # 0:0 Signal → kurze Wartezeit
+                        "comeback":   15,  # In-Game Signal → kurze Wartezeit
+                        "druck":      15,  # In-Game Signal → kurze Wartezeit
+                        "rotkarte":   15,  # In-Game Signal → kurze Wartezeit
+                        "ecken_over": 15,  # In-Game Signal → kurze Wartezeit
+                    }.get(spiel.get("typ", ""), 20)
+                    if signal_zeit > 0 and minuten_seit_signal < min_warte:
+                        print(f"  [Auswertung] {spiel['home']} vs {spiel['away']} | Warte noch {min_warte - minuten_seit_signal:.0f} Min. ({spiel.get('typ')})")
+                        leerer_status.pop(match_id, None)
                         continue
 
                     # Spiel beendet!
@@ -1585,6 +1605,9 @@ def bot_ecken():
                 grenze  = corners * 2 + 3
                 if corners == 0:
                     print(f"  [Ecken-Bot] {home} vs {away} | Keine Ecken-Statistik von API")
+                    continue
+                if corners > MAX_CORNERS:
+                    print(f"  [Ecken-Bot] {home} vs {away} | Zu viele Ecken: {corners} > {MAX_CORNERS}")
                     continue
                 if corners <= MAX_CORNERS:
                     if not tipp_erlaubt(match_id, "Ecken-Bot"):
@@ -1652,7 +1675,8 @@ def bot_ecken():
                         "typ": "ecken", "match_id": match_id,
                         "home": home, "away": away, "hz1_ecken": corners,
                         "quote": quote, "einsatz": einsatz, "liga": comp,
-                        "webhook": DISCORD_WEBHOOK_ECKEN
+                        "webhook": DISCORD_WEBHOOK_ECKEN,
+                        "signal_zeit": time.time()
                     }
                     signal_eintragen(match_id, "ecken", home, away, comp, corners, grenze, quote, einsatz)
                     gegentipp_registrieren(match_id, "ecken", "unter", "Ecken-Bot")
@@ -1714,7 +1738,9 @@ def bot_ecken_over():
                     "home": home, "away": away, "hz1_ecken": corners,
                     "quote": quote, "einsatz": einsatz, "liga": comp,
                     "webhook": DISCORD_WEBHOOK_ECKEN
-                }
+                ,
+                        "signal_zeit": time.time()
+                    }
                 signal_eintragen(match_id, "ecken_over", home, away, comp, corners, 14, quote, einsatz)
                 print(f"  [Ecken-Über-Bot] OK: {home} vs {away} ({corners} Ecken in Min. {minute})")
                 time.sleep(0.5)
@@ -1781,6 +1807,8 @@ def bot_karten():
                         "typ": "karten", "match_id": match_id,
                         "home": home, "away": away, "karten_anzahl": len(karten),
                         "quote": quote, "webhook": DISCORD_WEBHOOK_KARTEN
+                    ,
+                        "signal_zeit": time.time()
                     }
                     print(f"  [Karten-Bot] OK: {home} vs {away} ({len(karten)} Karten)")
                 time.sleep(0.5)
@@ -1811,8 +1839,7 @@ def bot_torwart():
                 shots_away = stats["shots_on_target_away"]
                 shots_ges  = shots_home + shots_away
                 if shots_ges < MIN_SHOTS_ON_TARGET:
-                    if shots_ges > 0:
-                        print(f"  [Torwart-Bot] {game.get('home',{}).get('name','?')} vs {game.get('away',{}).get('name','?')} | Zu wenig Schüsse: {shots_ges}/{MIN_SHOTS_ON_TARGET}")
+                    print(f"  [Torwart-Bot] {home} vs {away} | Schüsse: {shots_ges}/{MIN_SHOTS_ON_TARGET} (API hat {'keine Daten' if shots_ges == 0 else 'zu wenig'})")
                     continue
                 if not tipp_erlaubt(match_id, "Torwart-Bot"):
                     continue
@@ -1850,7 +1877,9 @@ def bot_torwart():
                     "typ": "torwart", "match_id": match_id,
                     "home": home, "away": away,
                     "quote": quote, "webhook": DISCORD_WEBHOOK_TORWART
-                }
+                ,
+                        "signal_zeit": time.time()
+                    }
                 print(f"  [Torwart-Bot] OK: {home} vs {away} | {shots_ges} Schüsse")
                 time.sleep(0.5)
             bot_fehler_reset("Torwart-Bot")
@@ -1890,6 +1919,8 @@ def bot_druck():
                 f_home = stats["free_kicks_home"]
                 f_away = stats["free_kicks_away"]
                 gesamt_ecken = c_home + c_away
+                if gesamt_ecken == 0:
+                    continue  # Keine API-Daten
                 if gesamt_ecken < MIN_DRUCK_ECKEN:
                     continue
                 # Dominantes Team bestimmen
@@ -1940,7 +1971,9 @@ def bot_druck():
                     "typ": "druck", "match_id": match_id,
                     "home": home, "away": away, "druck_team": druck_team,
                     "quote": quote, "webhook": DISCORD_WEBHOOK_DRUCK
-                }
+                ,
+                        "signal_zeit": time.time()
+                    }
                 print(f"  [Druck-Bot] OK: {home} vs {away} | {druck_team} dominiert ({ecken_stark}:{ecken_schwach} Ecken)")
                 time.sleep(0.5)
             bot_fehler_reset("Druck-Bot")
@@ -1986,6 +2019,8 @@ def bot_comeback():
                 else:
                     shots_r, shots_f = shots_a, shots_h
                     poss_r           = poss_a
+                if shots_r == 0 and shots_f == 0 and poss_r == 0:
+                    continue  # Keine API-Daten, still überspringen
                 if shots_r <= shots_f or poss_r <= 50:
                     print(f"  [Comeback-Bot] {home} vs {away} | Kein Comeback-Muster (Schüsse: {shots_r}:{shots_f}, Besitz: {poss_r}%)")
                     continue
@@ -2016,7 +2051,9 @@ def bot_comeback():
                     "typ": "comeback", "match_id": match_id,
                     "home": home, "away": away, "rueckliegend": rueckliegend,
                     "quote": quote, "webhook": DISCORD_WEBHOOK_COMEBACK
-                }
+                ,
+                        "signal_zeit": time.time()
+                    }
                 print(f"  [Comeback-Bot] OK: {home} vs {away} | {rueckliegend} liegt zurück aber dominiert")
                 time.sleep(0.5)
             bot_fehler_reset("Comeback-Bot")
@@ -2070,7 +2107,9 @@ def bot_torflut():
                     "typ": "torflut", "match_id": match_id,
                     "home": home, "away": away, "hz1_tore": tore_hz1,
                     "grenze": grenze, "quote": quote, "webhook": DISCORD_WEBHOOK_TORFLUT
-                }
+                ,
+                        "signal_zeit": time.time()
+                    }
                 print(f"  [Torflut-Bot] OK: {home} vs {away} | {tore_hz1} Tore in HZ1")
                 time.sleep(0.5)
             bot_fehler_reset("Torflut-Bot")
@@ -2142,7 +2181,9 @@ def bot_rotkarte():
                     "ueberzahl_team": ueberzahl_team,
                     "score_signal": score,
                     "quote": quote, "webhook": DISCORD_WEBHOOK_ROTKARTE
-                }
+                ,
+                        "signal_zeit": time.time()
+                    }
                 print(f"  [Rotkarte-Bot] OK: {home} vs {away} | {ueberzahl_team} in Überzahl (Min. {karte_min})")
                 time.sleep(0.5)
             bot_fehler_reset("Rotkarte-Bot")
@@ -2236,7 +2277,9 @@ def bot_hz1tore():
                     "richtung": richtung, "linie": linie,
                     "quote": quote, "einsatz": einsatz,
                     "webhook": DISCORD_WEBHOOK_HZ1TORE
-                }
+                ,
+                        "signal_zeit": time.time()
+                    }
                 signal_eintragen(match_id, "hz1tore", home, away, comp,
                                   ana["avg_hz1"], linie, quote, einsatz)
                 gegentipp_registrieren(match_id, "hz1tore", richtung, "HZ1-Tore-Bot")
@@ -2327,7 +2370,9 @@ def bot_vztore():
                     "richtung": richtung, "linie": linie,
                     "quote": quote, "einsatz": einsatz,
                     "webhook": DISCORD_WEBHOOK_VZTORE
-                }
+                ,
+                        "signal_zeit": time.time()
+                    }
                 signal_eintragen(match_id, "vztore", home, away, comp,
                                   ana["avg_vz"], linie, quote, einsatz)
                 gegentipp_registrieren(match_id, "vztore", richtung, "VZ-Tore-Bot")
