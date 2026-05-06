@@ -8,8 +8,8 @@ from datetime import datetime, timezone, timedelta
 # ============================================================
 #  KONFIGURATION
 # ============================================================
-API_KEY            = "OHvYYqv2LTNBi8qU"
-API_SECRET         = "G8lerfJK8OJ8TqMH7iG6Jb8u4V6n3wiK"
+API_KEY            = "INUnk7eRsptCrMNq"
+API_SECRET         = "h2wf08YErEQbSAfAn9XIgbzJB3l3P9u6"
 
 TELEGRAM_BOT_TOKEN = "8706066107:AAFAQhT3k0jhTZ7ep-VWHPlskOKJVvsfucQ"
 TELEGRAM_CHAT_ID   = "7272001004"
@@ -19,12 +19,12 @@ DISCORD_WEBHOOK_KARTEN    = "https://discord.com/api/webhooks/150125054278828045
 DISCORD_WEBHOOK_TORWART   = "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1"
 DISCORD_WEBHOOK_BILANZ    = "https://discord.com/api/webhooks/1501251926564667564/fdBE4jOLislDfwpMs2cUURm_4_YzfATKWFmaOjRNEXulHCJu1DB-lUBLqLmm73l-HQ4v"
 # Neue Webhooks – bitte in Discord erstellen und hier eintragen:
-DISCORD_WEBHOOK_DRUCK     = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
-DISCORD_WEBHOOK_COMEBACK  = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
-DISCORD_WEBHOOK_TORFLUT   = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
-DISCORD_WEBHOOK_ROTKARTE  = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
-DISCORD_WEBHOOK_HZ1TORE  = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
-DISCORD_WEBHOOK_VZTORE   = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
+DISCORD_WEBHOOK_DRUCK     = "DISCORD_WEBHOOK_DRUCK_HIER_EINTRAGEN"
+DISCORD_WEBHOOK_COMEBACK  = "DISCORD_WEBHOOK_COMEBACK_HIER_EINTRAGEN"
+DISCORD_WEBHOOK_TORFLUT   = "DISCORD_WEBHOOK_TORFLUT_HIER_EINTRAGEN"
+DISCORD_WEBHOOK_ROTKARTE  = "DISCORD_WEBHOOK_ROTKARTE_HIER_EINTRAGEN"
+DISCORD_WEBHOOK_HZ1TORE  = "DISCORD_WEBHOOK_HZ1TORE_HIER_EINTRAGEN"
+DISCORD_WEBHOOK_VZTORE   = "DISCORD_WEBHOOK_VZTORE_HIER_EINTRAGEN"
 
 ODDS_API_KEY       = "866948de5d6c34ca51faf6bd77e0bb2a"
 ANTHROPIC_API_KEY  = "ANTHROPIC_API_KEY_HIER_EINTRAGEN"  # claude.ai → API Keys
@@ -113,7 +113,7 @@ FEHLER_ALERT_AB  = 3    # nach X Fehlern Telegram-Alert senden
 # ── API Rate-Limit ───────────────────────────────────────────
 _api_calls_log   = []
 _api_calls_lock  = threading.Lock()
-MAX_API_PER_MIN  = 25   # max. API-Calls pro Minute
+MAX_API_PER_MIN  = 40   # max. API-Calls pro Minute (Professional Plan: 50k/Tag)
 
 # Gegentipp-Schutz
 aktive_tipps     = {}   # match_id → list of {markt, richtung, bot}
@@ -1489,7 +1489,8 @@ def bot_auswertung_und_berichte():
         "hz1tore":    auswertung_hz1tore,
         "vztore":     auswertung_vztore,
     }
-    FT_STATI = {"FT", "Finished", "FINISHED", "AET", "PEN", "finished", "aet", "pen"}
+    FT_STATI        = {"FT", "Finished", "FINISHED", "AET", "PEN", "finished", "aet", "pen"}
+    leerer_status   = {}  # match_id → Anzahl leerer Status-Antworten
 
     while True:
         try:
@@ -1513,13 +1514,24 @@ def bot_auswertung_und_berichte():
                     status = match.get("status", "")
                     minute = _safe_int(match.get("time", 0))
 
+                    # FIX: Leerer Status + 0 Minuten = Spiel aus API gefallen → beendet
+                    if status == "" and minute == 0:
+                        leerer_status[match_id] = leerer_status.get(match_id, 0) + 1
+                        print(f"  [Auswertung] {spiel['home']} vs {spiel['away']} | Kein Status ({leerer_status[match_id]}x)")
+                        if leerer_status[match_id] >= 3:
+                            print(f"  [Auswertung] ⚠️ Kein Status nach 3 Versuchen – werte aus")
+                            status = "FT"  # Als beendet werten
+                        else:
+                            continue
+
                     if status not in FT_STATI:
                         print(f"  [Auswertung] {spiel['home']} vs {spiel['away']} | {status} | {minute}'")
+                        leerer_status.pop(match_id, None)  # Status wieder da → Zähler zurück
                         continue
 
                     # Spiel beendet!
                     print(f"  [Auswertung] ✅ FT: {spiel['home']} vs {spiel['away']} ({status})")
-                    time.sleep(15)  # kurz warten für finale API-Daten
+                    time.sleep(15)
 
                     typ        = spiel["typ"]
                     webhook    = spiel["webhook"]
@@ -1534,6 +1546,7 @@ def bot_auswertung_und_berichte():
                         send_discord_embed(webhook, embed)
                         print(f"  [Auswertung] Gesendet: {spiel['home']} vs {spiel['away']} ({typ})")
                     auswertung_done.add(match_id)
+                    leerer_status.pop(match_id, None)
 
                 except Exception as e:
                     print(f"  [Auswertung] Fehler bei {match_id}: {e}")
@@ -2163,6 +2176,12 @@ def bot_hz1tore():
                 konfidenz = berechne_konfidenz("hz1tore", comp, quote,
                     h2h_spiele=ana["hz1_spiele"], bookmaker_anzahl=bm_anz,
                     form_uebereinstimmung=form_ok)
+                # Claude Review
+                analyse_hz1 = f"H2H Ø HZ1-Tore: {ana['avg_hz1']} ({ana['hz1_spiele']} Spiele)\nTipp: {richtung} {linie} Tore"
+                cl_ok_hz1, cl_text_hz1 = claude_tipp_review(home, away, "hz1tore", analyse_hz1)
+                if not cl_ok_hz1:
+                    konfidenz = max(1, konfidenz - 2)
+                cl_hz1  = f"\n🤖 Claude: <b>{cl_text_hz1}</b>" if cl_text_hz1 else ""
                 ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
                 msg     = (f"🥅 <b>HZ1-Tore Signal!</b> {konfidenz_emoji(konfidenz)} Konfidenz: <b>{konfidenz}/10</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                            f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
@@ -2245,6 +2264,12 @@ def bot_vztore():
                 konfidenz = berechne_konfidenz("vztore", comp, quote,
                     h2h_spiele=ana["spiele"], bookmaker_anzahl=bm_anz,
                     form_uebereinstimmung=form_ok)
+                # Claude Review
+                analyse_vz = f"H2H Ø VZ-Tore: {ana['avg_vz']} ({ana['spiele']} Spiele)\nTipp: {richtung} {linie} Tore"
+                cl_ok_vz, cl_text_vz = claude_tipp_review(home, away, "vztore", analyse_vz)
+                if not cl_ok_vz:
+                    konfidenz = max(1, konfidenz - 2)
+                cl_vz   = f"\n🤖 Claude: <b>{cl_text_vz}</b>" if cl_text_vz else ""
                 ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
                 msg     = (f"🏆 <b>Vollzeit-Tore Signal!</b> {konfidenz_emoji(konfidenz)} Konfidenz: <b>{konfidenz}/10</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                            f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
