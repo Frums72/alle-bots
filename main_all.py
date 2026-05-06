@@ -1,4 +1,4 @@
-# v22 - Kelly-Kriterium, Beste Quote, Mindest-Quote, Wetter-Filter, Signal-Log, Corner-Optimizer
+# v23 - Liga/Land Filter, Ecken-Durchschnitt Check
 import requests
 import re
 import time
@@ -44,6 +44,14 @@ KELLY_MIN_EINSATZ    = 2.0   # Minimaler Einsatz pro Tipp in €
 # Wetter-Filter
 WETTER_WIND_GRENZE   = 35    # km/h – ab hier gilt es als windig
 WETTER_REGEN_GRENZE  = 2     # mm  – ab hier gilt es als regnerisch
+
+# Liga-Filter
+LIGA_MIN_TIPPS       = 10    # Mindest-Tipps bevor Liga gefiltert wird
+LIGA_MIN_TREFFERQUOTE = 0.40 # Ligen unter dieser Quote werden ignoriert
+
+# Ecken-Durchschnitt
+ECKEN_HISTORY_SPIELE = 5     # Anzahl historischer Spiele für Durchschnitt
+ECKEN_TOLERANZ       = 1.5   # Tipp wird gesendet wenn Grenze > Durchschnitt + Toleranz
 
 # Neue Parameter
 MIN_DRUCK_ECKEN      = 6    # Mindest-Ecken gesamt für Druck-Signal
@@ -94,6 +102,10 @@ SIGNAL_LOG_DATEI = "signal_log.json"
 # Wetter-Cache
 _wetter_cache    = {}   # country → {"wind": x, "regen": x, "ts": timestamp}
 WETTER_TTL       = 1800 # 30 Minuten
+
+# Ecken-Durchschnitt Cache
+_ecken_avg_cache = {}   # team_id → {"avg": x, "ts": timestamp}
+ECKEN_AVG_TTL    = 3600 # 1 Stunde
 
 statistik = {
     "ecken":    {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
@@ -438,6 +450,75 @@ def schlechtes_wetter(country: str) -> bool:
     w = get_wetter(country)
     return w["wind"] >= WETTER_WIND_GRENZE or w["regen"] >= WETTER_REGEN_GRENZE
 
+# ── Liga-Filter ──────────────────────────────────────────────
+def liga_erlaubt(liga: str) -> bool:
+    """Gibt False zurück wenn eine Liga nach genug Daten eine schlechte Trefferquote hat."""
+    if liga not in liga_statistik:
+        return True  # Keine Daten → erlaubt
+    s     = liga_statistik[liga]
+    ges   = s["gewonnen"] + s["verloren"]
+    if ges < LIGA_MIN_TIPPS:
+        return True  # Zu wenig Daten → erlaubt
+    quote = s["gewonnen"] / ges
+    if quote < LIGA_MIN_TREFFERQUOTE:
+        print(f"  [Liga-Filter] {liga} gesperrt: {s['gewonnen']}/{ges} ({round(quote*100)}%) < {round(LIGA_MIN_TREFFERQUOTE*100)}%")
+        return False
+    return True
+
+# ── Ecken-Durchschnitt ───────────────────────────────────────
+def get_team_ecken_avg(team_id: str) -> float | None:
+    """Holt durchschnittliche Ecken aus letzten N Spielen eines Teams (gecacht)."""
+    now = time.time()
+    if team_id in _ecken_avg_cache:
+        cached = _ecken_avg_cache[team_id]
+        if now - cached["ts"] < ECKEN_AVG_TTL:
+            return cached["avg"]
+    try:
+        params  = {**LS_AUTH, "team_id": team_id, "number": ECKEN_HISTORY_SPIELE}
+        resp    = api_get_with_retry(f"{LS_BASE}/matches/history.json", params)
+        matches = resp.json().get("data", {}).get("match", []) or []
+        ecken_liste = []
+        for m in matches:
+            mid = str(m.get("id", ""))
+            if not mid:
+                continue
+            try:
+                stats  = ls_get_statistiken(mid)
+                ecken  = stats["corners_home"] + stats["corners_away"]
+                if ecken > 0:
+                    ecken_liste.append(ecken)
+            except:
+                continue
+        if len(ecken_liste) >= 3:
+            avg = round(sum(ecken_liste) / len(ecken_liste), 1)
+            _ecken_avg_cache[team_id] = {"avg": avg, "ts": now}
+            print(f"  [Ecken-Avg] Team {team_id}: ⌀ {avg} Ecken ({len(ecken_liste)} Spiele)")
+            return avg
+        return None
+    except Exception as e:
+        print(f"  [Ecken-Avg] Fehler für Team {team_id}: {e}")
+        return None
+
+def ecken_tipp_sinnvoll(game: dict, grenze: float) -> bool:
+    """
+    Prüft ob der Ecken-Unter-Tipp mit dem historischen Durchschnitt übereinstimmt.
+    Tipp wird nur gesendet wenn: Grenze > Durchschnitt + ECKEN_TOLERANZ
+    → d.h. wir erwarten wirklich weniger Ecken als die Grenze erlaubt.
+    """
+    home_id = str((game.get("home") or {}).get("id", ""))
+    away_id = str((game.get("away") or {}).get("id", ""))
+    if not home_id or not away_id:
+        return True  # Keine IDs → kein Filter
+    avg_home = get_team_ecken_avg(home_id)
+    avg_away = get_team_ecken_avg(away_id)
+    if avg_home is None or avg_away is None:
+        return True  # Keine Daten → kein Filter
+    # Erwartete Ecken = Mittelwert beider Team-Durchschnitte
+    erwartet = round((avg_home + avg_away) / 2, 1)
+    sinnvoll = grenze > erwartet + ECKEN_TOLERANZ
+    print(f"  [Ecken-Avg] Heim ⌀{avg_home} | Gast ⌀{avg_away} | Erwartet: {erwartet} | Grenze: {grenze} | Sinnvoll: {sinnvoll}")
+    return sinnvoll
+
 def signal_eintragen(match_id, typ, home, away, liga, hz1_wert, grenze, quote, einsatz):
     """Trägt ein neues Signal im Log ein."""
     signal_log.append({
@@ -681,7 +762,20 @@ def send_tagesbericht():
     ligen_text = "\n".join([f"  • {l}: {s['gewonnen']}/{s['gewonnen']+s['verloren']}"
                              for l, s in beste_ligen]) or "Noch keine Daten"
 
-    # Corner-Optimizer: welche Grenze war am besten?
+    # Liga-Verteilung: welche Ligen bekommen wie viele Tipps in %
+    alle_liga_tipps = {l: s["gewonnen"] + s["verloren"] for l, s in liga_statistik.items() if s["gewonnen"] + s["verloren"] > 0}
+    gesamt_liga_tipps = sum(alle_liga_tipps.values())
+    liga_verteilung_text = ""
+    if gesamt_liga_tipps > 0:
+        top_ligen = sorted(alle_liga_tipps.items(), key=lambda x: x[1], reverse=True)[:5]
+        zeilen = []
+        for l, n in top_ligen:
+            pct_l  = round(n / gesamt_liga_tipps * 100)
+            s      = liga_statistik[l]
+            hit    = round(s["gewonnen"] / n * 100) if n > 0 else 0
+            gesperrt = " 🚫" if not liga_erlaubt(l) else ""
+            zeilen.append(f"  • {l}: {pct_l}% ({hit}% Hit){gesperrt}")
+        liga_verteilung_text = f"━━━━━━━━━━━━━━━━━━━━\n📊 <b>Liga-Verteilung (Top 5):</b>\n" + "\n".join(zeilen) + "\n"
     ecken_logs = [s for s in signal_log if s["typ"] == "ecken" and s["gewonnen"] is not None]
     optimizer_text = ""
     if len(ecken_logs) >= 5:
@@ -707,6 +801,7 @@ def send_tagesbericht():
            f"━━━━━━━━━━━━━━━━━━━━\n"
            f"🕐 <b>Beste Uhrzeiten:</b> {stunden_text}\n"
            f"🏆 <b>Beste Ligen:</b>\n{ligen_text}\n"
+           f"{liga_verteilung_text}"
            f"{optimizer_text}"
            f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
     send_telegram(msg)
@@ -1026,6 +1121,9 @@ def bot_ecken():
                 if corners <= MAX_CORNERS:
                     if not tipp_erlaubt(match_id, "Ecken-Bot"):
                         continue
+                    # Liga-Filter
+                    if not liga_erlaubt(comp):
+                        continue
                     quote = get_quote(home, away, "ecken")
                     # Mindest-Quote Filter
                     if quote and quote < MIN_QUOTE:
@@ -1034,6 +1132,10 @@ def bot_ecken():
                     # Wetter-Anpassung: bei schlechtem Wetter Grenze erhöhen
                     wetter_bonus = 1 if schlechtes_wetter(country) else 0
                     grenze = corners * 2 + 3 + wetter_bonus
+                    # Ecken-Durchschnitt Check
+                    if not ecken_tipp_sinnvoll(game, grenze):
+                        print(f"  [Ecken-Bot] Durchschnitt zu hoch – Tipp nicht sinnvoll, übersprungen")
+                        continue
                     einsatz = kelly_einsatz(quote, "ecken") if quote else EINSATZ
                     ql    = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
                     msg   = (f"📐 <b>Ecken Tipp!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
@@ -1557,9 +1659,8 @@ def bot_watchdog():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v22")
-    print("  Kelly · Beste Quote · Min-Quote · Wetter")
-    print("  Signal-Log · Corner-Optimizer")
+    print("  ⚽ FUSSBALL BOTS v23")
+    print("  Liga-Filter · Ecken-Durchschnitt Check")
     print("=" * 50 + "\n")
 
     statistik_laden()
