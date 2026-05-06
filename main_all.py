@@ -1,4 +1,4 @@
-# v25 - Konfidenz-Score, H2H+Form, Gegentipp-Schutz, Quoten-Validierung, CLV
+# v26 - Standings-Analyse, Claude-Reviewer, Direkte Auswertung, Dynamisches Intervall
 import requests
 import re
 import time
@@ -8,8 +8,8 @@ from datetime import datetime, timezone, timedelta
 # ============================================================
 #  KONFIGURATION
 # ============================================================
-API_KEY            = "OHvYYqv2LTNBi8qU"
-API_SECRET         = "G8lerfJK8OJ8TqMH7iG6Jb8u4V6n3wiK"
+API_KEY            = "INUnk7eRsptCrMNq"
+API_SECRET         = "h2wf08YErEQbSAfAn9XIgbzJB3l3P9u6"
 
 TELEGRAM_BOT_TOKEN = "8706066107:AAFAQhT3k0jhTZ7ep-VWHPlskOKJVvsfucQ"
 TELEGRAM_CHAT_ID   = "7272001004"
@@ -27,6 +27,7 @@ DISCORD_WEBHOOK_HZ1TORE  = "https://discord.com/api/webhooks/1501252266630316163
 DISCORD_WEBHOOK_VZTORE   = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
 
 ODDS_API_KEY       = "866948de5d6c34ca51faf6bd77e0bb2a"
+ANTHROPIC_API_KEY  = "ANTHROPIC_API_KEY_HIER_EINTRAGEN"  # claude.ai → API Keys
 EINSATZ            = 10.0
 
 # Bestehende Parameter
@@ -128,6 +129,10 @@ WETTER_TTL       = 1800 # 30 Minuten
 # Ecken-Durchschnitt Cache
 _ecken_avg_cache = {}   # team_id → {"avg": x, "ts": timestamp}
 ECKEN_AVG_TTL    = 3600 # 1 Stunde
+
+# Standings Cache
+_standings_cache = {}   # league_id → {"data": [...], "ts": timestamp}
+STANDINGS_TTL    = 1800 # 30 Minuten
 
 statistik = {
     "ecken":    {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
@@ -384,10 +389,6 @@ def ls_get_events(match_id):
     params = {**LS_AUTH, "id": match_id}
     resp   = api_get_with_retry(f"{LS_BASE}/matches/events.json", params)
     events = resp.json().get("data", {}).get("event", []) or []
-    if events:
-        print(f"  [Events-Debug] Match {match_id} | Beispiel-Event: {events[0]}")
-    else:
-        print(f"  [Events-Debug] Match {match_id} | Keine Events")
     return events
 
 def ls_get_single_match(match_id):
@@ -731,6 +732,134 @@ def clv_auswerten(spiel):
     except:
         return ""
 
+# ── Standings-Analyse ────────────────────────────────────────
+def get_standings(league_id: str) -> list:
+    """Holt Tabelle für eine Liga (gecacht 30 Min)."""
+    now = time.time()
+    lid = str(league_id)
+    if lid in _standings_cache and now - _standings_cache[lid]["ts"] < STANDINGS_TTL:
+        return _standings_cache[lid]["data"]
+    try:
+        params    = {**LS_AUTH, "league_id": lid}
+        resp      = api_get_with_retry(f"{LS_BASE}/leagues/standings.json", params)
+        standings = resp.json().get("data", {}).get("standings", []) or []
+        _standings_cache[lid] = {"data": standings, "ts": now}
+        return standings
+    except:
+        return []
+
+def get_team_standing(league_id: str, team_id: str) -> dict | None:
+    """Gibt Tabelleninfo eines Teams zurück."""
+    standings = get_standings(league_id)
+    for t in standings:
+        if str(t.get("team_id", "")) == str(team_id):
+            gf = _safe_int(t.get("overall_league_GF", 0))
+            ga = _safe_int(t.get("overall_league_GA", 0))
+            gp = _safe_int(t.get("overall_league_payed", t.get("overall_league_played", 0)))
+            return {
+                "position":  _safe_int(t.get("overall_league_position", t.get("position", 0))),
+                "punkte":    _safe_int(t.get("overall_league_PTS", 0)),
+                "gespielt":  gp,
+                "siege":     _safe_int(t.get("overall_league_W", 0)),
+                "unent":     _safe_int(t.get("overall_league_D", 0)),
+                "niederl":   _safe_int(t.get("overall_league_L", 0)),
+                "tore_f":    gf,
+                "tore_g":    ga,
+                "tore_avg":  round(gf / gp, 1) if gp > 0 else 0,
+                "form":      t.get("league_team_form", ""),
+            }
+    return None
+
+def form_zu_emojis(form: str) -> str:
+    """Wandelt Form-String in Emojis um: W→🟢 D→🟡 L→🔴"""
+    result = ""
+    for c in (form or "")[-5:]:
+        if c == "W":   result += "🟢"
+        elif c == "D": result += "🟡"
+        elif c == "L": result += "🔴"
+    return result or "–"
+
+def baue_analyse_text(home: str, away: str, home_id: str, away_id: str,
+                       league_id: str, extra: dict = None) -> str:
+    """Erstellt kompakten Analyse-Text für Signal-Nachricht und Claude-Review."""
+    h_stand = get_team_standing(league_id, home_id)
+    a_stand = get_team_standing(league_id, away_id)
+    zeilen  = []
+    if h_stand:
+        hf = form_zu_emojis(h_stand["form"])
+        zeilen.append(f"🏠 {home}: Platz {h_stand['position']} | {hf} | ⚽ {h_stand['tore_avg']}/Spiel")
+    if a_stand:
+        af = form_zu_emojis(a_stand["form"])
+        zeilen.append(f"✈️ {away}: Platz {a_stand['position']} | {af} | ⚽ {a_stand['tore_avg']}/Spiel")
+    if extra:
+        for k, v in extra.items():
+            zeilen.append(f"{k}: {v}")
+    return "\n".join(zeilen)
+
+# ── Claude Tipp-Reviewer ─────────────────────────────────────
+def claude_tipp_review(home: str, away: str, typ: str, analyse: str) -> tuple:
+    """
+    Fragt Claude ob der Tipp Sinn ergibt.
+    Gibt (empfohlen: bool, begruendung: str) zurück.
+    """
+    if not ANTHROPIC_API_KEY or ANTHROPIC_API_KEY.startswith("ANTHROPIC"):
+        return True, ""
+    try:
+        typ_namen = {
+            "ecken": "Ecken Unter", "ecken_over": "Ecken Über",
+            "karten": "Karten Über 5", "torwart": "Mind. 1 Tor",
+            "druck": "Druck/Ecken Dominanz", "comeback": "Beide Teams treffen",
+            "torflut": "Torreich", "rotkarte": "Überzahl Tor",
+            "hz1tore": "HZ1 Tore", "vztore": "Vollzeit Tore",
+        }.get(typ, typ)
+        prompt = (
+            f"Du bist ein erfahrener Sportwetten-Analyst. "
+            f"Bewerte diesen Tipp in max. 1 Satz auf Deutsch:\n\n"
+            f"Spiel: {home} vs {away}\n"
+            f"Tipp: {typ_namen}\n"
+            f"Daten:\n{analyse}\n\n"
+            f"Antworte NUR so:\n"
+            f"EMPFOHLEN: [1 Satz Begründung]\n"
+            f"oder\n"
+            f"SKEPTISCH: [1 Satz Begründung]"
+        )
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "Content-Type": "application/json",
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+            },
+            json={
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 120,
+                "messages": [{"role": "user", "content": prompt}]
+            },
+            timeout=15
+        )
+        if resp.status_code != 200:
+            return True, ""
+        text       = resp.json().get("content", [{}])[0].get("text", "").strip()
+        empfohlen  = text.startswith("EMPFOHLEN")
+        begruendung = text.replace("EMPFOHLEN:", "").replace("SKEPTISCH:", "").strip()
+        return empfohlen, begruendung
+    except Exception as e:
+        print(f"  [Claude] Review Fehler: {e}")
+        return True, ""
+
+# ── Dynamisches Intervall ────────────────────────────────────
+def dynamischer_sleep(matches: list):
+    """
+    Schläft kürzer wenn Spiele kurz vor Halbzeit oder Spielende sind.
+    Normal: 3 Min | Kritische Minuten (43-46, 87-92): 1 Min
+    """
+    for m in matches:
+        minute = _safe_int(m.get("time", 0))
+        if 43 <= minute <= 47 or 87 <= minute <= 93:
+            print(f"  [Intervall] Kritische Minute {minute}' – prüfe in 60s")
+            time.sleep(60)
+            return
+    time.sleep(FUSSBALL_INTERVAL * 60)
 
 def signal_eintragen(match_id, typ, home, away, liga, hz1_wert, grenze, quote, einsatz):
     """Trägt ein neues Signal im Log ein."""
@@ -1340,75 +1469,78 @@ def auswertung_vztore(spiel):
 # ============================================================
 
 def bot_auswertung_und_berichte():
+    """
+    v26: Direkte FT-Erkennung via Single-Match Endpoint alle 2 Minuten.
+    Viel schneller und zuverlässiger als auf Verschwinden aus Live-Liste zu warten.
+    """
     global tagesbericht_gesendet
-    print("[Auswertung-Bot] Gestartet")
+    print("[Auswertung-Bot] Gestartet | Direkte FT-Erkennung alle 2 Min.")
     letzter_wochenbericht = de_now().isocalendar()[1]
-    spiel_zuletzt_live    = {}
+
+    AUSWERTUNG_FNS = {
+        "ecken":      auswertung_ecken,
+        "ecken_over": auswertung_ecken_over,
+        "karten":     auswertung_karten,
+        "torwart":    auswertung_torwart,
+        "druck":      auswertung_druck,
+        "comeback":   auswertung_comeback,
+        "torflut":    auswertung_torflut,
+        "rotkarte":   auswertung_rotkarte,
+        "hz1tore":    auswertung_hz1tore,
+        "vztore":     auswertung_vztore,
+    }
+    FT_STATI = {"FT", "Finished", "FINISHED", "AET", "PEN", "finished", "aet", "pen"}
 
     while True:
         try:
             now = de_now()
+            # Tagesbericht
             if now.hour == TAGESBERICHT_UHRZEIT and tagesbericht_gesendet != now.date():
                 send_tagesbericht()
                 tagesbericht_gesendet = now.date()
+            # Wochenbericht
             aktuelle_woche = now.isocalendar()[1]
             if now.weekday() == 0 and aktuelle_woche != letzter_wochenbericht:
                 send_wochenbericht()
                 letzter_wochenbericht = aktuelle_woche
 
-            if beobachtete_spiele:
-                try:
-                    alle        = get_live_matches()
-                    live_ids    = {m.get("id") for m in alle}
-                    live_status = {m.get("id"): m.get("status", "") for m in alle}
-                except Exception as e:
-                    print(f"  [Auswertung-Bot] API Fehler: {e}")
-                    time.sleep(60)
+            # Direkte FT-Erkennung: jeden beobachteten Match einzeln abfragen
+            for match_id, spiel in list(beobachtete_spiele.items()):
+                if match_id in auswertung_done:
                     continue
+                try:
+                    match  = ls_get_single_match(match_id)
+                    status = match.get("status", "")
+                    minute = _safe_int(match.get("time", 0))
 
-                aktuell = time.time()
-                for match_id, spiel in list(beobachtete_spiele.items()):
-                    if match_id in auswertung_done:
+                    if status not in FT_STATI:
+                        print(f"  [Auswertung] {spiel['home']} vs {spiel['away']} | {status} | {minute}'")
                         continue
-                    mid_str = str(match_id)
-                    if mid_str in live_ids:
-                        spiel_zuletzt_live[mid_str] = aktuell
-                        continue
-                    zuletzt        = spiel_zuletzt_live.get(mid_str, 0)
-                    minuten_weg    = (aktuell - zuletzt) / 60 if zuletzt > 0 else 999
-                    status         = live_status.get(mid_str, "")
-                    beendet_status = status in ("FT", "FINISHED", "AET", "Finished", "finished")
-                    print(f"  [Auswertung] {spiel['home']} vs {spiel['away']} | "
-                          f"Status: '{status}' | Weg: {minuten_weg:.1f} Min | Beendet: {beendet_status}")
-                    if beendet_status or minuten_weg >= 3:
-                        print(f"  [Auswertung] Beendet: {spiel['home']} vs {spiel['away']}")
-                        time.sleep(20)
-                        typ     = spiel["typ"]
-                        webhook = spiel["webhook"]
-                        auswertung_fn = {
-                            "ecken":    auswertung_ecken,
-                            "ecken_over": auswertung_ecken_over,
-                            "karten":   auswertung_karten,
-                            "torwart":  auswertung_torwart,
-                            "druck":    auswertung_druck,
-                            "comeback": auswertung_comeback,
-                            "torflut":  auswertung_torflut,
-                            "rotkarte": auswertung_rotkarte,
-                            "hz1tore":  auswertung_hz1tore,
-                            "vztore":   auswertung_vztore,
-                        }.get(typ)
-                        msg = auswertung_fn(spiel) if auswertung_fn else None
-                        if msg:
-                            send_telegram(msg)
-                            gewonnen = "GEWONNEN" in msg
-                            details  = {"📊 Typ": f"**{typ.upper()}**"}
-                            embed    = discord_auswertung(typ, spiel["home"], spiel["away"], gewonnen, details)
-                            send_discord_embed(webhook, embed)
-                            print(f"  [Auswertung] Gesendet: {spiel['home']} vs {spiel['away']} ({typ})")
-                        auswertung_done.add(match_id)
+
+                    # Spiel beendet!
+                    print(f"  [Auswertung] ✅ FT: {spiel['home']} vs {spiel['away']} ({status})")
+                    time.sleep(15)  # kurz warten für finale API-Daten
+
+                    typ        = spiel["typ"]
+                    webhook    = spiel["webhook"]
+                    auswert_fn = AUSWERTUNG_FNS.get(typ)
+                    msg        = auswert_fn(spiel) if auswert_fn else None
+
+                    if msg:
+                        send_telegram(msg)
+                        gewonnen = "GEWONNEN" in msg
+                        details  = {"📊 Typ": f"**{typ.upper()}**"}
+                        embed    = discord_auswertung(typ, spiel["home"], spiel["away"], gewonnen, details)
+                        send_discord_embed(webhook, embed)
+                        print(f"  [Auswertung] Gesendet: {spiel['home']} vs {spiel['away']} ({typ})")
+                    auswertung_done.add(match_id)
+
+                except Exception as e:
+                    print(f"  [Auswertung] Fehler bei {match_id}: {e}")
+
         except Exception as e:
             print(f"  [Auswertung-Bot] Fehler: {e}")
-        time.sleep(60)
+        time.sleep(120)  # Alle 2 Minuten prüfen
 
 # ============================================================
 #  FUSSBALL BOTS (Bestehend)
@@ -1465,19 +1597,34 @@ def bot_ecken():
                     if not ecken_tipp_sinnvoll(game, grenze):
                         print(f"  [Ecken-Bot] Durchschnitt passt nicht – übersprungen")
                         continue
+                    # Standings-Analyse
+                    league_id = str((game.get("competition") or {}).get("id", ""))
+                    home_id   = str((game.get("home") or {}).get("id", ""))
+                    away_id   = str((game.get("away") or {}).get("id", ""))
+                    analyse   = baue_analyse_text(home, away, home_id, away_id, league_id, {
+                        "📐 Ecken HZ1": f"{corners} ({corners_home}|{corners_away})",
+                        "🎯 Grenze":    f"Unter {grenze} gesamt",
+                    })
                     konfidenz = berechne_konfidenz("ecken", comp, quote,
                         wetter_schlecht=schlecht, bookmaker_anzahl=bm_anz)
+                    # Claude Review
+                    cl_ok, cl_text = claude_tipp_review(home, away, "ecken", analyse)
+                    if not cl_ok:
+                        konfidenz = max(1, konfidenz - 2)
                     einsatz = kelly_einsatz(quote, "ecken") if quote else EINSATZ
-                    einsatz = kelly_einsatz(quote, "ecken") if quote else EINSATZ
-                    ke    = konfidenz_emoji(konfidenz)
-                    ql    = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
-                    msg   = (f"📐 <b>Ecken Tipp!</b> {ke} Konfidenz: <b>{konfidenz}/10</b>\n\n━━━━━━━━━━━━━━━━━━━━\n"
-                             f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
-                             f"📊 Stand: <b>{score}</b>\n"
-                             f"🔵 {home}: <b>{corners_home}</b> | 🔴 {away}: <b>{corners_away}</b>\n"
-                             f"📊 Gesamt: <b>{corners}</b>\n"
-                             f"🎯 Tipp: Unter <b>{grenze}</b> Ecken gesamt{ql}\n"
-                             f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
+                    ke      = konfidenz_emoji(konfidenz)
+                    ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
+                    cl_line = f"\n🤖 Claude: <b>{cl_text}</b>" if cl_text else ""
+                    msg     = (f"📐 <b>Ecken Tipp!</b> {ke} Konfidenz: <b>{konfidenz}/10</b>\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n"
+                               f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
+                               f"📊 Stand: <b>{score}</b>\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n"
+                               f"{analyse}\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n"
+                               f"📐 Ecken: 🔵 {corners_home} | 🔴 {corners_away} | Gesamt: {corners}\n"
+                               f"🎯 Tipp: Unter <b>{grenze}</b> Ecken gesamt{ql}{cl_line}\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                     send_telegram(msg)
                     send_discord_embed(DISCORD_WEBHOOK_ECKEN,
                         discord_ecken_tipp(home, away, comp, country, score,
@@ -1491,12 +1638,12 @@ def bot_ecken():
                     }
                     signal_eintragen(match_id, "ecken", home, away, comp, corners, grenze, quote, einsatz)
                     gegentipp_registrieren(match_id, "ecken", "unter", "Ecken-Bot")
-                    print(f"  [Ecken-Bot] OK: {home} vs {away} ({corners} Ecken | Grenze: {grenze} | K:{konfidenz}/10)")
+                    print(f"  [Ecken-Bot] OK: {home} vs {away} | K:{konfidenz}/10 | Claude:{'✅' if cl_ok else '⚠️'}")
                 time.sleep(0.5)
             bot_fehler_reset("Ecken-Bot")
         except Exception as e:
             bot_fehler_melden("Ecken-Bot", e)
-        time.sleep(FUSSBALL_INTERVAL * 60)
+        dynamischer_sleep(get_live_matches())
 
 def bot_ecken_over():
     print(f"[Ecken-Über-Bot] Gestartet | Signal sobald 7 Ecken in laufender HZ1")
@@ -1553,7 +1700,7 @@ def bot_ecken_over():
             bot_fehler_reset("Ecken-Über-Bot")
         except Exception as e:
             bot_fehler_melden("Ecken-Über-Bot", e)
-        time.sleep(FUSSBALL_INTERVAL * 60)
+        dynamischer_sleep(get_live_matches())
 
 def bot_karten():
     print(f"[Karten-Bot] Gestartet | mind. {MIN_KARTEN} Karten bis Minute {KARTEN_BIS_MINUTE}")
@@ -1616,7 +1763,7 @@ def bot_karten():
             bot_fehler_reset("Karten-Bot")
         except Exception as e:
             bot_fehler_melden("Karten-Bot", e)
-        time.sleep(FUSSBALL_INTERVAL * 60)
+        dynamischer_sleep(get_live_matches())
 
 def bot_torwart():
     print(f"[Torwart-Bot] Gestartet | 0:0 + mind. {MIN_SHOTS_ON_TARGET} Schüsse")
@@ -1680,7 +1827,7 @@ def bot_torwart():
             bot_fehler_reset("Torwart-Bot")
         except Exception as e:
             bot_fehler_melden("Torwart-Bot", e)
-        time.sleep(FUSSBALL_INTERVAL * 60)
+        dynamischer_sleep(get_live_matches())
 
 # ============================================================
 #  NEUE BOTS
@@ -1765,7 +1912,7 @@ def bot_druck():
             bot_fehler_reset("Druck-Bot")
         except Exception as e:
             bot_fehler_melden("Druck-Bot", e)
-        time.sleep(FUSSBALL_INTERVAL * 60)
+        dynamischer_sleep(get_live_matches())
 
 def bot_comeback():
     """Signal wenn rückliegendes Team mehr Schüsse & Ballbesitz hat als das führende."""
@@ -1837,7 +1984,7 @@ def bot_comeback():
             bot_fehler_reset("Comeback-Bot")
         except Exception as e:
             bot_fehler_melden("Comeback-Bot", e)
-        time.sleep(FUSSBALL_INTERVAL * 60)
+        dynamischer_sleep(get_live_matches())
 
 def bot_torflut():
     """Signal wenn HZ1 bereits 3+ Tore hatte."""
@@ -1888,7 +2035,7 @@ def bot_torflut():
             bot_fehler_reset("Torflut-Bot")
         except Exception as e:
             bot_fehler_melden("Torflut-Bot", e)
-        time.sleep(FUSSBALL_INTERVAL * 60)
+        dynamischer_sleep(get_live_matches())
 
 def bot_rotkarte():
     """Signal nach einer Roten Karte – Tipp auf Tor des Überzahl-Teams."""
@@ -1957,7 +2104,7 @@ def bot_rotkarte():
             bot_fehler_reset("Rotkarte-Bot")
         except Exception as e:
             bot_fehler_melden("Rotkarte-Bot", e)
-        time.sleep(FUSSBALL_INTERVAL * 60)
+        dynamischer_sleep(get_live_matches())
 
 def bot_hz1tore():
     """Analysiert H2H-Daten beim Spielstart und tippt auf HZ1-Tore."""
@@ -2023,7 +2170,7 @@ def bot_hz1tore():
                            f"━━━━━━━━━━━━━━━━━━━━\n"
                            f"📊 H2H: <b>{ana['hz1_spiele']}</b> Spiele analysiert\n"
                            f"📈 Ø HZ1-Tore: <b>{ana['avg_hz1']}</b>\n"
-                           f"🎯 Tipp: {richtung.capitalize()} <b>{linie}</b> Tore (HZ1){ql}\n"
+                           f"🎯 Tipp: {richtung.capitalize()} <b>{linie}</b> Tore (HZ1){ql}{cl_hz1}\n"
                            f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                 send_telegram(msg)
                 send_discord_embed(DISCORD_WEBHOOK_HZ1TORE,
@@ -2045,7 +2192,7 @@ def bot_hz1tore():
             bot_fehler_reset("HZ1-Tore-Bot")
         except Exception as e:
             bot_fehler_melden("HZ1-Tore-Bot", e)
-        time.sleep(FUSSBALL_INTERVAL * 60)
+        dynamischer_sleep(get_live_matches())
 
 def bot_vztore():
     """Analysiert H2H-Daten beim Spielstart und tippt auf Vollzeit-Tore."""
@@ -2105,7 +2252,7 @@ def bot_vztore():
                            f"━━━━━━━━━━━━━━━━━━━━\n"
                            f"📊 H2H: <b>{ana['spiele']}</b> Spiele analysiert\n"
                            f"📈 Ø VZ-Tore: <b>{ana['avg_vz']}</b>\n"
-                           f"🎯 Tipp: {richtung.capitalize()} <b>{linie}</b> Tore (VZ){ql}\n"
+                           f"🎯 Tipp: {richtung.capitalize()} <b>{linie}</b> Tore (VZ){ql}{cl_vz}\n"
                            f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                 send_telegram(msg)
                 send_discord_embed(DISCORD_WEBHOOK_VZTORE,
@@ -2127,7 +2274,7 @@ def bot_vztore():
             bot_fehler_reset("VZ-Tore-Bot")
         except Exception as e:
             bot_fehler_melden("VZ-Tore-Bot", e)
-        time.sleep(FUSSBALL_INTERVAL * 60)
+        dynamischer_sleep(get_live_matches())
 
 # ============================================================
 #  WATCHDOG
@@ -2163,8 +2310,8 @@ def bot_watchdog():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v25")
-    print("  Konfidenz · Gegentipp · CLV · Quoten-Validierung")
+    print("  ⚽ FUSSBALL BOTS v26")
+    print("  Standings · Claude-Reviewer · Direkte Auswertung · Dynamisches Intervall")
     print("=" * 50 + "\n")
 
     statistik_laden()
