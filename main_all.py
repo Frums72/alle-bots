@@ -1,4 +1,4 @@
-# v20 - 4 neue Bots: Druck, Comeback, Torflut, Rote Karte
+# v22 - Kelly-Kriterium, Beste Quote, Mindest-Quote, Wetter-Filter, Signal-Log, Corner-Optimizer
 import requests
 import re
 import time
@@ -35,6 +35,16 @@ MIN_SHOTS_ON_TARGET  = 3
 FUSSBALL_INTERVAL    = 3
 TAGESBERICHT_UHRZEIT = 0
 
+# Wett-Optimierung
+MIN_QUOTE            = 1.3   # Kein Signal wenn Quote unter diesem Wert
+KELLY_FRACTION       = 0.25  # Vorsichtiges Kelly (25% des vollen Kelly)
+KELLY_MAX_EINSATZ    = 50.0  # Maximaler Einsatz pro Tipp in €
+KELLY_MIN_EINSATZ    = 2.0   # Minimaler Einsatz pro Tipp in €
+
+# Wetter-Filter
+WETTER_WIND_GRENZE   = 35    # km/h – ab hier gilt es als windig
+WETTER_REGEN_GRENZE  = 2     # mm  – ab hier gilt es als regnerisch
+
 # Neue Parameter
 MIN_DRUCK_ECKEN      = 6    # Mindest-Ecken gesamt für Druck-Signal
 DRUCK_RATIO          = 2.5  # Dominantes Team muss X-mal mehr Ecken haben
@@ -65,6 +75,26 @@ notified_rotkarte   = set()
 beobachtete_spiele  = {}
 auswertung_done     = set()
 
+# ── Doppel-Tipp Schutz ──────────────────────────────────────
+bereits_getippt  = {}   # match_id → bot_name (verhindert doppelte Tipps)
+
+# ── Fehler-Zähler für Telegram-Alerts ───────────────────────
+fehler_zaehler   = {}   # bot_name → aufeinanderfolgende Fehler
+FEHLER_ALERT_AB  = 3    # nach X Fehlern Telegram-Alert senden
+
+# ── API Rate-Limit ───────────────────────────────────────────
+_api_calls_log   = []
+_api_calls_lock  = threading.Lock()
+MAX_API_PER_MIN  = 25   # max. API-Calls pro Minute
+
+# Signal-Log für Optimizer
+signal_log       = []   # Liste aller Signale mit Ergebnis
+SIGNAL_LOG_DATEI = "signal_log.json"
+
+# Wetter-Cache
+_wetter_cache    = {}   # country → {"wind": x, "regen": x, "ts": timestamp}
+WETTER_TTL       = 1800 # 30 Minuten
+
 statistik = {
     "ecken":    {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
     "ecken_over": {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
@@ -76,6 +106,10 @@ statistik = {
     "rotkarte": {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
 }
 wochen_statistik = {k: {"gewonnen": 0, "verloren": 0, "gewinn": 0.0} for k in statistik}
+
+# ── Erweiterte Statistik ─────────────────────────────────────
+stunden_statistik = {str(h): {"gewonnen": 0, "verloren": 0} for h in range(24)}
+liga_statistik    = {}  # liga_name → {"gewonnen": 0, "verloren": 0}
 tagesbericht_gesendet = None
 STATISTIK_DATEI = "statistik.json"
 
@@ -84,7 +118,7 @@ STATISTIK_DATEI = "statistik.json"
 # ============================================================
 
 def statistik_laden():
-    global statistik, wochen_statistik, tagesbericht_gesendet
+    global statistik, wochen_statistik, tagesbericht_gesendet, stunden_statistik, liga_statistik, signal_log
     import json, os
     if not os.path.exists(STATISTIK_DATEI):
         return
@@ -97,12 +131,24 @@ def statistik_laden():
         for k in wochen_statistik:
             if k in data.get("wochen_statistik", {}):
                 wochen_statistik[k] = data["wochen_statistik"][k]
+        if data.get("stunden_statistik"):
+            stunden_statistik.update(data["stunden_statistik"])
+        if data.get("liga_statistik"):
+            liga_statistik.update(data["liga_statistik"])
         if data.get("tagesbericht_gesendet"):
             from datetime import date
             tagesbericht_gesendet = date.fromisoformat(data["tagesbericht_gesendet"])
         print(f"  [Statistik] Geladen aus {STATISTIK_DATEI}")
     except Exception as e:
         print(f"  [Statistik] Ladefehler: {e}")
+    # Signal-Log laden
+    if os.path.exists(SIGNAL_LOG_DATEI):
+        try:
+            with open(SIGNAL_LOG_DATEI, "r") as f:
+                signal_log = json.load(f)
+            print(f"  [Signal-Log] {len(signal_log)} Einträge geladen")
+        except Exception as e:
+            print(f"  [Signal-Log] Ladefehler: {e}")
 
 def statistik_speichern():
     import json
@@ -110,12 +156,22 @@ def statistik_speichern():
         data = {
             "statistik": statistik,
             "wochen_statistik": wochen_statistik,
+            "stunden_statistik": stunden_statistik,
+            "liga_statistik": liga_statistik,
             "tagesbericht_gesendet": str(tagesbericht_gesendet) if tagesbericht_gesendet else None,
         }
         with open(STATISTIK_DATEI, "w") as f:
             json.dump(data, f, indent=2)
     except Exception as e:
         print(f"  [Statistik] Speicherfehler: {e}")
+
+def signal_log_speichern():
+    import json
+    try:
+        with open(SIGNAL_LOG_DATEI, "w") as f:
+            json.dump(signal_log[-500:], f, indent=2)  # max. 500 Einträge
+    except Exception as e:
+        print(f"  [Signal-Log] Speicherfehler: {e}")
 # ============================================================
 #  HILFSFUNKTIONEN
 # ============================================================
@@ -164,6 +220,51 @@ def send_discord(webhook_url: str, message: str):
     if resp.status_code not in (200, 204):
         print(f"  [Discord Fehler] {resp.status_code}: {resp.text}")
 
+# ── Rate-Limit Schutz ────────────────────────────────────────
+def rate_limit_check():
+    """Wartet falls zu viele API-Calls in der letzten Minute gemacht wurden."""
+    with _api_calls_lock:
+        now = time.time()
+        # Einträge älter als 60s entfernen
+        while _api_calls_log and _api_calls_log[0] < now - 60:
+            _api_calls_log.pop(0)
+        if len(_api_calls_log) >= MAX_API_PER_MIN:
+            wait = 60 - (now - _api_calls_log[0]) + 1
+            print(f"  [Rate-Limit] {len(_api_calls_log)} Calls/Min – warte {wait:.0f}s")
+            time.sleep(max(wait, 1))
+        _api_calls_log.append(time.time())
+
+# ── Fehler-Alerts ────────────────────────────────────────────
+def bot_fehler_melden(bot_name: str, fehler: Exception):
+    """Zählt aufeinanderfolgende Fehler und sendet Telegram-Alert nach X Fehlern."""
+    fehler_zaehler[bot_name] = fehler_zaehler.get(bot_name, 0) + 1
+    count = fehler_zaehler[bot_name]
+    print(f"  [{bot_name}] Fehler #{count}: {fehler}")
+    if count == FEHLER_ALERT_AB:
+        msg = (f"🚨 <b>Bot-Fehler Alert!</b>\n"
+               f"Bot: <b>{bot_name}</b>\n"
+               f"Fehler: {fehler}\n"
+               f"Aufeinanderfolgende Fehler: <b>{count}</b>\n"
+               f"🕐 {jetzt()} Uhr")
+        send_telegram(msg)
+        print(f"  [{bot_name}] Fehler-Alert gesendet!")
+
+def bot_fehler_reset(bot_name: str):
+    """Setzt Fehler-Zähler zurück nach erfolgreichem Durchlauf."""
+    if fehler_zaehler.get(bot_name, 0) > 0:
+        fehler_zaehler[bot_name] = 0
+
+# ── Doppel-Tipp Schutz ───────────────────────────────────────
+def tipp_erlaubt(match_id: str, bot_name: str) -> bool:
+    """Gibt False zurück wenn dieses Spiel bereits von einem anderen Bot getippt wurde."""
+    if match_id in bereits_getippt:
+        erster = bereits_getippt[match_id]
+        if erster != bot_name:
+            print(f"  [{bot_name}] Doppel-Tipp verhindert für {match_id} (bereits von {erster})")
+            return False
+    bereits_getippt[match_id] = bot_name
+    return True
+
 def karten_emoji(typ: str) -> str:
     t = typ.lower().replace(" ", "").replace("_", "")
     if "yellowred" in t: return "🟨🟥"
@@ -172,6 +273,7 @@ def karten_emoji(typ: str) -> str:
     return "🃏"
 
 def api_get_with_retry(url: str, params: dict, max_retries: int = 3) -> requests.Response:
+    rate_limit_check()
     for attempt in range(max_retries):
         try:
             resp = requests.get(url, params=params, timeout=10)
@@ -271,6 +373,7 @@ def get_statistiken(match_id): return ls_get_statistiken(match_id)
 def get_events(match_id):      return ls_get_events(match_id)
 
 def get_quote(home, away, typ):
+    """Holt die BESTE Quote aus allen verfügbaren Bookmakers."""
     if not ODDS_API_KEY:
         return None
     try:
@@ -280,18 +383,80 @@ def get_quote(home, away, typ):
         resp   = requests.get(url, params=params, timeout=8)
         if resp.status_code != 200:
             return None
+        beste_quote = None
         for game in resp.json():
             h = game.get("home_team", "").lower()
             a = game.get("away_team", "").lower()
             if home.lower()[:4] in h or away.lower()[:4] in a:
-                for bookmaker in game.get("bookmakers", [])[:1]:
+                # Alle Bookmaker durchsuchen, beste Quote nehmen
+                for bookmaker in game.get("bookmakers", []):
                     for market in bookmaker.get("markets", []):
                         if market.get("key") == "totals":
                             for outcome in market.get("outcomes", []):
-                                return round(outcome.get("price", 0), 2)
-        return None
+                                q = round(outcome.get("price", 0), 2)
+                                if q > 1.0 and (beste_quote is None or q > beste_quote):
+                                    beste_quote = q
+        return beste_quote
     except:
         return None
+
+def kelly_einsatz(quote: float, typ: str) -> float:
+    """Berechnet den optimalen Einsatz nach Kelly-Kriterium."""
+    if not quote or quote <= 1.0:
+        return EINSATZ
+    ges = statistik[typ]["gewonnen"] + statistik[typ]["verloren"]
+    if ges < 10:
+        return EINSATZ  # Zu wenig Daten – Standard-Einsatz
+    p = statistik[typ]["gewonnen"] / ges  # historische Trefferquote
+    b = quote - 1.0                        # Nettogewinn pro €
+    kelly = (b * p - (1 - p)) / b
+    kelly = max(0, kelly) * KELLY_FRACTION  # Vorsichtiges Kelly
+    einsatz = round(kelly * 100, 2)         # Auf 100€ Bankroll gerechnet
+    return max(KELLY_MIN_EINSATZ, min(einsatz, KELLY_MAX_EINSATZ))
+
+def get_wetter(country: str) -> dict:
+    """Holt Wetterdaten für ein Land (gecacht, 30 Min TTL)."""
+    now = time.time()
+    if country in _wetter_cache and now - _wetter_cache[country]["ts"] < WETTER_TTL:
+        return _wetter_cache[country]
+    try:
+        resp = requests.get(f"https://wttr.in/{country}?format=j1", timeout=6)
+        if resp.status_code != 200:
+            return {"wind": 0, "regen": 0, "ts": now}
+        current  = resp.json()["current_condition"][0]
+        wind     = int(current.get("windspeedKmph", 0))
+        regen    = float(current.get("precipMM", 0))
+        result   = {"wind": wind, "regen": regen, "ts": now}
+        _wetter_cache[country] = result
+        print(f"  [Wetter] {country}: {wind} km/h Wind, {regen} mm Regen")
+        return result
+    except:
+        return {"wind": 0, "regen": 0, "ts": now}
+
+def schlechtes_wetter(country: str) -> bool:
+    """Gibt True zurück wenn das Wetter die Spielbedingungen beeinflusst."""
+    w = get_wetter(country)
+    return w["wind"] >= WETTER_WIND_GRENZE or w["regen"] >= WETTER_REGEN_GRENZE
+
+def signal_eintragen(match_id, typ, home, away, liga, hz1_wert, grenze, quote, einsatz):
+    """Trägt ein neues Signal im Log ein."""
+    signal_log.append({
+        "match_id": match_id, "typ": typ,
+        "home": home, "away": away, "liga": liga,
+        "hz1_wert": hz1_wert, "grenze": grenze,
+        "quote": quote, "einsatz": einsatz,
+        "zeit": de_now().strftime("%Y-%m-%d %H:%M"),
+        "gewonnen": None  # wird nach Spielende gesetzt
+    })
+    signal_log_speichern()
+
+def signal_auswertung_aktualisieren(match_id, gewonnen):
+    """Setzt das Ergebnis für einen Signal-Log-Eintrag."""
+    for s in reversed(signal_log):
+        if s["match_id"] == match_id and s["gewonnen"] is None:
+            s["gewonnen"] = gewonnen
+            signal_log_speichern()
+            break
 
 # ============================================================
 #  DISCORD EMBEDS
@@ -457,18 +622,29 @@ def discord_auswertung(typ, home, away, gewonnen, details: dict):
 #  STATISTIK & BERICHTE
 # ============================================================
 
-def update_statistik(typ, gewonnen, quote):
+def update_statistik(typ, gewonnen, quote, liga=None, match_id=None):
+    stunde = str(de_now().hour)
     if gewonnen:
         gewinn = round((quote - 1) * EINSATZ, 2) if quote else round(EINSATZ * 0.7, 2)
         statistik[typ]["gewonnen"]        += 1
         statistik[typ]["gewinn"]          += gewinn
         wochen_statistik[typ]["gewonnen"] += 1
         wochen_statistik[typ]["gewinn"]   += gewinn
+        stunden_statistik[stunde]["gewonnen"] += 1
+        if liga:
+            liga_statistik.setdefault(liga, {"gewonnen": 0, "verloren": 0})
+            liga_statistik[liga]["gewonnen"] += 1
     else:
         statistik[typ]["verloren"]        += 1
         statistik[typ]["gewinn"]          -= EINSATZ
         wochen_statistik[typ]["verloren"] += 1
         wochen_statistik[typ]["gewinn"]   -= EINSATZ
+        stunden_statistik[stunde]["verloren"] += 1
+        if liga:
+            liga_statistik.setdefault(liga, {"gewonnen": 0, "verloren": 0})
+            liga_statistik[liga]["verloren"] += 1
+    if match_id:
+        signal_auswertung_aktualisieren(match_id, gewonnen)
     statistik_speichern()
 
 def statistik_zeile(name, stat):
@@ -488,6 +664,32 @@ def send_tagesbericht():
     gn  = round(sum(statistik[t]["gewinn"] for t in statistik), 2)
     pct = round(gw / ges * 100) if ges else 0
     ei  = "📈" if gn >= 0 else "📉"
+    # Beste Stunden ermitteln
+    beste_stunden = sorted(
+        [(h, s) for h, s in stunden_statistik.items() if s["gewonnen"] + s["verloren"] > 0],
+        key=lambda x: x[1]["gewonnen"] / max(x[1]["gewonnen"] + x[1]["verloren"], 1),
+        reverse=True
+    )[:3]
+    stunden_text = ", ".join([f"{h}:00 ({s['gewonnen']}/{s['gewonnen']+s['verloren']})"
+                               for h, s in beste_stunden]) or "Noch keine Daten"
+    # Beste Ligen ermitteln
+    beste_ligen = sorted(
+        [(l, s) for l, s in liga_statistik.items() if s["gewonnen"] + s["verloren"] > 0],
+        key=lambda x: x[1]["gewonnen"] / max(x[1]["gewonnen"] + x[1]["verloren"], 1),
+        reverse=True
+    )[:3]
+    ligen_text = "\n".join([f"  • {l}: {s['gewonnen']}/{s['gewonnen']+s['verloren']}"
+                             for l, s in beste_ligen]) or "Noch keine Daten"
+
+    # Corner-Optimizer: welche Grenze war am besten?
+    ecken_logs = [s for s in signal_log if s["typ"] == "ecken" and s["gewonnen"] is not None]
+    optimizer_text = ""
+    if len(ecken_logs) >= 5:
+        for offset in [2, 3, 4]:
+            gw = sum(1 for s in ecken_logs if s["hz1_wert"] * 2 + offset > s.get("final_ecken", s["grenze"]))
+            optimizer_text += f"  x2+{offset}: {gw}/{len(ecken_logs)} ({round(gw/len(ecken_logs)*100)}%)\n"
+        optimizer_text = f"━━━━━━━━━━━━━━━━━━━━\n📐 <b>Corner-Optimizer (Ecken Unter):</b>\n{optimizer_text}"
+
     msg = (f"📋 <b>Tagesbericht – {heute()}</b>\n"
            f"━━━━━━━━━━━━━━━━━━━━\n"
            f"✅ Gewonnen: <b>{gw}</b>\n❌ Verloren: <b>{vl}</b>\n"
@@ -502,6 +704,10 @@ def send_tagesbericht():
            f"🔄 {statistik_zeile('Comeback',      statistik['comeback'])}\n"
            f"🌊 {statistik_zeile('Torflut',       statistik['torflut'])}\n"
            f"🟥 {statistik_zeile('Rote Karte',    statistik['rotkarte'])}\n"
+           f"━━━━━━━━━━━━━━━━━━━━\n"
+           f"🕐 <b>Beste Uhrzeiten:</b> {stunden_text}\n"
+           f"🏆 <b>Beste Ligen:</b>\n{ligen_text}\n"
+           f"{optimizer_text}"
            f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
     send_telegram(msg)
     send_discord(DISCORD_WEBHOOK_BILANZ, msg)
@@ -818,8 +1024,18 @@ def bot_ecken():
                 if corners == 0:
                     continue
                 if corners <= MAX_CORNERS:
+                    if not tipp_erlaubt(match_id, "Ecken-Bot"):
+                        continue
                     quote = get_quote(home, away, "ecken")
-                    ql    = f"\n💶 Quote: <b>{quote}</b>" if quote else ""
+                    # Mindest-Quote Filter
+                    if quote and quote < MIN_QUOTE:
+                        print(f"  [Ecken-Bot] Quote zu niedrig: {quote} < {MIN_QUOTE} – übersprungen")
+                        continue
+                    # Wetter-Anpassung: bei schlechtem Wetter Grenze erhöhen
+                    wetter_bonus = 1 if schlechtes_wetter(country) else 0
+                    grenze = corners * 2 + 3 + wetter_bonus
+                    einsatz = kelly_einsatz(quote, "ecken") if quote else EINSATZ
+                    ql    = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
                     msg   = (f"📐 <b>Ecken Tipp!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                              f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
                              f"📊 Stand: <b>{score}</b>\n"
@@ -835,12 +1051,15 @@ def bot_ecken():
                     beobachtete_spiele[match_id] = {
                         "typ": "ecken", "match_id": match_id,
                         "home": home, "away": away, "hz1_ecken": corners,
-                        "quote": quote, "webhook": DISCORD_WEBHOOK_ECKEN
+                        "quote": quote, "einsatz": einsatz, "liga": comp,
+                        "webhook": DISCORD_WEBHOOK_ECKEN
                     }
-                    print(f"  [Ecken-Bot] OK: {home} vs {away} ({corners} Ecken)")
+                    signal_eintragen(match_id, "ecken", home, away, comp, corners, grenze, quote, einsatz)
+                    print(f"  [Ecken-Bot] OK: {home} vs {away} ({corners} Ecken | Grenze: {grenze} | Einsatz: {einsatz}€)")
                 time.sleep(0.5)
+            bot_fehler_reset("Ecken-Bot")
         except Exception as e:
-            print(f"  [Ecken-Bot] Fehler: {e}")
+            bot_fehler_melden("Ecken-Bot", e)
         time.sleep(FUSSBALL_INTERVAL * 60)
 
 def bot_ecken_over():
@@ -861,6 +1080,8 @@ def bot_ecken_over():
                 corners      = corners_home + corners_away
                 if corners < 7:
                     continue
+                if not tipp_erlaubt(match_id, "Ecken-Über-Bot"):
+                    continue
                 home    = game.get("home", {}).get("name", "?")
                 away    = game.get("away", {}).get("name", "?")
                 comp    = game.get("competition", {}).get("name", "?")
@@ -868,7 +1089,10 @@ def bot_ecken_over():
                 score   = game.get("scores", {}).get("score", "?")
                 minute  = game.get("time", "?")
                 quote   = get_quote(home, away, "ecken_over")
-                ql      = f"\n💶 Quote: <b>{quote}</b>" if quote else ""
+                if quote and quote < MIN_QUOTE:
+                    continue
+                einsatz = kelly_einsatz(quote, "ecken_over") if quote else EINSATZ
+                ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
                 msg     = (f"📐 <b>Ecken ÜBER Tipp!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                            f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
                            f"📊 Stand: <b>{score}</b> | Minute: <b>{minute}'</b>\n"
@@ -884,12 +1108,15 @@ def bot_ecken_over():
                 beobachtete_spiele[match_id] = {
                     "typ": "ecken_over", "match_id": match_id,
                     "home": home, "away": away, "hz1_ecken": corners,
-                    "quote": quote, "webhook": DISCORD_WEBHOOK_ECKEN
+                    "quote": quote, "einsatz": einsatz, "liga": comp,
+                    "webhook": DISCORD_WEBHOOK_ECKEN
                 }
+                signal_eintragen(match_id, "ecken_over", home, away, comp, corners, 14, quote, einsatz)
                 print(f"  [Ecken-Über-Bot] OK: {home} vs {away} ({corners} Ecken in Min. {minute})")
                 time.sleep(0.5)
+            bot_fehler_reset("Ecken-Über-Bot")
         except Exception as e:
-            print(f"  [Ecken-Über-Bot] Fehler: {e}")
+            bot_fehler_melden("Ecken-Über-Bot", e)
         time.sleep(FUSSBALL_INTERVAL * 60)
 
 def bot_karten():
@@ -916,8 +1143,13 @@ def bot_karten():
                 country = (game.get("country") or {}).get("name", "International")
                 score   = game.get("scores", {}).get("score", "?")
                 if len(karten) >= MIN_KARTEN:
+                    if not tipp_erlaubt(match_id, "Karten-Bot"):
+                        continue
                     quote  = get_quote(home, away, "karten")
-                    ql     = f"\n💶 Quote: <b>{quote}</b>" if quote else ""
+                    if quote and quote < MIN_QUOTE:
+                        continue
+                    einsatz = kelly_einsatz(quote, "karten") if quote else EINSATZ
+                    ql     = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
                     zeilen = []
                     karten_discord = []
                     for k in karten:
@@ -945,8 +1177,9 @@ def bot_karten():
                     }
                     print(f"  [Karten-Bot] OK: {home} vs {away} ({len(karten)} Karten)")
                 time.sleep(0.5)
+            bot_fehler_reset("Karten-Bot")
         except Exception as e:
-            print(f"  [Karten-Bot] Fehler: {e}")
+            bot_fehler_melden("Karten-Bot", e)
         time.sleep(FUSSBALL_INTERVAL * 60)
 
 def bot_torwart():
@@ -969,6 +1202,8 @@ def bot_torwart():
                 shots_ges  = shots_home + shots_away
                 if shots_ges < MIN_SHOTS_ON_TARGET:
                     continue
+                if not tipp_erlaubt(match_id, "Torwart-Bot"):
+                    continue
                 saves_home = stats["saves_home"]
                 saves_away = stats["saves_away"]
                 poss_home  = stats["possession_home"]
@@ -981,7 +1216,10 @@ def bot_torwart():
                 minute  = game.get("time", "?")
                 min_text = "Halbzeit" if status == "HALF TIME BREAK" else f"{minute}'"
                 quote   = get_quote(home, away, "torwart")
-                ql      = f"\n💶 Quote: <b>{quote}</b>" if quote else ""
+                if quote and quote < MIN_QUOTE:
+                    continue
+                einsatz = kelly_einsatz(quote, "torwart") if quote else EINSATZ
+                ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
                 msg     = (f"🧤 <b>Torwart-Alarm!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                            f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
                            f"📊 Stand: <b>0:0</b> | {min_text}\n━━━━━━━━━━━━━━━━━━━━\n"
@@ -1003,8 +1241,9 @@ def bot_torwart():
                 }
                 print(f"  [Torwart-Bot] OK: {home} vs {away} | {shots_ges} Schüsse")
                 time.sleep(0.5)
+            bot_fehler_reset("Torwart-Bot")
         except Exception as e:
-            print(f"  [Torwart-Bot] Fehler: {e}")
+            bot_fehler_melden("Torwart-Bot", e)
         time.sleep(FUSSBALL_INTERVAL * 60)
 
 # ============================================================
@@ -1054,6 +1293,8 @@ def bot_druck():
                     fk_schwach   = f_home
                 if not druck_team:
                     continue
+                if not tipp_erlaubt(match_id, "Druck-Bot"):
+                    continue
                 home    = game.get("home", {}).get("name", "?")
                 away    = game.get("away", {}).get("name", "?")
                 comp    = game.get("competition", {}).get("name", "?")
@@ -1061,7 +1302,10 @@ def bot_druck():
                 score   = game.get("scores", {}).get("score", "?")
                 minute  = game.get("time", "?")
                 quote   = get_quote(home, away, "druck")
-                ql      = f"\n💶 Quote: <b>{quote}</b>" if quote else ""
+                if quote and quote < MIN_QUOTE:
+                    continue
+                einsatz = kelly_einsatz(quote, "druck") if quote else EINSATZ
+                ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
                 msg     = (f"🔥 <b>Druck Signal!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                            f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
                            f"📊 Stand: <b>{score}</b> | Minute: <b>{minute}'</b>\n"
@@ -1082,8 +1326,9 @@ def bot_druck():
                 }
                 print(f"  [Druck-Bot] OK: {home} vs {away} | {druck_team} dominiert ({ecken_stark}:{ecken_schwach} Ecken)")
                 time.sleep(0.5)
+            bot_fehler_reset("Druck-Bot")
         except Exception as e:
-            print(f"  [Druck-Bot] Fehler: {e}")
+            bot_fehler_melden("Druck-Bot", e)
         time.sleep(FUSSBALL_INTERVAL * 60)
 
 def bot_comeback():
@@ -1123,11 +1368,16 @@ def bot_comeback():
                     poss_r           = poss_a
                 if shots_r <= shots_f or poss_r <= 50:
                     continue
+                if not tipp_erlaubt(match_id, "Comeback-Bot"):
+                    continue
                 comp    = game.get("competition", {}).get("name", "?")
                 country = (game.get("country") or {}).get("name", "International")
                 minute  = game.get("time", "?")
                 quote   = get_quote(home, away, "comeback")
-                ql      = f"\n💶 Quote: <b>{quote}</b>" if quote else ""
+                if quote and quote < MIN_QUOTE:
+                    continue
+                einsatz = kelly_einsatz(quote, "comeback") if quote else EINSATZ
+                ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
                 msg     = (f"🔄 <b>Comeback Signal!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                            f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
                            f"📊 Stand: <b>{score_str}</b> | Minute: <b>{minute}'</b>\n"
@@ -1148,8 +1398,9 @@ def bot_comeback():
                 }
                 print(f"  [Comeback-Bot] OK: {home} vs {away} | {rueckliegend} liegt zurück aber dominiert")
                 time.sleep(0.5)
+            bot_fehler_reset("Comeback-Bot")
         except Exception as e:
-            print(f"  [Comeback-Bot] Fehler: {e}")
+            bot_fehler_melden("Comeback-Bot", e)
         time.sleep(FUSSBALL_INTERVAL * 60)
 
 def bot_torflut():
@@ -1169,13 +1420,18 @@ def bot_torflut():
                 tore_hz1  = h + a
                 if tore_hz1 < TORFLUT_MIN_TORE:
                     continue
+                if not tipp_erlaubt(match_id, "Torflut-Bot"):
+                    continue
                 home    = game.get("home", {}).get("name", "?")
                 away    = game.get("away", {}).get("name", "?")
                 comp    = game.get("competition", {}).get("name", "?")
                 country = (game.get("country") or {}).get("name", "International")
                 grenze  = tore_hz1 + 1  # z.B. 3 Tore HZ1 → Tipp Über 4 gesamt
                 quote   = get_quote(home, away, "torflut")
-                ql      = f"\n💶 Quote: <b>{quote}</b>" if quote else ""
+                if quote and quote < MIN_QUOTE:
+                    continue
+                einsatz = kelly_einsatz(quote, "torflut") if quote else EINSATZ
+                ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
                 msg     = (f"🌊 <b>Torflut Signal!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                            f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
                            f"📊 Halbzeitstand: <b>{score_str}</b>\n"
@@ -1193,8 +1449,9 @@ def bot_torflut():
                 }
                 print(f"  [Torflut-Bot] OK: {home} vs {away} | {tore_hz1} Tore in HZ1")
                 time.sleep(0.5)
+            bot_fehler_reset("Torflut-Bot")
         except Exception as e:
-            print(f"  [Torflut-Bot] Fehler: {e}")
+            bot_fehler_melden("Torflut-Bot", e)
         time.sleep(FUSSBALL_INTERVAL * 60)
 
 def bot_rotkarte():
@@ -1223,6 +1480,8 @@ def bot_rotkarte():
                 # Nur wenn Karte in den letzten 10 Minuten kam
                 if minute - karte_min > 10:
                     continue
+                if not tipp_erlaubt(match_id, "Rotkarte-Bot"):
+                    continue
                 home    = game.get("home", {}).get("name", "?")
                 away    = game.get("away", {}).get("name", "?")
                 comp    = game.get("competition", {}).get("name", "?")
@@ -1234,7 +1493,10 @@ def bot_rotkarte():
                 rote_karte_team = home if karte_fuer == "home" else away
                 ueberzahl_team  = away if karte_fuer == "home" else home
                 quote = get_quote(home, away, "rotkarte")
-                ql    = f"\n💶 Quote: <b>{quote}</b>" if quote else ""
+                if quote and quote < MIN_QUOTE:
+                    continue
+                einsatz = kelly_einsatz(quote, "rotkarte") if quote else EINSATZ
+                ql    = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
                 msg   = (f"🟥 <b>Rote Karte Signal!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                          f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
                          f"📊 Stand: <b>{score}</b> | Minute: <b>{minute}'</b>\n"
@@ -1256,9 +1518,38 @@ def bot_rotkarte():
                 }
                 print(f"  [Rotkarte-Bot] OK: {home} vs {away} | {ueberzahl_team} in Überzahl (Min. {karte_min})")
                 time.sleep(0.5)
+            bot_fehler_reset("Rotkarte-Bot")
         except Exception as e:
-            print(f"  [Rotkarte-Bot] Fehler: {e}")
+            bot_fehler_melden("Rotkarte-Bot", e)
         time.sleep(FUSSBALL_INTERVAL * 60)
+
+# ============================================================
+#  WATCHDOG
+# ============================================================
+
+_bot_targets = {}  # thread_name → target_function (wird beim Start befüllt)
+
+def bot_watchdog():
+    """Überwacht alle Bot-Threads und startet sie neu falls sie abstürzen."""
+    print("[Watchdog] Gestartet")
+    time.sleep(30)  # Erst warten bis alle Bots hochgefahren sind
+    while True:
+        try:
+            aktive = {t.name: t for t in threading.enumerate()}
+            for name, target in _bot_targets.items():
+                if name not in aktive or not aktive[name].is_alive():
+                    print(f"  [Watchdog] ⚠️ {name} ist tot – starte neu!")
+                    msg = (f"⚠️ <b>Watchdog Alert!</b>\n"
+                           f"Bot <b>{name}</b> ist abgestürzt.\n"
+                           f"Starte automatisch neu...\n"
+                           f"🕐 {jetzt()} Uhr")
+                    send_telegram(msg)
+                    t = threading.Thread(target=target, daemon=True, name=name)
+                    t.start()
+                    print(f"  [Watchdog] ✅ {name} neu gestartet")
+        except Exception as e:
+            print(f"  [Watchdog] Fehler: {e}")
+        time.sleep(60)
 
 # ============================================================
 #  START
@@ -1266,29 +1557,39 @@ def bot_rotkarte():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v20")
-    print("  8 Bots: Ecken · Ecken+ · Karten · Torwart")
-    print("          Druck · Comeback · Torflut · Rotkarte")
-    print("  Powered by livescore-api")
+    print("  ⚽ FUSSBALL BOTS v22")
+    print("  Kelly · Beste Quote · Min-Quote · Wetter")
+    print("  Signal-Log · Corner-Optimizer")
     print("=" * 50 + "\n")
 
     statistik_laden()
 
-    threads = [
-        threading.Thread(target=bot_ecken,                   daemon=True, name="Ecken-Bot"),
-        threading.Thread(target=bot_ecken_over,              daemon=True, name="Ecken-Über-Bot"),
-        threading.Thread(target=bot_karten,                  daemon=True, name="Karten-Bot"),
-        threading.Thread(target=bot_torwart,                 daemon=True, name="Torwart-Bot"),
-        threading.Thread(target=bot_druck,                   daemon=True, name="Druck-Bot"),
-        threading.Thread(target=bot_comeback,                daemon=True, name="Comeback-Bot"),
-        threading.Thread(target=bot_torflut,                 daemon=True, name="Torflut-Bot"),
-        threading.Thread(target=bot_rotkarte,                daemon=True, name="Rotkarte-Bot"),
-        threading.Thread(target=bot_auswertung_und_berichte, daemon=True, name="Auswertung-Bot"),
+    bot_definitionen = [
+        ("Ecken-Bot",        bot_ecken),
+        ("Ecken-Über-Bot",   bot_ecken_over),
+        ("Karten-Bot",       bot_karten),
+        ("Torwart-Bot",      bot_torwart),
+        ("Druck-Bot",        bot_druck),
+        ("Comeback-Bot",     bot_comeback),
+        ("Torflut-Bot",      bot_torflut),
+        ("Rotkarte-Bot",     bot_rotkarte),
+        ("Auswertung-Bot",   bot_auswertung_und_berichte),
     ]
 
-    for t in threads:
+    # Targets für Watchdog merken
+    for name, target in bot_definitionen:
+        _bot_targets[name] = target
+
+    threads = []
+    for name, target in bot_definitionen:
+        t = threading.Thread(target=target, daemon=True, name=name)
+        threads.append(t)
         t.start()
         time.sleep(2)
+
+    # Watchdog starten
+    watchdog = threading.Thread(target=bot_watchdog, daemon=True, name="Watchdog")
+    watchdog.start()
 
     print("Alle Bots laufen!\n")
     while True:
