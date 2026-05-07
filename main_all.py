@@ -103,6 +103,23 @@ BEOBACHTETE_DATEI    = "beobachtete_spiele.json"
 
 # ── Telegram Bot Polling ─────────────────────────────────────
 BOT_PAUSIERT         = False   # Wird durch /pause Befehl gesetzt
+
+# ── GitHub Backup ────────────────────────────────────────────
+GITHUB_TOKEN         = "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"
+GITHUB_REPO          = "Frums72/alle-bots"
+GITHUB_BACKUP_UHRZEIT = 2  # Uhrzeit für tägliches Backup (02:00)
+
+# ── Auswertungs-Fallback ─────────────────────────────────────
+MAX_BEOBACHTUNG_STUNDEN = 3   # Nach X Stunden ohne FT → aus Beobachtung entfernen
+
+# ── Tipp-Kombinationen ───────────────────────────────────────
+KOMBI_SIGNAL_TYPEN   = {
+    frozenset(["hz1tore", "torflut"]): "Torreiches Spiel",
+    frozenset(["hz1tore", "vztore"]):  "Tore-Dominanz",
+    frozenset(["druck", "comeback"]):  "Spannendes Duell",
+    frozenset(["torwart", "druck"]):   "Druck + Chancen",
+}
+kombi_gesendet = set()  # match_id → bereits kombisignal gesendet
 # ============================================================
 
 LS_BASE = "https://livescore-api.com/api-client"
@@ -1095,6 +1112,202 @@ def multi_signal_check(match_id: str, aktueller_bot: str) -> int:
             return MULTI_SIGNAL_BONUS
     return 0
 
+# ── Auswertungs-Fallback ─────────────────────────────────────
+def auswertung_fallback_check():
+    """Entfernt Spiele aus beobachtete_spiele die zu lange keine Auswertung hatten."""
+    jetzt_ts = time.time()
+    zu_entfernen = []
+    for match_id, spiel in list(beobachtete_spiele.items()):
+        if match_id in auswertung_done:
+            zu_entfernen.append(match_id)
+            continue
+        signal_zeit = spiel.get("signal_zeit", jetzt_ts)
+        stunden = (jetzt_ts - signal_zeit) / 3600
+        if stunden > MAX_BEOBACHTUNG_STUNDEN:
+            zu_entfernen.append(match_id)
+            print(f"  [Fallback] {spiel.get('home','?')} vs {spiel.get('away','?')} "
+                  f"nach {stunden:.1f}h entfernt ({spiel.get('typ','')})")
+    for mid in zu_entfernen:
+        beobachtete_spiele.pop(mid, None)
+    if zu_entfernen:
+        beobachtete_spiele_speichern()
+        print(f"  [Fallback] {len(zu_entfernen)} Spiele aus Beobachtung entfernt")
+
+# ── Doppelt-Signal Schutz (verbessert) ───────────────────────
+beobachtete_spiele_multi = {}  # match_id → {typ: spiel_data} – mehrere Tipps pro Spiel
+
+def beobachtung_hinzufuegen(match_id: str, spiel: dict):
+    """Fügt Spiel zur Beobachtung hinzu – mehrere Typen pro Spiel möglich."""
+    typ = spiel.get("typ", "unbekannt")
+    if match_id not in beobachtete_spiele_multi:
+        beobachtete_spiele_multi[match_id] = {}
+    beobachtete_spiele_multi[match_id][typ] = spiel
+    # Hauptdict für Kompatibilität weiterhin befüllen
+    beobachtete_spiele[match_id] = spiel
+    beobachtete_spiele_speichern()
+    # Kombi-Signal prüfen
+    kombi_signal_check(match_id)
+
+def kombi_signal_check(match_id: str):
+    """Prüft ob mehrere Bots auf dasselbe Spiel getippt haben → Kombi-Signal."""
+    if match_id in kombi_gesendet:
+        return
+    typen = set(beobachtete_spiele_multi.get(match_id, {}).keys())
+    if len(typen) < 2:
+        return
+    for kombi_typen, kombi_name in KOMBI_SIGNAL_TYPEN.items():
+        if kombi_typen.issubset(typen):
+            spiel     = beobachtete_spiele[match_id]
+            home      = spiel.get("home", "?")
+            away      = spiel.get("away", "?")
+            alle_tipps = []
+            for t in kombi_typen:
+                s = beobachtete_spiele_multi[match_id].get(t, {})
+                if s.get("richtung") and s.get("linie"):
+                    alle_tipps.append(f"{t.upper()}: {s['richtung']} {s['linie']}")
+                elif s.get("typ"):
+                    alle_tipps.append(t.upper())
+            msg = (f"⚡ <b>KOMBI-SIGNAL! – {kombi_name}</b>\n"
+                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                   f"📌 <b>{home} vs {away}</b>\n"
+                   f"🤖 Mehrere Bots tippen auf dieses Spiel:\n"
+                   f"{'  '.join([f'✅ {t}' for t in alle_tipps])}\n"
+                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                   f"🎯 Erhöhtes Vertrauen in dieses Spiel!\n"
+                   f"🕐 {jetzt()} Uhr")
+            send_telegram(msg)
+            kombi_gesendet.add(match_id)
+            print(f"  [Kombi-Signal] {home} vs {away}: {kombi_name}")
+            break
+
+# ── Over/Under Dynamische Berechnung ─────────────────────────
+def berechne_dynamische_grenzen(h2h_avg: float, form_avg: float = None,
+                                  typ: str = "vz") -> tuple:
+    """
+    Berechnet dynamische Über/Unter Grenzen statt fester Schwellenwerte.
+    Gewichtet H2H (70%) und aktuelle Form (30%).
+    """
+    if form_avg is not None:
+        gewichteter_avg = round(h2h_avg * 0.7 + form_avg * 0.3, 2)
+    else:
+        gewichteter_avg = h2h_avg
+
+    if typ == "hz1":
+        ueber_grenze = 1.0 + (gewichteter_avg * 0.1)  # dynamisch angepasst
+        unter_grenze = 0.5 + (gewichteter_avg * 0.05)
+        ueber_grenze = max(0.9, min(1.4, ueber_grenze))
+        unter_grenze = max(0.4, min(0.8, unter_grenze))
+    else:  # vz
+        ueber_grenze = 2.3 + (gewichteter_avg * 0.15)
+        unter_grenze = 1.5 + (gewichteter_avg * 0.1)
+        ueber_grenze = max(2.2, min(3.0, ueber_grenze))
+        unter_grenze = max(1.3, min(2.0, unter_grenze))
+
+    return round(ueber_grenze, 2), round(unter_grenze, 2)
+
+# ── Verletzungs-Check ────────────────────────────────────────
+_lineup_cache = {}
+LINEUP_TTL    = 1800
+
+def get_team_lineup(match_id: str) -> dict:
+    """Holt Aufstellung für ein Spiel (gecacht 30 Min)."""
+    now = time.time()
+    if match_id in _lineup_cache and now - _lineup_cache[match_id]["ts"] < LINEUP_TTL:
+        return _lineup_cache[match_id]["data"]
+    try:
+        params = {**LS_AUTH, "match_id": match_id}
+        resp   = api_get_with_retry(f"{LS_BASE}/matches/lineups.json", params)
+        data   = resp.json().get("data", {}) or {}
+        _lineup_cache[match_id] = {"data": data, "ts": now}
+        return data
+    except:
+        return {}
+
+def verletzungs_check(match_id: str, home: str, away: str) -> str:
+    """
+    Prüft ob wichtige Spieler fehlen.
+    Gibt Warntext zurück wenn viele Spieler nicht in der Aufstellung sind.
+    """
+    try:
+        lineup = get_team_lineup(match_id)
+        if not lineup:
+            return ""
+        home_lineup = lineup.get("home", {})
+        away_lineup = lineup.get("away", {})
+        home_count  = len(home_lineup.get("starting_eleven", []) or [])
+        away_count  = len(away_lineup.get("starting_eleven", []) or [])
+        warnungen   = []
+        if home_count > 0 and home_count < 11:
+            warnungen.append(f"⚠️ {home}: Nur {home_count}/11 Spieler gelistet")
+        if away_count > 0 and away_count < 11:
+            warnungen.append(f"⚠️ {away}: Nur {away_count}/11 Spieler gelistet")
+        return "\n".join(warnungen)
+    except:
+        return ""
+
+# ── GitHub Backup ─────────────────────────────────────────────
+def github_backup():
+    """Pusht statistik.json und signal_log.json täglich auf GitHub."""
+    import json, base64, os
+    if not GITHUB_TOKEN or GITHUB_TOKEN.startswith("GITHUB"):
+        print("  [Backup] Kein GitHub Token konfiguriert")
+        return
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json",
+    }
+    dateien = []
+    if os.path.exists(STATISTIK_DATEI):
+        dateien.append(STATISTIK_DATEI)
+    if os.path.exists(SIGNAL_LOG_DATEI):
+        dateien.append(SIGNAL_LOG_DATEI)
+    if os.path.exists(BANKROLL_DATEI):
+        dateien.append(BANKROLL_DATEI)
+
+    for datei in dateien:
+        try:
+            with open(datei, "rb") as f:
+                inhalt = base64.b64encode(f.read()).decode()
+            pfad    = f"backup/{de_now().strftime('%Y-%m-%d')}/{datei}"
+            api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{pfad}"
+            # Prüfen ob Datei bereits existiert (SHA nötig für Update)
+            sha     = None
+            check   = requests.get(api_url, headers=headers, timeout=10)
+            if check.status_code == 200:
+                sha = check.json().get("sha")
+            payload = {
+                "message": f"Auto-Backup {de_now().strftime('%Y-%m-%d %H:%M')}",
+                "content": inhalt,
+            }
+            if sha:
+                payload["sha"] = sha
+            resp = requests.put(api_url, headers=headers,
+                                json=payload, timeout=15)
+            if resp.status_code in (200, 201):
+                print(f"  [Backup] ✅ {datei} → GitHub")
+            else:
+                print(f"  [Backup] ❌ {datei}: {resp.status_code}")
+        except Exception as e:
+            print(f"  [Backup] Fehler bei {datei}: {e}")
+
+def bot_github_backup():
+    """Täglicher GitHub Backup Thread."""
+    print(f"[Backup-Bot] Gestartet | Backup täglich um {GITHUB_BACKUP_UHRZEIT}:00 Uhr")
+    backup_gesendet = None
+    while True:
+        try:
+            now = de_now()
+            if now.hour == GITHUB_BACKUP_UHRZEIT and backup_gesendet != now.date():
+                print("  [Backup] Starte tägliches GitHub Backup...")
+                github_backup()
+                backup_gesendet = now.date()
+                send_telegram(f"💾 <b>Backup abgeschlossen</b>\n"
+                              f"statistik.json + signal_log.json → GitHub\n"
+                              f"🕐 {jetzt()} Uhr")
+        except Exception as e:
+            print(f"  [Backup-Bot] Fehler: {e}")
+        time.sleep(60)
+
 # ============================================================
 #  DISCORD EMBEDS
 # ============================================================
@@ -1854,6 +2067,9 @@ def bot_auswertung_und_berichte():
                     bot_auswertung_und_berichte._letzter_monat = monatsbericht_key
                     send_monatsbericht()
 
+            # Fallback: zu alte Beobachtungen entfernen
+            auswertung_fallback_check()
+
             # Direkte FT-Erkennung: jeden beobachteten Match einzeln abfragen
             for match_id, spiel in list(beobachtete_spiele.items()):
                 if match_id in auswertung_done:
@@ -2049,13 +2265,13 @@ def bot_ecken():
                     notified_ecken.add(match_id)
                     multi_bonus = multi_signal_check(match_id, "Ecken-Bot")
                     konfidenz   = min(10, konfidenz + multi_bonus)
-                    beobachtete_spiele[match_id] = {
+                    beobachtung_hinzufuegen(match_id, {
                         "typ": "ecken", "match_id": match_id,
                         "home": home, "away": away, "hz1_ecken": corners,
                         "quote": quote, "einsatz": einsatz, "liga": comp,
                         "webhook": DISCORD_WEBHOOK_ECKEN,
                         "signal_zeit": time.time(), "bot": "Ecken-Bot"
-                    }
+                    })
                     signal_eintragen(match_id, "ecken", home, away, comp, corners, grenze, quote, einsatz)
                     gegentipp_registrieren(match_id, "ecken", "unter", "Ecken-Bot")
                     print(f"  [Ecken-Bot] OK: {home} vs {away} | K:{konfidenz}/10 | Claude:{'✅' if cl_ok else '⚠️'}")
@@ -2111,12 +2327,12 @@ def bot_ecken_over():
                     discord_ecken_over_tipp(home, away, comp, country, score, minute,
                                             corners_home, corners_away, corners, quote))
                 notified_ecken_over.add(match_id)
-                beobachtete_spiele[match_id] = {
+                beobachtung_hinzufuegen(match_id, {
                     "typ": "ecken_over", "match_id": match_id,
                     "home": home, "away": away, "hz1_ecken": corners,
                     "quote": quote, "einsatz": einsatz, "liga": comp,
                     "webhook": DISCORD_WEBHOOK_ECKEN, "signal_zeit": time.time(), "bot": "Ecken-Über-Bot"
-                    }
+                    })
                 signal_eintragen(match_id, "ecken_over", home, away, comp, corners, 14, quote, einsatz)
                 print(f"  [Ecken-Über-Bot] OK: {home} vs {away} ({corners} Ecken in Min. {minute})")
                 time.sleep(0.5)
@@ -2179,11 +2395,11 @@ def bot_karten():
                     send_discord_embed(DISCORD_WEBHOOK_KARTEN,
                         discord_karten_tipp(home, away, comp, country, score, minute, karten_discord, quote))
                     notified_karten.add(match_id)
-                    beobachtete_spiele[match_id] = {
+                    beobachtung_hinzufuegen(match_id, {
                         "typ": "karten", "match_id": match_id,
                         "home": home, "away": away, "karten_anzahl": len(karten),
                         "quote": quote, "webhook": DISCORD_WEBHOOK_KARTEN, "signal_zeit": time.time(), "bot": "Karten-Bot"
-                    }
+                    })
                     print(f"  [Karten-Bot] OK: {home} vs {away} ({len(karten)} Karten)")
                 time.sleep(0.5)
             bot_fehler_reset("Karten-Bot")
@@ -2250,11 +2466,11 @@ def bot_torwart():
                                          shots_home, shots_away, saves_home, saves_away,
                                          poss_home, poss_away, min_text, quote))
                 notified_torwart.add(match_id)
-                beobachtete_spiele[match_id] = {
+                beobachtung_hinzufuegen(match_id, {
                     "typ": "torwart", "match_id": match_id,
                     "home": home, "away": away,
                     "quote": quote, "webhook": DISCORD_WEBHOOK_TORWART, "signal_zeit": time.time(), "bot": "Torwart-Bot"
-                    }
+                    })
                 print(f"  [Torwart-Bot] OK: {home} vs {away} | {shots_ges} Schüsse")
                 time.sleep(0.5)
             bot_fehler_reset("Torwart-Bot")
@@ -2338,11 +2554,11 @@ def bot_druck():
                     discord_druck_tipp(home, away, comp, country, score, minute, druck_team,
                                        ecken_stark, ecken_schwach, fk_stark, fk_schwach, quote))
                 notified_druck.add(match_id)
-                beobachtete_spiele[match_id] = {
+                beobachtung_hinzufuegen(match_id, {
                     "typ": "druck", "match_id": match_id,
                     "home": home, "away": away, "druck_team": druck_team,
                     "quote": quote, "webhook": DISCORD_WEBHOOK_DRUCK, "signal_zeit": time.time(), "bot": "Druck-Bot"
-                    }
+                    })
                 print(f"  [Druck-Bot] OK: {home} vs {away} | {druck_team} dominiert ({ecken_stark}:{ecken_schwach} Ecken)")
                 time.sleep(0.5)
             bot_fehler_reset("Druck-Bot")
@@ -2421,11 +2637,11 @@ def bot_comeback():
                     discord_comeback_tipp(home, away, comp, country, score_str, minute,
                                           rueckliegend, fuehrend, shots_r, shots_f, poss_r, quote))
                 notified_comeback.add(match_id)
-                beobachtete_spiele[match_id] = {
+                beobachtung_hinzufuegen(match_id, {
                     "typ": "comeback", "match_id": match_id,
                     "home": home, "away": away, "rueckliegend": rueckliegend,
                     "quote": quote, "webhook": DISCORD_WEBHOOK_COMEBACK, "signal_zeit": time.time(), "bot": "Comeback-Bot"
-                    }
+                    })
                 print(f"  [Comeback-Bot] OK: {home} vs {away} | {rueckliegend} liegt zurück aber dominiert")
                 time.sleep(0.5)
             bot_fehler_reset("Comeback-Bot")
@@ -2475,11 +2691,11 @@ def bot_torflut():
                 send_discord_embed(DISCORD_WEBHOOK_TORFLUT,
                     discord_torflut_tipp(home, away, comp, country, score_str, tore_hz1, grenze, quote))
                 notified_torflut.add(match_id)
-                beobachtete_spiele[match_id] = {
+                beobachtung_hinzufuegen(match_id, {
                     "typ": "torflut", "match_id": match_id,
                     "home": home, "away": away, "hz1_tore": tore_hz1,
                     "grenze": grenze, "quote": quote, "webhook": DISCORD_WEBHOOK_TORFLUT, "signal_zeit": time.time(), "bot": "Torflut-Bot"
-                    }
+                    })
                 print(f"  [Torflut-Bot] OK: {home} vs {away} | {tore_hz1} Tore in HZ1")
                 time.sleep(0.5)
             bot_fehler_reset("Torflut-Bot")
@@ -2545,13 +2761,13 @@ def bot_rotkarte():
                     discord_rotkarte_tipp(home, away, comp, country, score, minute,
                                           rote_karte_team, ueberzahl_team, spieler, quote))
                 notified_rotkarte.add(match_id)
-                beobachtete_spiele[match_id] = {
+                beobachtung_hinzufuegen(match_id, {
                     "typ": "rotkarte", "match_id": match_id,
                     "home": home, "away": away,
                     "ueberzahl_team": ueberzahl_team,
                     "score_signal": score,
                     "quote": quote, "webhook": DISCORD_WEBHOOK_ROTKARTE, "signal_zeit": time.time(), "bot": "Rotkarte-Bot"
-                    }
+                    })
                 print(f"  [Rotkarte-Bot] OK: {home} vs {away} | {ueberzahl_team} in Überzahl (Min. {karte_min})")
                 time.sleep(0.5)
             bot_fehler_reset("Rotkarte-Bot")
@@ -2603,7 +2819,12 @@ def bot_tore_analyse():
 
                 # ── HZ1-Tore Tipp ──────────────────────────────
                 if match_id not in notified_hz1tore and ana.get("avg_hz1") is not None:
-                    tipp_hz1 = tipp_aus_avg(ana["avg_hz1"], HZ1_UEBER_GRENZE, HZ1_UNTER_GRENZE)
+                    # Dynamische Grenzen berechnen
+                    form_home_avg = get_team_saisonform(home_id)
+                    form_away_avg = get_team_saisonform(away_id)
+                    form_avg_val  = round((form_home_avg + form_away_avg) / 2, 2) if form_home_avg and form_away_avg else None
+                    dyn_ueber_hz1, dyn_unter_hz1 = berechne_dynamische_grenzen(ana["avg_hz1"], form_avg_val, "hz1")
+                    tipp_hz1 = tipp_aus_avg(ana["avg_hz1"], dyn_ueber_hz1, dyn_unter_hz1)
                     if tipp_hz1 and gegentipp_check(match_id, "hz1tore", tipp_hz1[0], "Tore-Bot"):
                         richtung, linie = tipp_hz1
                         form_ok   = form_stimmt_ueberein(home_id, away_id, ana["avg_hz1"], richtung)
@@ -2628,21 +2849,22 @@ def bot_tore_analyse():
                             discord_hz1tore_tipp(home, away, comp, country, richtung, linie,
                                                   ana["avg_hz1"], ana["hz1_spiele"], quote))
                         notified_hz1tore.add(match_id)
-                        beobachtete_spiele[match_id] = {
+                        beobachtung_hinzufuegen(match_id, {
                             "typ": "hz1tore", "match_id": match_id,
                             "home": home, "away": away, "liga": comp,
                             "richtung": richtung, "linie": linie,
                             "quote": quote, "einsatz": einsatz,
                             "webhook": DISCORD_WEBHOOK_HZ1TORE,
                             "signal_zeit": time.time()
-                        }
+                        })
                         signal_eintragen(match_id, "hz1tore", home, away, comp, ana["avg_hz1"], linie, quote, einsatz)
                         gegentipp_registrieren(match_id, "hz1tore", richtung, "Tore-Bot")
                         print(f"  [Tore-Bot] HZ1 OK: {home} vs {away} | {richtung} {linie} (Ø {ana['avg_hz1']})")
 
                 # ── VZ-Tore Tipp ────────────────────────────────
                 if match_id not in notified_vztore:
-                    tipp_vz = tipp_aus_avg(ana["avg_vz"], VZ_UEBER_GRENZE, VZ_UNTER_GRENZE)
+                    dyn_ueber_vz, dyn_unter_vz = berechne_dynamische_grenzen(ana["avg_vz"], form_avg_val, "vz")
+                    tipp_vz = tipp_aus_avg(ana["avg_vz"], dyn_ueber_vz, dyn_unter_vz)
                     if tipp_vz and gegentipp_check(match_id, "vztore", tipp_vz[0], "Tore-Bot"):
                         richtung, linie = tipp_vz
                         form_ok   = form_stimmt_ueberein(home_id, away_id, ana["avg_vz"], richtung)
@@ -2666,14 +2888,14 @@ def bot_tore_analyse():
                             discord_vztore_tipp(home, away, comp, country, richtung, linie,
                                                 ana["avg_vz"], ana["spiele"], quote))
                         notified_vztore.add(match_id)
-                        beobachtete_spiele[match_id] = {
+                        beobachtung_hinzufuegen(match_id, {
                             "typ": "vztore", "match_id": match_id,
                             "home": home, "away": away, "liga": comp,
                             "richtung": richtung, "linie": linie,
                             "quote": quote, "einsatz": einsatz,
                             "webhook": DISCORD_WEBHOOK_VZTORE,
                             "signal_zeit": time.time()
-                        }
+                        })
                         signal_eintragen(match_id, "vztore", home, away, comp, ana["avg_vz"], linie, quote, einsatz)
                         gegentipp_registrieren(match_id, "vztore", richtung, "Tore-Bot")
                         print(f"  [Tore-Bot] VZ OK: {home} vs {away} | {richtung} {linie} (Ø {ana['avg_vz']})")
@@ -2977,12 +3199,16 @@ def bot_prematch():
                     result = claude_prematch_analyse(home, away, liga, anstoß)
                     if not result:
                         continue
+                    # Verletzungs-Check
+                    match_id_fix = str(spiel.get("id", spiel.get("fixture_id", "")))
+                    verletzung   = verletzungs_check(match_id_fix, home, away) if match_id_fix else ""
                     analysen.append({
                         "home": home, "away": away,
                         "liga": liga, "country": country,
                         "anstoß": anstoß,
                         "tipp": result["tipp"],
                         "analyse": result["analyse"],
+                        "verletzung": verletzung,
                     })
                     time.sleep(1)  # kurze Pause zwischen Claude-Calls
 
@@ -2994,12 +3220,13 @@ def bot_prematch():
                            f"━━━━━━━━━━━━━━━━━━━━\n\n")
 
                     for i, a in enumerate(analysen, 1):
-                        liga_str = f"{a['liga']}" + (f" ({a['country']})" if a['country'] else "")
+                        liga_str   = f"{a['liga']}" + (f" ({a['country']})" if a['country'] else "")
+                        verletzung = f"\n{a['verletzung']}" if a.get('verletzung') else ""
                         msg += (f"🏆 <b>{liga_str}</b>\n"
                                 f"⚽ <b>{a['home']} vs {a['away']}</b>\n"
                                 f"🕐 Anstoß: <b>{a['anstoß']} Uhr</b>\n"
                                 f"🎯 Tipp: <b>{a['tipp']}</b>\n"
-                                f"📊 {a['analyse']}\n")
+                                f"📊 {a['analyse']}{verletzung}\n")
                         if i < len(analysen):
                             msg += "\n━━━━━━━━━━━━━━━━━━━━\n\n"
 
@@ -3125,6 +3352,7 @@ if __name__ == "__main__":
         ("PreMatch-Bot",     bot_prematch),
         ("Telegram-Bot",     bot_telegram_befehle),
         ("Erinnerungs-Bot",  bot_prematch_erinnerung),
+        ("Backup-Bot",       bot_github_backup),
         ("Auswertung-Bot",   bot_auswertung_und_berichte),
     ]
 
