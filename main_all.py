@@ -2620,7 +2620,7 @@ def bot_telegram_befehle():
                             "footer": {"text": "BettingXLabs • Instagram → Discord"}
                         }
                         # An alle Discord Webhooks senden
-                        for wh in [DISCORD_WEBHOOK_BILANZ]:
+                        for wh in ["https://discord.com/api/webhooks/1501883766883225621/JjYCVLEInIWfSiTARlJfkoxvEig59ac06822r5ijbiSy9fDcqJgtWE2PaGt0zd9CE6rv"]:
                             send_discord_embed(wh, embed)
                         # Bestätigung an Telegram
                         requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
