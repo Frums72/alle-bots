@@ -1,4 +1,4 @@
-# v27 - Telegram Befehle, Persistenz, Bankroll, Multi-Signal, API-Monitor, Comeback+
+# v28 - Schüsse-Bot hinzugefügt
 import requests
 import re
 import time
@@ -25,6 +25,7 @@ DISCORD_WEBHOOK_TORFLUT   = "https://discord.com/api/webhooks/150125226663031616
 DISCORD_WEBHOOK_ROTKARTE  = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
 DISCORD_WEBHOOK_HZ1TORE  = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
 DISCORD_WEBHOOK_VZTORE   = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
+DISCORD_WEBHOOK_SCHUESSE = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"  # #betlab-live-schuesse
 
 ODDS_API_KEY       = "866948de5d6c34ca51faf6bd77e0bb2a"
 ANTHROPIC_API_KEY  = "ANTHROPIC_API_KEY_HIER_EINTRAGEN"  # claude.ai → API Keys
@@ -144,6 +145,7 @@ notified_torflut    = set()
 notified_rotkarte   = set()
 notified_hz1tore    = set()
 notified_vztore     = set()
+notified_schuesse   = set()
 beobachtete_spiele  = {}
 auswertung_done     = set()
 
@@ -3304,6 +3306,83 @@ def bot_prematch_erinnerung():
 
 _bot_targets = {}  # thread_name → target_function (wird beim Start befüllt)
 
+
+def bot_schuesse():
+    """Signal wenn viele Schüsse aufs Tor fallen – kein Filter, viele Signale."""
+    SCHUESSE_MIN = 4  # Eigene Mindestanzahl – unabhängig von MIN_SHOTS_ON_TARGET
+    print(f"[Schüsse-Bot] Gestartet | Signal ab {SCHUESSE_MIN}+ Schüsse | Kein Filter")
+    while True:
+        try:
+            matches  = get_live_matches()
+            # KEIN Filter – alle laufenden Spiele inklusive Halbzeit, alle Ligen, alle Minuten
+            laufend  = [m for m in matches if m.get("status") in
+                        ("IN PLAY", "ADDED TIME", "HALF TIME BREAK", "EXTRA TIME")]
+            print(f"[{jetzt()}] [Schüsse-Bot] {len(laufend)} Spiele geprüft")
+            for game in laufend:
+                match_id = str(game.get("id"))
+                if match_id in notified_schuesse:
+                    continue
+                home    = game.get("home", {}).get("name", "?")
+                away    = game.get("away", {}).get("name", "?")
+                comp    = game.get("competition", {}).get("name", "?")
+                country = (game.get("country") or {}).get("name", "?")
+                score   = game.get("scores", {}).get("score", "?")
+                minute  = game.get("time", "?")
+                status  = game.get("status", "")
+                min_text = "Halbzeit" if status == "HALF TIME BREAK" else f"{minute}'"
+                stats     = get_statistiken(match_id)
+                shots_h   = stats["shots_on_target_home"]
+                shots_a   = stats["shots_on_target_away"]
+                shots_ges = shots_h + shots_a
+                if shots_ges < SCHUESSE_MIN:
+                    continue
+                saves_h   = stats["saves_home"]
+                saves_a   = stats["saves_away"]
+                poss_h    = stats["possession_home"]
+                poss_a    = stats["possession_away"]
+                corners_h = stats["corners_home"]
+                corners_a = stats["corners_away"]
+                msg = (f"\U0001f3af <b>Viele Torschüsse!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                       f"\U0001f3c6 {comp} ({country})\n\U0001f4cc {home} vs {away}\n"
+                       f"\U0001f4ca Stand: <b>{score}</b> | {min_text}\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n"
+                       f"\U0001f3af Schüsse aufs Tor:\n"
+                       f"  \U0001f535 {home}: <b>{shots_h}</b>\n"
+                       f"  \U0001f534 {away}: <b>{shots_a}</b>\n"
+                       f"  \U0001f4ca Gesamt: <b>{shots_ges}</b>\n"
+                       f"\U0001f9e4 Paraden: {saves_h} | {saves_a}\n"
+                       f"\u26bd Ballbesitz: {poss_h}% | {poss_a}%\n"
+                       f"\U0001f4d0 Ecken: {corners_h} | {corners_a}\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n"
+                       f"\U0001f3af Idee: Over Tore / BTTS / Nächste Ecke\n"
+                       f"\U0001f550 {jetzt()} Uhr")
+                send_telegram(msg)
+                embed = {
+                    "title": "🎯 Viele Torschüsse – Signal!",
+                    "color": 0xFF6B35,
+                    "fields": [
+                        {"name": "🏆 Liga",   "value": f"{comp} ({country})", "inline": True},
+                        {"name": "⚽ Spiel",  "value": f"{home} vs {away}",   "inline": True},
+                        {"name": "📊 Stand",  "value": f"**{score}** | {min_text}", "inline": True},
+                        {"name": "🎯 Schüsse aufs Tor",
+                         "value": f"🔵 {home}: **{shots_h}**\n🔴 {away}: **{shots_a}**\n📊 Gesamt: **{shots_ges}**",
+                         "inline": False},
+                        {"name": "🧤 Paraden",    "value": f"{saves_h} | {saves_a}",     "inline": True},
+                        {"name": "⚽ Ballbesitz", "value": f"{poss_h}% | {poss_a}%",     "inline": True},
+                        {"name": "📐 Ecken",      "value": f"{corners_h} | {corners_a}", "inline": True},
+                        {"name": "🎯 Tipp-Idee",  "value": "Over Tore / BTTS / Nächste Ecke", "inline": False},
+                    ],
+                    "footer": {"text": f"Schüsse-Bot • {heute()} {jetzt()}"},
+                }
+                send_discord_embed(DISCORD_WEBHOOK_SCHUESSE, embed)
+                notified_schuesse.add(match_id)
+                print(f"  [Schüsse-Bot] ✅ {home} vs {away} | {shots_ges} Schüsse ({shots_h}|{shots_a})")
+                time.sleep(0.5)
+            bot_fehler_reset("Schüsse-Bot")
+        except Exception as e:
+            bot_fehler_melden("Schüsse-Bot", e)
+        time.sleep(FUSSBALL_INTERVAL * 60)
+
 def bot_watchdog():
     """Überwacht alle Bot-Threads und startet sie neu falls sie abstürzen."""
     print("[Watchdog] Gestartet")
@@ -3332,8 +3411,8 @@ def bot_watchdog():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v27")
-    print("  Telegram Befehle · Bankroll · Multi-Signal · API-Monitor · Persistenz · Comeback+")
+    print("  ⚽ FUSSBALL BOTS v28")
+    print("  Telegram Befehle · Bankroll · Multi-Signal · API-Monitor · Persistenz · Comeback+ · Schüsse-Bot")
     print("=" * 50 + "\n")
 
     statistik_laden()
@@ -3354,6 +3433,7 @@ if __name__ == "__main__":
         ("Erinnerungs-Bot",  bot_prematch_erinnerung),
         ("Backup-Bot",       bot_github_backup),
         ("Auswertung-Bot",   bot_auswertung_und_berichte),
+        ("Schüsse-Bot",      bot_schuesse),
     ]
 
     # Targets für Watchdog merken
