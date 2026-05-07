@@ -393,12 +393,32 @@ def _safe_int(val, default=0):
         return default
 
 def ls_get_live_matches():
-    resp    = api_get_with_retry(f"{LS_BASE}/matches/live.json", LS_AUTH)
-    matches = resp.json().get("data", {}).get("match", []) or []
-    for m in matches:
-        if "id" in m:
-            m["id"] = str(m["id"])
-    return matches
+    alle_matches = []
+    seite = 1
+    while True:
+        params = {**LS_AUTH, "page": seite}
+        resp   = api_get_with_retry(f"{LS_BASE}/matches/live.json", params)
+        data   = resp.json().get("data", {})
+        matches = data.get("match", []) or []
+        if not matches:
+            break
+        for m in matches:
+            # fixture_id als id verwenden falls kein id vorhanden
+            if "id" not in m and "fixture_id" in m:
+                m["id"] = str(m["fixture_id"])
+            elif "id" in m:
+                m["id"] = str(m["id"])
+        alle_matches.extend(matches)
+        # Prüfen ob es mehr Seiten gibt
+        total     = data.get("total", len(matches))
+        per_page  = data.get("per_page", 50)
+        if len(alle_matches) >= total or len(matches) < per_page:
+            break
+        seite += 1
+        if seite > 10:  # Sicherheit: max 10 Seiten
+            break
+    print(f"  [API] {len(alle_matches)} Live-Spiele geladen (Seiten: {seite})")
+    return alle_matches
 
 def ls_get_statistiken(match_id):
     params = {**LS_AUTH, "match_id": match_id}
