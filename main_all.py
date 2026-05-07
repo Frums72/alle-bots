@@ -30,6 +30,17 @@ ODDS_API_KEY       = "866948de5d6c34ca51faf6bd77e0bb2a"
 ANTHROPIC_API_KEY  = "ANTHROPIC_API_KEY_HIER_EINTRAGEN"  # claude.ai → API Keys
 EINSATZ            = 10.0
 
+# Pre-Match Bot
+PREMATCH_UHRZEITEN   = [10, 16, 20]  # Uhrzeiten für automatische Tipps
+PREMATCH_MAX_TIPPS   = 3             # Max. Spiele pro Post
+PREMATCH_LIGEN       = {
+    "premier league", "bundesliga", "la liga", "serie a", "ligue 1",
+    "champions league", "europa league", "eredivisie", "primeira liga",
+    "uefa champions league", "uefa europa league", "uefa conference league",
+    "primera division", "süper lig", "scottish premiership",
+}
+TELEGRAM_CHAT_PREMATCH = "-1001510152037"  # Telegram Gruppe
+
 # Bestehende Parameter
 MAX_CORNERS          = 5
 MIN_KARTEN           = 2
@@ -245,6 +256,15 @@ def send_telegram(message: str):
     resp    = requests.post(url, json=payload, timeout=10)
     if resp.status_code != 200:
         print(f"  [Telegram Fehler] {resp.text}")
+
+def send_telegram_gruppe(message: str, chat_id: str = None):
+    """Sendet eine Nachricht an eine spezifische Chat-ID (für Gruppen)."""
+    ziel = chat_id or TELEGRAM_CHAT_PREMATCH
+    url     = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": ziel, "text": message, "parse_mode": "HTML"}
+    resp    = requests.post(url, json=payload, timeout=10)
+    if resp.status_code != 200:
+        print(f"  [Telegram Gruppe Fehler] {resp.text}")
 
 def send_discord_embed(webhook_url: str, embed: dict):
     if not webhook_url or webhook_url.startswith("DISCORD"):
@@ -2353,10 +2373,169 @@ def bot_tore_analyse():
             time.sleep(FUSSBALL_INTERVAL * 60)
 
 # ============================================================
-#  WATCHDOG
+#  PRE-MATCH BOT
 # ============================================================
 
-_bot_targets = {}  # thread_name → target_function (wird beim Start befüllt)
+def ls_get_fixtures(date_str: str) -> list:
+    """Holt Fixtures für ein bestimmtes Datum von der LiveScore API."""
+    try:
+        params  = {**LS_AUTH, "date": date_str}
+        resp    = api_get_with_retry(f"{LS_BASE}/fixtures/matches.json", params)
+        matches = resp.json().get("data", {}).get("fixtures", []) or []
+        print(f"  [PreMatch] {len(matches)} Fixtures für {date_str} geladen")
+        return matches
+    except Exception as e:
+        print(f"  [PreMatch] Fixtures Fehler: {e}")
+        return []
+
+def filtere_top_spiele(fixtures: list) -> list:
+    """Filtert nur Spiele aus Top-Ligen."""
+    top = []
+    for f in fixtures:
+        liga = f.get("competition", {}).get("name", "").lower()
+        if any(l in liga for l in PREMATCH_LIGEN):
+            top.append(f)
+    return top
+
+def claude_prematch_analyse(home: str, away: str, liga: str, anstoß: str) -> dict | None:
+    """
+    Fragt Claude nach Pre-Match Analyse.
+    Gibt {"tipp": str, "analyse": str} zurück.
+    """
+    if not ANTHROPIC_API_KEY or ANTHROPIC_API_KEY.startswith("ANTHROPIC"):
+        return {"tipp": "Beide Teams treffen", "analyse": "Starke Offensive auf beiden Seiten."}
+    try:
+        prompt = (
+            f"Du bist ein erfahrener Sportwetten-Analyst. Analysiere dieses Spiel auf Deutsch:\n\n"
+            f"Spiel: {home} vs {away}\n"
+            f"Liga: {liga}\n"
+            f"Anstoß: {anstoß} Uhr\n\n"
+            f"Wähle NUR EINEN dieser Tipp-Typen:\n"
+            f"- Über 2.5 Tore\n"
+            f"- Unter 2.5 Tore\n"
+            f"- Beide Teams treffen\n"
+            f"- Heimsieg\n"
+            f"- Auswärtssieg\n"
+            f"- Doppelte Chance 1X\n"
+            f"- Doppelte Chance X2\n"
+            f"- Über 1.5 Tore\n\n"
+            f"Antworte NUR in diesem Format:\n"
+            f"TIPP: [gewählter Tipp-Typ]\n"
+            f"ANALYSE: [max. 2 Sätze Begründung]"
+        )
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "Content-Type": "application/json",
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+            },
+            json={
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 150,
+                "messages": [{"role": "user", "content": prompt}]
+            },
+            timeout=20
+        )
+        if resp.status_code != 200:
+            return None
+        text         = resp.json().get("content", [{}])[0].get("text", "").strip()
+        tipp         = ""
+        analyse_text = ""
+        for line in text.split("\n"):
+            if line.startswith("TIPP:"):
+                tipp = line.replace("TIPP:", "").strip()
+            elif line.startswith("ANALYSE:"):
+                analyse_text = line.replace("ANALYSE:", "").strip()
+        if not tipp:
+            return None
+        return {"tipp": tipp, "analyse": analyse_text}
+    except Exception as e:
+        print(f"  [PreMatch] Claude Fehler: {e}")
+        return None
+
+def bot_prematch():
+    """Sendet automatisch Pre-Match Tipps um 10:00, 16:00 und 20:00 Uhr."""
+    import random
+    print(f"[PreMatch-Bot] Gestartet | Posts um {PREMATCH_UHRZEITEN} Uhr")
+    gesendet = set()  # "YYYY-MM-DD_HH" → bereits gesendet
+
+    while True:
+        try:
+            now   = de_now()
+            key   = f"{now.strftime('%Y-%m-%d')}_{now.hour}"
+            datum = now.strftime("%Y-%m-%d")
+
+            if now.hour in PREMATCH_UHRZEITEN and now.minute < 5 and key not in gesendet:
+                print(f"  [PreMatch-Bot] Starte Post um {now.hour}:00 Uhr")
+
+                # Fixtures laden und filtern
+                fixtures = ls_get_fixtures(datum)
+                top      = filtere_top_spiele(fixtures)
+
+                if not top:
+                    print(f"  [PreMatch-Bot] Keine Top-Liga Spiele heute")
+                    gesendet.add(key)
+                    time.sleep(60)
+                    continue
+
+                # Zufällig auswählen
+                auswahl   = random.sample(top, min(PREMATCH_MAX_TIPPS, len(top)))
+                analysen  = []
+
+                for spiel in auswahl:
+                    home     = (spiel.get("home_name")
+                                or spiel.get("home", {}).get("name", "?"))
+                    away     = (spiel.get("away_name")
+                                or spiel.get("away", {}).get("name", "?"))
+                    liga     = spiel.get("competition", {}).get("name", "?")
+                    country  = (spiel.get("country") or {}).get("name", "")
+                    anstoß   = spiel.get("time", "?")
+
+                    result = claude_prematch_analyse(home, away, liga, anstoß)
+                    if not result:
+                        continue
+                    analysen.append({
+                        "home": home, "away": away,
+                        "liga": liga, "country": country,
+                        "anstoß": anstoß,
+                        "tipp": result["tipp"],
+                        "analyse": result["analyse"],
+                    })
+                    time.sleep(1)  # kurze Pause zwischen Claude-Calls
+
+                if analysen:
+                    uhr_emoji = "🌅" if now.hour == 10 else ("🌆" if now.hour == 16 else "🌙")
+                    msg = (f"{uhr_emoji} <b>Pre-Match Tipps – {now.strftime('%d.%m.%Y')}</b>\n"
+                           f"━━━━━━━━━━━━━━━━━━━━\n"
+                           f"🤖 KI-Analyse powered by BetlabLIVE\n"
+                           f"━━━━━━━━━━━━━━━━━━━━\n\n")
+
+                    for i, a in enumerate(analysen, 1):
+                        liga_str = f"{a['liga']}" + (f" ({a['country']})" if a['country'] else "")
+                        msg += (f"🏆 <b>{liga_str}</b>\n"
+                                f"⚽ <b>{a['home']} vs {a['away']}</b>\n"
+                                f"🕐 Anstoß: <b>{a['anstoß']} Uhr</b>\n"
+                                f"🎯 Tipp: <b>{a['tipp']}</b>\n"
+                                f"📊 {a['analyse']}\n")
+                        if i < len(analysen):
+                            msg += "\n━━━━━━━━━━━━━━━━━━━━\n\n"
+
+                    msg += (f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                            f"💬 Community & Live-Bots: discord.gg/G6dt3Kpf\n"
+                            f"⚠️ 18+ | Verantwortungsvoll spielen")
+
+                    send_telegram_gruppe(msg)
+                    print(f"  [PreMatch-Bot] ✅ {len(analysen)} Tipps um {now.hour}:00 gesendet")
+
+                gesendet.add(key)
+                # Nur heutige Keys behalten
+                heute_str = now.strftime('%Y-%m-%d')
+                gesendet  = {k for k in gesendet if k.startswith(heute_str)}
+
+        except Exception as e:
+            print(f"  [PreMatch-Bot] Fehler: {e}")
+        time.sleep(60)
 
 # ============================================================
 #  WATCHDOG
@@ -2393,7 +2572,7 @@ def bot_watchdog():
 if __name__ == "__main__":
     print("=" * 50)
     print("  ⚽ FUSSBALL BOTS v26")
-    print("  Standings · Claude-Reviewer · Direkte Auswertung · Dynamisches Intervall")
+    print("  Standings · Claude-Reviewer · Direkte Auswertung · Pre-Match Bot (10/16/20 Uhr)")
     print("=" * 50 + "\n")
 
     statistik_laden()
@@ -2408,6 +2587,7 @@ if __name__ == "__main__":
         ("Torflut-Bot",      bot_torflut),
         ("Rotkarte-Bot",     bot_rotkarte),
         ("Tore-Bot",         bot_tore_analyse),
+        ("PreMatch-Bot",     bot_prematch),
         ("Auswertung-Bot",   bot_auswertung_und_berichte),
     ]
 
