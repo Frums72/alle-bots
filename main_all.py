@@ -161,6 +161,10 @@ ECKEN_AVG_TTL    = 3600 # 1 Stunde
 _standings_cache = {}   # league_id → {"data": [...], "ts": timestamp}
 STANDINGS_TTL    = 1800 # 30 Minuten
 
+# ── Streak-Tracker ──────────────────────────────────────────
+streak_aktuell   = 0   # positiv = Gewinnserie, negativ = Verlustserie
+streak_beste     = 0   # beste Gewinnserie gesamt
+
 statistik = {
     "ecken":    {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
     "ecken_over": {"gewonnen": 0, "verloren": 0, "gewinn": 0.0},
@@ -714,6 +718,47 @@ def get_quote_details(home, away):
 
 
 
+def get_odds_vergleich(home: str, away: str) -> str:
+    """Gibt formatierten Odds-Vergleich der Top-Bookmaker zurück."""
+    if not ODDS_API_KEY:
+        return ""
+    try:
+        url    = "https://api.the-odds-api.com/v4/sports/soccer/odds/"
+        params = {"apiKey": ODDS_API_KEY, "regions": "eu",
+                  "markets": "totals", "oddsFormat": "decimal"}
+        resp   = requests.get(url, params=params, timeout=8)
+        if resp.status_code != 200:
+            return ""
+        bm_namen = {
+            "bet365": "Bet365", "unibet": "Unibet", "betway": "Betway",
+            "williamhill": "William Hill", "bwin": "Bwin",
+            "pinnacle": "Pinnacle", "betfair": "Betfair",
+            "1xbet": "1xBet", "betsson": "Betsson",
+        }
+        beste = {}
+        for game in resp.json():
+            h = game.get("home_team", "").lower()
+            a = game.get("away_team", "").lower()
+            if home.lower()[:4] not in h and away.lower()[:4] not in a:
+                continue
+            for bm in game.get("bookmakers", []):
+                name    = bm.get("key", "").lower()
+                anzeige = bm_namen.get(name, name.capitalize())
+                for market in bm.get("markets", []):
+                    if market.get("key") == "totals":
+                        for outcome in market.get("outcomes", []):
+                            q = round(outcome.get("price", 0), 2)
+                            if q > 1.0:
+                                if anzeige not in beste or q > beste[anzeige]:
+                                    beste[anzeige] = q
+        if not beste:
+            return ""
+        top4   = sorted(beste.items(), key=lambda x: x[1], reverse=True)[:4]
+        zeilen = " | ".join([f"{bm}: <b>{q}</b>" for bm, q in top4])
+        return f"\n📊 Quotes: {zeilen}"
+    except:
+        return ""
+
 # ── Gegentipp-Schutz ────────────────────────────────────────
 def gegentipp_registrieren(match_id, markt, richtung, bot):
     aktive_tipps.setdefault(match_id, [])
@@ -1259,10 +1304,93 @@ def update_statistik(typ, gewonnen, quote, liga=None, match_id=None):
             liga_statistik[liga]["verloren"] += 1
     if match_id:
         signal_auswertung_aktualisieren(match_id, gewonnen)
+    # Streak aktualisieren
+    global streak_aktuell, streak_beste
+    if gewonnen:
+        streak_aktuell = max(1, streak_aktuell + 1) if streak_aktuell >= 0 else 1
+        streak_beste   = max(streak_beste, streak_aktuell)
+        if streak_aktuell >= 3:
+            send_telegram(f"🔥 <b>{streak_aktuell} Tipps in Folge gewonnen!</b> Streak läuft! 💪")
+    else:
+        streak_aktuell = min(-1, streak_aktuell - 1) if streak_aktuell <= 0 else -1
+        if streak_aktuell <= -3:
+            send_telegram(f"⚠️ <b>{abs(streak_aktuell)} Tipps in Folge verloren.</b> Einsätze prüfen!")
     # Bankroll aktualisieren
     einsatz_wert = EINSATZ
     bankroll_aktualisieren(gewonnen, einsatz_wert, quote)
     statistik_speichern()
+
+def claude_verloren_analyse(home: str, away: str, typ: str, details: str):
+    """Claude analysiert automatisch warum ein Tipp verloren hat."""
+    if not ANTHROPIC_API_KEY or ANTHROPIC_API_KEY.startswith("ANTHROPIC"):
+        return
+    try:
+        typ_namen = {
+            "ecken": "Ecken Unter", "ecken_over": "Ecken Über",
+            "karten": "Karten Über 5", "torwart": "Mind. 1 Tor",
+            "druck": "Druck Signal", "comeback": "Comeback",
+            "torflut": "Torflut", "rotkarte": "Rote Karte",
+            "hz1tore": "HZ1 Tore", "vztore": "Vollzeit Tore",
+        }.get(typ, typ)
+        prompt = (
+            f"Ein Sportwetten-Tipp hat verloren. Analysiere kurz auf Deutsch warum:\n\n"
+            f"Spiel: {home} vs {away}\n"
+            f"Tipp-Typ: {typ_namen}\n"
+            f"Details: {details}\n\n"
+            f"Antworte in max. 2 Sätzen was schiefgelaufen ist und was man "
+            f"beim nächsten Mal beachten sollte. Nur die Analyse, kein Kommentar."
+        )
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"Content-Type": "application/json",
+                     "x-api-key": ANTHROPIC_API_KEY,
+                     "anthropic-version": "2023-06-01"},
+            json={"model": "claude-sonnet-4-20250514", "max_tokens": 150,
+                  "messages": [{"role": "user", "content": prompt}]},
+            timeout=15
+        )
+        if resp.status_code != 200:
+            return
+        analyse = resp.json().get("content", [{}])[0].get("text", "").strip()
+        if analyse:
+            msg = (f"🔍 <b>Verlust-Analyse ({typ_namen})</b>\n"
+                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                   f"📌 {home} vs {away}\n"
+                   f"🤖 {analyse}\n"
+                   f"━━━━━━━━━━━━━━━━━━━━")
+            send_telegram(msg)
+    except Exception as e:
+        print(f"  [Verlust-Analyse] Fehler: {e}")
+
+def bot_rangliste() -> str:
+    """Erstellt Rangliste aller Bots nach Trefferquote."""
+    bots = {
+        "📐 Ecken Unter":  wochen_statistik["ecken"],
+        "📐 Ecken Über":   wochen_statistik["ecken_over"],
+        "🃏 Karten":        wochen_statistik["karten"],
+        "🧤 Torwart":       wochen_statistik["torwart"],
+        "🔥 Druck":         wochen_statistik["druck"],
+        "🔄 Comeback":      wochen_statistik["comeback"],
+        "🌊 Torflut":       wochen_statistik["torflut"],
+        "🟥 Rotkarte":      wochen_statistik["rotkarte"],
+        "🥅 HZ1-Tore":     wochen_statistik["hz1tore"],
+        "🏆 VZ-Tore":       wochen_statistik["vztore"],
+    }
+    rang = []
+    for name, stat in bots.items():
+        ges = stat["gewonnen"] + stat["verloren"]
+        if ges == 0:
+            continue
+        pct  = round(stat["gewonnen"] / ges * 100)
+        rang.append((name, stat["gewonnen"], ges, pct))
+    rang.sort(key=lambda x: x[3], reverse=True)
+    zeilen = []
+    for i, (name, gw, ges, pct) in enumerate(rang, 1):
+        medal = ["🥇", "🥈", "🥉"][i-1] if i <= 3 else f"{i}."
+        zeilen.append(f"{medal} {name}: {gw}/{ges} ({pct}%)")
+    streak_emoji = "🔥" if streak_aktuell > 0 else "❄️"
+    streak_text  = f"{streak_emoji} Streak: <b>{abs(streak_aktuell)}x {'Gewinn' if streak_aktuell > 0 else 'Verlust'}</b> | Beste: <b>{streak_beste}x</b>"
+    return "\n".join(zeilen) + f"\n━━━━━━━━━━━━━━━━━━━━\n{streak_text}" if zeilen else "Noch keine Daten"
 
 def statistik_zeile(name, stat):
     gesamt = stat["gewonnen"] + stat["verloren"]
@@ -1272,6 +1400,36 @@ def statistik_zeile(name, stat):
     gewinn = round(stat["gewinn"], 2)
     emoji  = "📈" if gewinn >= 0 else "📉"
     return f"{name}: {stat['gewonnen']}/{gesamt} ({pct}%) {emoji} {'+' if gewinn >= 0 else ''}{gewinn}€"
+
+def send_monatsbericht():
+    """Automatischer Monatsbericht am 1. des Monats."""
+    import calendar
+    letzter_monat = de_now().replace(day=1) - timedelta(days=1)
+    monat_name    = letzter_monat.strftime("%B %Y")
+    gw  = sum(statistik[t]["gewonnen"] for t in statistik)
+    vl  = sum(statistik[t]["verloren"] for t in statistik)
+    ges = gw + vl
+    gn  = round(sum(statistik[t]["gewinn"] for t in statistik), 2)
+    pct = round(gw / ges * 100) if ges else 0
+    br  = bankroll_laden()
+    ei  = "📈" if gn >= 0 else "📉"
+    rang = bot_rangliste()
+    streak_text = f"🔥 Beste Serie: <b>{streak_beste}x Gewinn</b>"
+    msg = (f"📅 <b>Monatsbericht – {monat_name}</b>\n"
+           f"━━━━━━━━━━━━━━━━━━━━\n"
+           f"✅ Gewonnen: <b>{gw}</b>\n"
+           f"❌ Verloren: <b>{vl}</b>\n"
+           f"🎯 Trefferquote: <b>{pct}%</b>\n"
+           f"{ei} Simulation: <b>{'+' if gn >= 0 else ''}{gn}€</b>\n"
+           f"💰 Bankroll: <b>{br}€</b>\n"
+           f"━━━━━━━━━━━━━━━━━━━━\n"
+           f"🏆 <b>Bot-Rangliste:</b>\n{rang}\n"
+           f"━━━━━━━━━━━━━━━━━━━━\n"
+           f"{streak_text}\n"
+           f"🕐 {jetzt()} Uhr")
+    send_telegram(msg)
+    send_discord(DISCORD_WEBHOOK_BILANZ, msg)
+    print(f"  [Bericht] Monatsbericht gesendet ({monat_name})")
 
 def send_tagesbericht():
     global tagesbericht_gesendet
@@ -1664,11 +1822,17 @@ def bot_auswertung_und_berichte():
             if now.hour == TAGESBERICHT_UHRZEIT and tagesbericht_gesendet != now.date():
                 send_tagesbericht()
                 tagesbericht_gesendet = now.date()
-            # Wochenbericht
+            # Wochenbericht (Montag)
             aktuelle_woche = now.isocalendar()[1]
             if now.weekday() == 0 and aktuelle_woche != letzter_wochenbericht:
                 send_wochenbericht()
                 letzter_wochenbericht = aktuelle_woche
+            # Monatsbericht (1. des Monats)
+            if now.day == 1 and now.hour == 9 and now.minute < 3:
+                monatsbericht_key = f"{now.year}-{now.month}"
+                if not hasattr(bot_auswertung_und_berichte, "_letzter_monat") or                    bot_auswertung_und_berichte._letzter_monat != monatsbericht_key:
+                    bot_auswertung_und_berichte._letzter_monat = monatsbericht_key
+                    send_monatsbericht()
 
             # Direkte FT-Erkennung: jeden beobachteten Match einzeln abfragen
             for match_id, spiel in list(beobachtete_spiele.items()):
@@ -1747,6 +1911,13 @@ def bot_auswertung_und_berichte():
                         embed    = discord_auswertung(typ, spiel["home"], spiel["away"], gewonnen, details)
                         send_discord_embed(webhook, embed)
                         print(f"  [Auswertung] Gesendet: {spiel['home']} vs {spiel['away']} ({typ})")
+                        # Verloren-Analyse via Claude
+                        if not gewonnen:
+                            threading.Thread(
+                                target=claude_verloren_analyse,
+                                args=(spiel["home"], spiel["away"], typ, msg),
+                                daemon=True
+                            ).start()
                         auswertung_done.add(match_id)  # Nur als done markieren wenn erfolgreich
                     else:
                         # Auswertung fehlgeschlagen (z.B. kein HZ1-Score) → erneut versuchen
@@ -1839,7 +2010,8 @@ def bot_ecken():
                     einsatz = kelly_einsatz_bankroll(quote, "ecken") if quote else EINSATZ
                     ke      = konfidenz_emoji(konfidenz)
                     ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
-                    cl_line = f"\n🤖 Claude: <b>{cl_text}</b>" if cl_text else ""
+                    cl_line    = f"\n🤖 Claude: <b>{cl_text}</b>" if cl_text else ""
+                    odds_vgl   = get_odds_vergleich(home, away)
                     msg     = (f"📐 <b>Ecken Tipp!</b> {ke} Konfidenz: <b>{konfidenz}/10</b>\n"
                                f"━━━━━━━━━━━━━━━━━━━━\n"
                                f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
@@ -1848,7 +2020,7 @@ def bot_ecken():
                                f"{analyse}\n"
                                f"━━━━━━━━━━━━━━━━━━━━\n"
                                f"📐 Ecken: 🔵 {corners_home} | 🔴 {corners_away} | Gesamt: {corners}\n"
-                               f"🎯 Tipp: Unter <b>{grenze}</b> Ecken gesamt{ql}{cl_line}\n"
+                               f"🎯 Tipp: Unter <b>{grenze}</b> Ecken gesamt{ql}{odds_vgl}{cl_line}\n"
                                f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                     send_telegram(msg)
                     send_discord_embed(DISCORD_WEBHOOK_ECKEN,
@@ -2567,12 +2739,14 @@ def bot_telegram_befehle():
                     ges = gw + vl
                     pct = round(gw / ges * 100) if ges else 0
                     gn  = round(sum(statistik[t]["gewinn"] for t in statistik), 2)
+                    streak_sym = "🔥" if streak_aktuell > 0 else "❄️"
                     antwort = (f"📊 <b>Statistik heute</b>\n"
                                f"━━━━━━━━━━━━━━━━━━━━\n"
                                f"✅ Gewonnen: <b>{gw}</b>\n"
                                f"❌ Verloren: <b>{vl}</b>\n"
                                f"🎯 Trefferquote: <b>{pct}%</b>\n"
                                f"{'📈' if gn >= 0 else '📉'} Simulation: <b>{'+' if gn >= 0 else ''}{gn}€</b>\n"
+                               f"{streak_sym} Streak: <b>{abs(streak_aktuell)}x {'Gewinn' if streak_aktuell > 0 else 'Verlust'}</b>\n"
                                f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                     requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                                   json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
@@ -2587,6 +2761,35 @@ def bot_telegram_befehle():
                                f"Start: <b>{start}€</b>\n"
                                f"Aktuell: <b>{br}€</b>\n"
                                f"{emoji} Differenz: <b>{'+' if diff >= 0 else ''}{diff}€</b>\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text == "/live":
+                    try:
+                        matches = get_live_matches()
+                        if not matches:
+                            antwort = "⚽ Gerade keine Live-Spiele."
+                        else:
+                            zeilen = [f"⚽ <b>Live Spiele</b> ({len(matches)} gesamt)\n━━━━━━━━━━━━━━━━━━━━"]
+                            for m in matches[:15]:
+                                home   = m.get("home", {}).get("name", "?")
+                                away   = m.get("away", {}).get("name", "?")
+                                score  = m.get("scores", {}).get("score", "? - ?")
+                                minute = m.get("time", "?")
+                                status = m.get("status", "")
+                                min_str = "HZ" if status == "HALF TIME BREAK" else f"{minute}'"
+                                zeilen.append(f"🔴 {home} <b>{score}</b> {away} | {min_str}")
+                            antwort = "\n".join(zeilen)
+                    except Exception as e:
+                        antwort = f"❌ Fehler: {e}"
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text == "/rangliste":
+                    rang = bot_rangliste()
+                    antwort = (f"🏆 <b>Bot-Rangliste (diese Woche)</b>\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n{rang}\n"
                                f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                     requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                                   json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
@@ -2797,6 +3000,58 @@ def bot_prematch():
         time.sleep(60)
 
 # ============================================================
+#  PRE-MATCH ERINNERUNG (15 Min vor Anstoß)
+# ============================================================
+
+def bot_prematch_erinnerung():
+    """
+    Prüft alle gesendeten Pre-Match Tipps und erinnert
+    15 Minuten vor Anstoß nochmal in Telegram.
+    """
+    print("[Erinnerungs-Bot] Gestartet | Prüft 15-Min Erinnerungen")
+    erinnert = set()  # match_id → bereits erinnert
+
+    while True:
+        try:
+            now     = de_now()
+            datum   = now.strftime("%Y-%m-%d")
+            fixtures = ls_get_fixtures(datum)
+
+            for spiel in fixtures:
+                match_id = str(spiel.get("id", ""))
+                if not match_id or match_id in erinnert:
+                    continue
+                home    = spiel.get("home_name", spiel.get("home", {}).get("name", "?"))
+                away    = spiel.get("away_name", spiel.get("away", {}).get("name", "?"))
+                liga    = spiel.get("competition", {}).get("name", "?")
+                anstoß  = spiel.get("time", "")
+                if not anstoß or ":" not in anstoß:
+                    continue
+                try:
+                    h, m    = map(int, anstoß.split(":"))
+                    kickoff = now.replace(hour=h, minute=m, second=0, microsecond=0)
+                    diff    = (kickoff - now).total_seconds() / 60
+                    # Erinnerung 15-18 Minuten vor Anstoß
+                    if 13 <= diff <= 18:
+                        liga_lower = liga.lower()
+                        if any(l in liga_lower for l in PREMATCH_LIGEN):
+                            msg = (f"⏰ <b>Anstoß in ~15 Minuten!</b>\n"
+                                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                                   f"🏆 {liga}\n"
+                                   f"⚽ <b>{home} vs {away}</b>\n"
+                                   f"🕐 Anstoß: <b>{anstoß} Uhr</b>\n"
+                                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                                   f"💬 discord.gg/G6dt3Kpf")
+                            send_telegram_gruppe(msg)
+                            erinnert.add(match_id)
+                            print(f"  [Erinnerung] {home} vs {away} in ~{diff:.0f} Min")
+                except:
+                    continue
+        except Exception as e:
+            print(f"  [Erinnerungs-Bot] Fehler: {e}")
+        time.sleep(60)
+
+# ============================================================
 #  WATCHDOG
 # ============================================================
 
@@ -2849,6 +3104,7 @@ if __name__ == "__main__":
         ("Tore-Bot",         bot_tore_analyse),
         ("PreMatch-Bot",     bot_prematch),
         ("Telegram-Bot",     bot_telegram_befehle),
+        ("Erinnerungs-Bot",  bot_prematch_erinnerung),
         ("Auswertung-Bot",   bot_auswertung_und_berichte),
     ]
 
