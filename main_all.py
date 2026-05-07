@@ -1,4 +1,4 @@
-# v26 - Standings-Analyse, Claude-Reviewer, Direkte Auswertung, Dynamisches Intervall
+# v27 - Telegram Befehle, Persistenz, Bankroll, Multi-Signal, API-Monitor, Comeback+
 import requests
 import re
 import time
@@ -87,6 +87,22 @@ MIN_DRUCK_ECKEN      = 6    # Mindest-Ecken gesamt für Druck-Signal
 DRUCK_RATIO          = 2.5  # Dominantes Team muss X-mal mehr Ecken haben
 COMEBACK_AB_MINUTE   = 30   # Ab welcher Minute Comeback-Signal prüfen
 TORFLUT_MIN_TORE     = 3    # Mindest-Tore in HZ1 für Torflut-Signal
+
+# ── Bankroll-Tracking ────────────────────────────────────────
+BANKROLL             = 100.0  # Deine aktuelle Bankroll in €
+BANKROLL_DATEI       = "bankroll.json"
+
+# ── Multi-Signal Boost ───────────────────────────────────────
+MULTI_SIGNAL_BONUS   = 2     # Konfidenz-Bonus wenn mehrere Bots dasselbe Spiel tippen
+
+# ── API-Monitor ──────────────────────────────────────────────
+API_MONITOR_DATEI    = "api_monitor.json"
+
+# ── Persistenz ───────────────────────────────────────────────
+BEOBACHTETE_DATEI    = "beobachtete_spiele.json"
+
+# ── Telegram Bot Polling ─────────────────────────────────────
+BOT_PAUSIERT         = False   # Wird durch /pause Befehl gesetzt
 # ============================================================
 
 LS_BASE = "https://livescore-api.com/api-client"
@@ -251,6 +267,9 @@ def html_zu_discord(text):
     return text
 
 def send_telegram(message: str):
+    if BOT_PAUSIERT:
+        print("  [Telegram] Signal unterdrückt (Bot pausiert)")
+        return
     url     = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"}
     resp    = requests.post(url, json=payload, timeout=10)
@@ -294,6 +313,7 @@ def rate_limit_check():
             print(f"  [Rate-Limit] {len(_api_calls_log)} Calls/Min – warte {wait:.0f}s")
             time.sleep(max(wait, 1))
         _api_calls_log.append(time.time())
+        api_monitor_increment()
 
 # ── Fehler-Alerts ────────────────────────────────────────────
 def bot_fehler_melden(bot_name: str, fehler: Exception):
@@ -360,6 +380,13 @@ def api_get_with_retry(url: str, params: dict, max_retries: int = 3) -> requests
 # ============================================================
 #  API-FUNKTIONEN
 # ============================================================
+
+def _safe_int(val, default=0):
+    """Sicher int() – gibt default zurück wenn Konvertierung fehlschlägt."""
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return default
 
 def ls_get_live_matches():
     resp    = api_get_with_retry(f"{LS_BASE}/matches/live.json", LS_AUTH)
@@ -685,10 +712,7 @@ def get_quote_details(home, away):
     except:
         return {"quote": None, "avg_quote": None, "bookmaker_anzahl": 0}
 
-def get_quote(home, away, typ):
-    """Wrapper: gibt nur beste Quote zurück (nutzt get_quote_details intern)."""
-    d = get_quote_details(home, away)
-    return d["quote"]
+
 
 # ── Gegentipp-Schutz ────────────────────────────────────────
 def gegentipp_registrieren(match_id, markt, richtung, bot):
@@ -886,6 +910,7 @@ def dynamischer_sleep(matches: list = None):
 
 def signal_eintragen(match_id, typ, home, away, liga, hz1_wert, grenze, quote, einsatz):
     """Trägt ein neues Signal im Log ein."""
+    beobachtete_spiele_speichern()  # Persistenz bei jedem neuen Signal
     signal_log.append({
         "match_id": match_id, "typ": typ,
         "home": home, "away": away, "liga": liga,
@@ -903,6 +928,107 @@ def signal_auswertung_aktualisieren(match_id, gewonnen):
             s["gewonnen"] = gewonnen
             signal_log_speichern()
             break
+
+# ── Persistenz: beobachtete_spiele ──────────────────────────
+def beobachtete_spiele_speichern():
+    """Speichert beobachtete_spiele damit sie einen Neustart überleben."""
+    import json
+    try:
+        with open(BEOBACHTETE_DATEI, "w") as f:
+            json.dump(beobachtete_spiele, f, indent=2)
+    except Exception as e:
+        print(f"  [Persistenz] Speicherfehler: {e}")
+
+def beobachtete_spiele_laden():
+    """Lädt beobachtete_spiele aus dem letzten Run."""
+    import json, os
+    if not os.path.exists(BEOBACHTETE_DATEI):
+        return
+    try:
+        with open(BEOBACHTETE_DATEI, "r") as f:
+            data = json.load(f)
+        beobachtete_spiele.update(data)
+        print(f"  [Persistenz] {len(data)} beobachtete Spiele geladen")
+    except Exception as e:
+        print(f"  [Persistenz] Ladefehler: {e}")
+
+# ── Bankroll-Tracking ────────────────────────────────────────
+def bankroll_laden() -> float:
+    """Lädt aktuelle Bankroll aus Datei."""
+    import json, os
+    if not os.path.exists(BANKROLL_DATEI):
+        bankroll_speichern(BANKROLL)
+        return BANKROLL
+    try:
+        with open(BANKROLL_DATEI, "r") as f:
+            return json.load(f).get("bankroll", BANKROLL)
+    except:
+        return BANKROLL
+
+def bankroll_speichern(betrag: float):
+    """Speichert aktuelle Bankroll."""
+    import json
+    try:
+        with open(BANKROLL_DATEI, "w") as f:
+            json.dump({"bankroll": round(betrag, 2), "aktualisiert": de_now().strftime("%Y-%m-%d %H:%M")}, f)
+    except Exception as e:
+        print(f"  [Bankroll] Speicherfehler: {e}")
+
+def bankroll_aktualisieren(gewonnen: bool, einsatz: float, quote: float = None):
+    """Aktualisiert Bankroll nach Tipp-Auswertung."""
+    br = bankroll_laden()
+    if gewonnen and quote:
+        gewinn = round(einsatz * (quote - 1), 2)
+        br    += gewinn
+        print(f"  [Bankroll] +{gewinn}€ | Neue Bankroll: {br}€")
+    else:
+        br -= einsatz
+        print(f"  [Bankroll] -{einsatz}€ | Neue Bankroll: {br}€")
+    bankroll_speichern(br)
+    return br
+
+def kelly_einsatz_bankroll(quote: float, typ: str) -> float:
+    """Kelly-Einsatz basierend auf echter Bankroll."""
+    br  = bankroll_laden()
+    ges = statistik[typ]["gewonnen"] + statistik[typ]["verloren"]
+    if ges < 10 or not quote or quote <= 1.0:
+        return min(round(br * 0.02, 2), KELLY_MAX_EINSATZ)  # 2% der Bankroll
+    p      = statistik[typ]["gewonnen"] / ges
+    b      = quote - 1.0
+    kelly  = max(0, (b * p - (1 - p)) / b) * KELLY_FRACTION
+    einsatz = round(kelly * br, 2)
+    return max(KELLY_MIN_EINSATZ, min(einsatz, KELLY_MAX_EINSATZ))
+
+# ── API-Monitor ──────────────────────────────────────────────
+_api_monitor = {"heute": 0, "datum": ""}
+
+def api_monitor_increment():
+    """Zählt jeden API-Call mit."""
+    heute_str = de_now().strftime("%Y-%m-%d")
+    if _api_monitor["datum"] != heute_str:
+        _api_monitor["heute"] = 0
+        _api_monitor["datum"] = heute_str
+    _api_monitor["heute"] += 1
+
+def api_monitor_bericht() -> str:
+    """Gibt API-Nutzung zurück."""
+    n   = _api_monitor["heute"]
+    pct = round(n / 50000 * 100, 1)
+    bar = "█" * int(pct / 5) + "░" * (20 - int(pct / 5))
+    return f"📡 API heute: <b>{n:,}</b>/50.000 ({pct}%)\n{bar}"
+
+# ── Multi-Signal Boost ───────────────────────────────────────
+def multi_signal_check(match_id: str, aktueller_bot: str) -> int:
+    """
+    Gibt Konfidenz-Bonus zurück wenn bereits ein anderer Bot
+    dieses Spiel beobachtet – mehrere Bots = stärkeres Signal.
+    """
+    if match_id in beobachtete_spiele:
+        erster_bot = beobachtete_spiele[match_id].get("bot", "")
+        if erster_bot and erster_bot != aktueller_bot:
+            print(f"  [Multi-Signal] {match_id}: {erster_bot} + {aktueller_bot} → +{MULTI_SIGNAL_BONUS} Konfidenz")
+            return MULTI_SIGNAL_BONUS
+    return 0
 
 # ============================================================
 #  DISCORD EMBEDS
@@ -1133,6 +1259,9 @@ def update_statistik(typ, gewonnen, quote, liga=None, match_id=None):
             liga_statistik[liga]["verloren"] += 1
     if match_id:
         signal_auswertung_aktualisieren(match_id, gewonnen)
+    # Bankroll aktualisieren
+    einsatz_wert = EINSATZ
+    bankroll_aktualisieren(gewonnen, einsatz_wert, quote)
     statistik_speichern()
 
 def statistik_zeile(name, stat):
@@ -1213,6 +1342,12 @@ def send_tagesbericht():
            f"{liga_verteilung_text}"
            f"{optimizer_text}"
            f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
+    br   = bankroll_laden()
+    diff = round(br - BANKROLL, 2)
+    br_pfeil = "📈 +" if diff >= 0 else "📉 "
+    msg += (f"\n━━━━━━━━━━━━━━━━━━━━\n"
+            f"💰 <b>Bankroll:</b> {br}€ ({br_pfeil}{diff}€ seit Start)\n"
+            f"{api_monitor_bericht()}")
     send_telegram(msg)
     send_discord(DISCORD_WEBHOOK_BILANZ, msg)
     for t in statistik:
@@ -1701,7 +1836,7 @@ def bot_ecken():
                     cl_ok, cl_text = claude_tipp_review(home, away, "ecken", analyse)
                     if not cl_ok:
                         konfidenz = max(1, konfidenz - 2)
-                    einsatz = kelly_einsatz(quote, "ecken") if quote else EINSATZ
+                    einsatz = kelly_einsatz_bankroll(quote, "ecken") if quote else EINSATZ
                     ke      = konfidenz_emoji(konfidenz)
                     ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
                     cl_line = f"\n🤖 Claude: <b>{cl_text}</b>" if cl_text else ""
@@ -1720,12 +1855,14 @@ def bot_ecken():
                         discord_ecken_tipp(home, away, comp, country, score,
                                            corners_home, corners_away, corners, grenze, quote))
                     notified_ecken.add(match_id)
+                    multi_bonus = multi_signal_check(match_id, "Ecken-Bot")
+                    konfidenz   = min(10, konfidenz + multi_bonus)
                     beobachtete_spiele[match_id] = {
                         "typ": "ecken", "match_id": match_id,
                         "home": home, "away": away, "hz1_ecken": corners,
                         "quote": quote, "einsatz": einsatz, "liga": comp,
                         "webhook": DISCORD_WEBHOOK_ECKEN,
-                        "signal_zeit": time.time()
+                        "signal_zeit": time.time(), "bot": "Ecken-Bot"
                     }
                     signal_eintragen(match_id, "ecken", home, away, comp, corners, grenze, quote, einsatz)
                     gegentipp_registrieren(match_id, "ecken", "unter", "Ecken-Bot")
@@ -1768,7 +1905,7 @@ def bot_ecken_over():
                 quote   = get_quote(home, away, "ecken_over")
                 if quote and quote < MIN_QUOTE:
                     continue
-                einsatz = kelly_einsatz(quote, "ecken_over") if quote else EINSATZ
+                einsatz = kelly_einsatz_bankroll(quote, "ecken_over") if quote else EINSATZ
                 ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
                 msg     = (f"📐 <b>Ecken ÜBER Tipp!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                            f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
@@ -1786,9 +1923,7 @@ def bot_ecken_over():
                     "typ": "ecken_over", "match_id": match_id,
                     "home": home, "away": away, "hz1_ecken": corners,
                     "quote": quote, "einsatz": einsatz, "liga": comp,
-                    "webhook": DISCORD_WEBHOOK_ECKEN
-                ,
-                        "signal_zeit": time.time()
+                    "webhook": DISCORD_WEBHOOK_ECKEN, "signal_zeit": time.time(), "bot": "Ecken-Über-Bot"
                     }
                 signal_eintragen(match_id, "ecken_over", home, away, comp, corners, 14, quote, einsatz)
                 print(f"  [Ecken-Über-Bot] OK: {home} vs {away} ({corners} Ecken in Min. {minute})")
@@ -1830,7 +1965,7 @@ def bot_karten():
                     quote  = get_quote(home, away, "karten")
                     if quote and quote < MIN_QUOTE:
                         continue
-                    einsatz = kelly_einsatz(quote, "karten") if quote else EINSATZ
+                    einsatz = kelly_einsatz_bankroll(quote, "karten") if quote else EINSATZ
                     ql     = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
                     zeilen = []
                     karten_discord = []
@@ -1855,9 +1990,7 @@ def bot_karten():
                     beobachtete_spiele[match_id] = {
                         "typ": "karten", "match_id": match_id,
                         "home": home, "away": away, "karten_anzahl": len(karten),
-                        "quote": quote, "webhook": DISCORD_WEBHOOK_KARTEN
-                    ,
-                        "signal_zeit": time.time()
+                        "quote": quote, "webhook": DISCORD_WEBHOOK_KARTEN, "signal_zeit": time.time(), "bot": "Karten-Bot"
                     }
                     print(f"  [Karten-Bot] OK: {home} vs {away} ({len(karten)} Karten)")
                 time.sleep(0.5)
@@ -1909,7 +2042,7 @@ def bot_torwart():
                 quote   = get_quote(home, away, "torwart")
                 if quote and quote < MIN_QUOTE:
                     continue
-                einsatz = kelly_einsatz(quote, "torwart") if quote else EINSATZ
+                einsatz = kelly_einsatz_bankroll(quote, "torwart") if quote else EINSATZ
                 ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
                 msg     = (f"🧤 <b>Torwart-Alarm!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                            f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
@@ -1928,9 +2061,7 @@ def bot_torwart():
                 beobachtete_spiele[match_id] = {
                     "typ": "torwart", "match_id": match_id,
                     "home": home, "away": away,
-                    "quote": quote, "webhook": DISCORD_WEBHOOK_TORWART
-                ,
-                        "signal_zeit": time.time()
+                    "quote": quote, "webhook": DISCORD_WEBHOOK_TORWART, "signal_zeit": time.time(), "bot": "Torwart-Bot"
                     }
                 print(f"  [Torwart-Bot] OK: {home} vs {away} | {shots_ges} Schüsse")
                 time.sleep(0.5)
@@ -1945,12 +2076,6 @@ def bot_torwart():
 # ============================================================
 #  NEUE BOTS
 # ============================================================
-
-def _safe_int(val, default=0):
-    try:
-        return int(val)
-    except (ValueError, TypeError):
-        return default
 
 def bot_druck():
     """Signal wenn ein Team deutlich mehr Ecken+Freistöße hat als der Gegner."""
@@ -2006,7 +2131,7 @@ def bot_druck():
                 quote   = get_quote(home, away, "druck")
                 if quote and quote < MIN_QUOTE:
                     continue
-                einsatz = kelly_einsatz(quote, "druck") if quote else EINSATZ
+                einsatz = kelly_einsatz_bankroll(quote, "druck") if quote else EINSATZ
                 ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
                 msg     = (f"🔥 <b>Druck Signal!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                            f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
@@ -2024,9 +2149,7 @@ def bot_druck():
                 beobachtete_spiele[match_id] = {
                     "typ": "druck", "match_id": match_id,
                     "home": home, "away": away, "druck_team": druck_team,
-                    "quote": quote, "webhook": DISCORD_WEBHOOK_DRUCK
-                ,
-                        "signal_zeit": time.time()
+                    "quote": quote, "webhook": DISCORD_WEBHOOK_DRUCK, "signal_zeit": time.time(), "bot": "Druck-Bot"
                     }
                 print(f"  [Druck-Bot] OK: {home} vs {away} | {druck_team} dominiert ({ecken_stark}:{ecken_schwach} Ecken)")
                 time.sleep(0.5)
@@ -2073,10 +2196,15 @@ def bot_comeback():
                 else:
                     shots_r, shots_f = shots_a, shots_h
                     poss_r           = poss_a
+                da_h  = stats["dangerous_attacks_home"]
+                da_a  = stats["dangerous_attacks_away"]
                 if shots_r == 0 and shots_f == 0 and poss_r == 0:
                     continue  # Keine API-Daten, still überspringen
-                if shots_r <= shots_f or poss_r <= 50:
-                    print(f"  [Comeback-Bot] {home} vs {away} | Kein Comeback-Muster (Schüsse: {shots_r}:{shots_f}, Besitz: {poss_r}%)")
+                # Rückliegendes Team muss Schüsse ODER gefährliche Angriffe dominieren
+                da_r  = da_h if rueckliegend == home else da_a
+                da_f  = da_a if rueckliegend == home else da_h
+                druck_ok = (shots_r > shots_f) or (da_r > da_f * 1.3)
+                if not druck_ok or poss_r <= 45:
                     continue
                 if not tipp_erlaubt(match_id, "Comeback-Bot"):
                     continue
@@ -2086,7 +2214,7 @@ def bot_comeback():
                 quote   = get_quote(home, away, "comeback")
                 if quote and quote < MIN_QUOTE:
                     continue
-                einsatz = kelly_einsatz(quote, "comeback") if quote else EINSATZ
+                einsatz = kelly_einsatz_bankroll(quote, "comeback") if quote else EINSATZ
                 ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
                 msg     = (f"🔄 <b>Comeback Signal!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                            f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
@@ -2104,9 +2232,7 @@ def bot_comeback():
                 beobachtete_spiele[match_id] = {
                     "typ": "comeback", "match_id": match_id,
                     "home": home, "away": away, "rueckliegend": rueckliegend,
-                    "quote": quote, "webhook": DISCORD_WEBHOOK_COMEBACK
-                ,
-                        "signal_zeit": time.time()
+                    "quote": quote, "webhook": DISCORD_WEBHOOK_COMEBACK, "signal_zeit": time.time(), "bot": "Comeback-Bot"
                     }
                 print(f"  [Comeback-Bot] OK: {home} vs {away} | {rueckliegend} liegt zurück aber dominiert")
                 time.sleep(0.5)
@@ -2145,7 +2271,7 @@ def bot_torflut():
                 quote   = get_quote(home, away, "torflut")
                 if quote and quote < MIN_QUOTE:
                     continue
-                einsatz = kelly_einsatz(quote, "torflut") if quote else EINSATZ
+                einsatz = kelly_einsatz_bankroll(quote, "torflut") if quote else EINSATZ
                 ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
                 msg     = (f"🌊 <b>Torflut Signal!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                            f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
@@ -2160,9 +2286,7 @@ def bot_torflut():
                 beobachtete_spiele[match_id] = {
                     "typ": "torflut", "match_id": match_id,
                     "home": home, "away": away, "hz1_tore": tore_hz1,
-                    "grenze": grenze, "quote": quote, "webhook": DISCORD_WEBHOOK_TORFLUT
-                ,
-                        "signal_zeit": time.time()
+                    "grenze": grenze, "quote": quote, "webhook": DISCORD_WEBHOOK_TORFLUT, "signal_zeit": time.time(), "bot": "Torflut-Bot"
                     }
                 print(f"  [Torflut-Bot] OK: {home} vs {away} | {tore_hz1} Tore in HZ1")
                 time.sleep(0.5)
@@ -2215,7 +2339,7 @@ def bot_rotkarte():
                 quote = get_quote(home, away, "rotkarte")
                 if quote and quote < MIN_QUOTE:
                     continue
-                einsatz = kelly_einsatz(quote, "rotkarte") if quote else EINSATZ
+                einsatz = kelly_einsatz_bankroll(quote, "rotkarte") if quote else EINSATZ
                 ql    = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
                 msg   = (f"🟥 <b>Rote Karte Signal!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                          f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
@@ -2234,9 +2358,7 @@ def bot_rotkarte():
                     "home": home, "away": away,
                     "ueberzahl_team": ueberzahl_team,
                     "score_signal": score,
-                    "quote": quote, "webhook": DISCORD_WEBHOOK_ROTKARTE
-                ,
-                        "signal_zeit": time.time()
+                    "quote": quote, "webhook": DISCORD_WEBHOOK_ROTKARTE, "signal_zeit": time.time(), "bot": "Rotkarte-Bot"
                     }
                 print(f"  [Rotkarte-Bot] OK: {home} vs {away} | {ueberzahl_team} in Überzahl (Min. {karte_min})")
                 time.sleep(0.5)
@@ -2293,10 +2415,11 @@ def bot_tore_analyse():
                     if tipp_hz1 and gegentipp_check(match_id, "hz1tore", tipp_hz1[0], "Tore-Bot"):
                         richtung, linie = tipp_hz1
                         form_ok   = form_stimmt_ueberein(home_id, away_id, ana["avg_hz1"], richtung)
-                        einsatz   = kelly_einsatz(quote, "hz1tore") if quote else EINSATZ
+                        einsatz   = kelly_einsatz_bankroll(quote, "hz1tore") if quote else EINSATZ
                         konfidenz = berechne_konfidenz("hz1tore", comp, quote,
                             h2h_spiele=ana["hz1_spiele"], bookmaker_anzahl=bm_anz,
                             form_uebereinstimmung=form_ok)
+                        konfidenz = min(10, konfidenz + multi_signal_check(match_id, "Tore-Bot"))
                         analyse_hz1 = f"H2H Ø HZ1-Tore: {ana['avg_hz1']} ({ana['hz1_spiele']} Spiele)\nTipp: {richtung} {linie}"
                         cl_ok, cl_text = claude_tipp_review(home, away, "hz1tore", analyse_hz1)
                         if not cl_ok: konfidenz = max(1, konfidenz - 2)
@@ -2331,7 +2454,7 @@ def bot_tore_analyse():
                     if tipp_vz and gegentipp_check(match_id, "vztore", tipp_vz[0], "Tore-Bot"):
                         richtung, linie = tipp_vz
                         form_ok   = form_stimmt_ueberein(home_id, away_id, ana["avg_vz"], richtung)
-                        einsatz   = kelly_einsatz(quote, "vztore") if quote else EINSATZ
+                        einsatz   = kelly_einsatz_bankroll(quote, "vztore") if quote else EINSATZ
                         konfidenz = berechne_konfidenz("vztore", comp, quote,
                             h2h_spiele=ana["spiele"], bookmaker_anzahl=bm_anz,
                             form_uebereinstimmung=form_ok)
@@ -2373,8 +2496,144 @@ def bot_tore_analyse():
             time.sleep(FUSSBALL_INTERVAL * 60)
 
 # ============================================================
-#  PRE-MATCH BOT
+#  TELEGRAM BEFEHLE (/status /pause /statistik /bankroll)
 # ============================================================
+
+def bot_telegram_befehle():
+    """
+    Lauscht auf Telegram-Befehle und reagiert darauf.
+    /status    – zeigt ob alle Bots laufen
+    /pause     – pausiert alle Signale
+    /start     – setzt Signale fort
+    /statistik – zeigt aktuelle Tagesstatistik
+    /bankroll  – zeigt aktuelle Bankroll
+    /api       – zeigt API-Nutzung heute
+    """
+    global BOT_PAUSIERT
+    print("[Telegram-Befehle] Gestartet | Lausche auf /status /pause /start /statistik")
+    letzter_update_id = 0
+
+    while True:
+        try:
+            url  = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+            resp = requests.get(url, params={"offset": letzter_update_id + 1, "timeout": 30}, timeout=35)
+            if resp.status_code != 200:
+                time.sleep(5)
+                continue
+
+            updates = resp.json().get("result", [])
+            for update in updates:
+                letzter_update_id = update["update_id"]
+                msg_obj  = update.get("message", {})
+                chat_id  = str(msg_obj.get("chat", {}).get("id", ""))
+                text     = msg_obj.get("text", "").strip().lower()
+
+                # Nur von erlaubten Chats
+                if chat_id not in (TELEGRAM_CHAT_ID, TELEGRAM_CHAT_PREMATCH.lstrip("-")):
+                    # Check if it's from the owner
+                    if chat_id != TELEGRAM_CHAT_ID:
+                        continue
+
+                if text == "/status":
+                    aktive = {t.name for t in threading.enumerate()}
+                    bots   = ["Ecken-Bot", "Ecken-Über-Bot", "Karten-Bot", "Torwart-Bot",
+                              "Druck-Bot", "Comeback-Bot", "Torflut-Bot", "Rotkarte-Bot",
+                              "Tore-Bot", "PreMatch-Bot", "Auswertung-Bot"]
+                    zeilen = "\n".join([f"{'✅' if b in aktive else '❌'} {b}" for b in bots])
+                    pause  = "⏸ PAUSIERT" if BOT_PAUSIERT else "▶️ AKTIV"
+                    antwort = (f"🤖 <b>Bot Status</b> – {pause}\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n{zeilen}\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n"
+                               f"📡 {api_monitor_bericht()}\n"
+                               f"🕐 {jetzt()} Uhr")
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text == "/pause":
+                    BOT_PAUSIERT = True
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": "⏸ <b>Alle Signale pausiert.</b>\nMit /start wieder aktivieren.", "parse_mode": "HTML"}, timeout=10)
+                    print("  [Telegram] Bot pausiert via /pause")
+
+                elif text == "/start":
+                    BOT_PAUSIERT = False
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": "▶️ <b>Signale wieder aktiv!</b>", "parse_mode": "HTML"}, timeout=10)
+                    print("  [Telegram] Bot fortgesetzt via /start")
+
+                elif text == "/statistik":
+                    gw  = sum(statistik[t]["gewonnen"] for t in statistik)
+                    vl  = sum(statistik[t]["verloren"] for t in statistik)
+                    ges = gw + vl
+                    pct = round(gw / ges * 100) if ges else 0
+                    gn  = round(sum(statistik[t]["gewinn"] for t in statistik), 2)
+                    antwort = (f"📊 <b>Statistik heute</b>\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n"
+                               f"✅ Gewonnen: <b>{gw}</b>\n"
+                               f"❌ Verloren: <b>{vl}</b>\n"
+                               f"🎯 Trefferquote: <b>{pct}%</b>\n"
+                               f"{'📈' if gn >= 0 else '📉'} Simulation: <b>{'+' if gn >= 0 else ''}{gn}€</b>\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text == "/bankroll":
+                    br     = bankroll_laden()
+                    start  = BANKROLL
+                    diff   = round(br - start, 2)
+                    emoji  = "📈" if diff >= 0 else "📉"
+                    antwort = (f"💰 <b>Bankroll</b>\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n"
+                               f"Start: <b>{start}€</b>\n"
+                               f"Aktuell: <b>{br}€</b>\n"
+                               f"{emoji} Differenz: <b>{'+' if diff >= 0 else ''}{diff}€</b>\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text == "/api":
+                    antwort = f"📡 <b>API Monitor</b>\n━━━━━━━━━━━━━━━━━━━━\n{api_monitor_bericht()}\n━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr"
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text.startswith("/instagram"):
+                    # Halbautomatisch: /instagram <link> → postet in Discord
+                    teile = msg_obj.get("text", "").strip().split(" ", 1)
+                    if len(teile) < 2 or not teile[1].startswith("http"):
+                        requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                      json={"chat_id": chat_id,
+                                            "text": "⚠️ Benutzung: /instagram https://www.instagram.com/p/xyz",
+                                            "parse_mode": "HTML"}, timeout=10)
+                    else:
+                        ig_link = teile[1].strip()
+                        # Discord Embed senden
+                        embed = {
+                            "title": "📸 Neuer Instagram Post!",
+                            "description": f"Schau dir unseren neuesten Post an 👇",
+                            "url": ig_link,
+                            "color": 0xE1306C,
+                            "fields": [
+                                {"name": "🔗 Zum Post", "value": ig_link, "inline": False},
+                                {"name": "👤 Account", "value": "@bettingxlabs", "inline": True},
+                                {"name": "📅 Gepostet", "value": f"{heute()} {jetzt()} Uhr", "inline": True},
+                            ],
+                            "footer": {"text": "BettingXLabs • Instagram → Discord"}
+                        }
+                        # An alle Discord Webhooks senden
+                        for wh in [DISCORD_WEBHOOK_BILANZ]:
+                            send_discord_embed(wh, embed)
+                        # Bestätigung an Telegram
+                        requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                      json={"chat_id": chat_id,
+                                            "text": f"✅ Instagram Post wurde in Discord gepostet!\n🔗 {ig_link}",
+                                            "parse_mode": "HTML"}, timeout=10)
+                        print(f"  [Instagram] Post in Discord geteilt: {ig_link}")
+
+        except Exception as e:
+            print(f"  [Telegram-Befehle] Fehler: {e}")
+        time.sleep(2)
+
+
 
 def ls_get_fixtures(date_str: str) -> list:
     """Holt Fixtures für ein bestimmtes Datum von der LiveScore API."""
@@ -2571,11 +2830,12 @@ def bot_watchdog():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v26")
-    print("  Standings · Claude-Reviewer · Direkte Auswertung · Pre-Match Bot (10/16/20 Uhr)")
+    print("  ⚽ FUSSBALL BOTS v27")
+    print("  Telegram Befehle · Bankroll · Multi-Signal · API-Monitor · Persistenz · Comeback+")
     print("=" * 50 + "\n")
 
     statistik_laden()
+    beobachtete_spiele_laden()
 
     bot_definitionen = [
         ("Ecken-Bot",        bot_ecken),
@@ -2588,6 +2848,7 @@ if __name__ == "__main__":
         ("Rotkarte-Bot",     bot_rotkarte),
         ("Tore-Bot",         bot_tore_analyse),
         ("PreMatch-Bot",     bot_prematch),
+        ("Telegram-Bot",     bot_telegram_befehle),
         ("Auswertung-Bot",   bot_auswertung_und_berichte),
     ]
 
