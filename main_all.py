@@ -1090,6 +1090,8 @@ def discord_auswertung(typ, home, away, gewonnen, details: dict):
 
 def update_statistik(typ, gewonnen, quote, liga=None, match_id=None):
     stunde = str(de_now().hour)
+    emoji  = "✅" if gewonnen else "❌"
+    print(f"  [Statistik] {emoji} {typ.upper()} | Quote: {quote} | Liga: {liga}")
     if gewonnen:
         gewinn = round((quote - 1) * EINSATZ, 2) if quote else round(EINSATZ * 0.7, 2)
         statistik[typ]["gewonnen"]        += 1
@@ -1417,10 +1419,14 @@ def auswertung_hz1tore(spiel):
         match = ls_get_single_match(match_id)
         ht    = (match.get("scores") or {}).get("ht_score", "")
         if not ht:
-            # HZ1 Score nicht verfügbar – aus Endstand schätzen
+            # HZ1 Score nicht in single match – versuche nochmal direkt
+            import time as _t; _t.sleep(5)
+            match = ls_get_single_match(match_id)
+            ht    = (match.get("scores") or {}).get("ht_score", "")
+        if not ht:
             score = match.get("scores", {}).get("score", "0 - 0")
-            print(f"  [Auswertung] Hz1Tore: kein HZ1-Score, nutze Endstand {score}")
-            return None
+            print(f"  [Auswertung] Hz1Tore: kein HZ1-Score für {home} vs {away} – übersprungen")
+            return None  # Wird später nochmal versucht
         hh, ha   = parse_score(ht)
         hz1_tore = hh + ha
         if richtung == "über":
@@ -1494,6 +1500,7 @@ def bot_auswertung_und_berichte():
     }
     FT_STATI        = {"FT", "Finished", "FINISHED", "AET", "PEN", "finished", "aet", "pen"}
     leerer_status   = {}  # match_id → Anzahl leerer Status-Antworten
+    ft_bestaetigung = {}  # match_id → Zeitstempel erste FT-Erkennung (Bestätigung nach 2 Min)
 
     while True:
         try:
@@ -1536,7 +1543,17 @@ def bot_auswertung_und_berichte():
 
                     if status not in FT_STATI:
                         print(f"  [Auswertung] {spiel['home']} vs {spiel['away']} | {status} | {minute}'")
-                        leerer_status.pop(match_id, None)  # Status wieder da → Zähler zurück
+                        leerer_status.pop(match_id, None)
+                        ft_bestaetigung.pop(match_id, None)  # Status nicht FT → Reset
+                        continue
+
+                    # FT-Bestätigung: erst beim 2. FT-Signal auswerten (verhindert API-Fehler)
+                    if match_id not in ft_bestaetigung:
+                        ft_bestaetigung[match_id] = time.time()
+                        print(f"  [Auswertung] {spiel['home']} vs {spiel['away']} | FT erkannt – warte Bestätigung")
+                        continue
+                    elif time.time() - ft_bestaetigung[match_id] < 90:
+                        # Noch keine 90 Sekunden vergangen – warte noch
                         continue
 
                     # Mindest-Wartezeit je nach Tipp-Typ
@@ -1575,8 +1592,13 @@ def bot_auswertung_und_berichte():
                         embed    = discord_auswertung(typ, spiel["home"], spiel["away"], gewonnen, details)
                         send_discord_embed(webhook, embed)
                         print(f"  [Auswertung] Gesendet: {spiel['home']} vs {spiel['away']} ({typ})")
-                    auswertung_done.add(match_id)
+                        auswertung_done.add(match_id)  # Nur als done markieren wenn erfolgreich
+                    else:
+                        # Auswertung fehlgeschlagen (z.B. kein HZ1-Score) → erneut versuchen
+                        ft_bestaetigung.pop(match_id, None)  # Reset damit nächster Versuch klappt
+                        print(f"  [Auswertung] ⚠️ Keine Auswertung für {spiel['home']} vs {spiel['away']} – versuche später")
                     leerer_status.pop(match_id, None)
+                    ft_bestaetigung.pop(match_id, None)
 
                 except Exception as e:
                     print(f"  [Auswertung] Fehler bei {match_id}: {e}")
