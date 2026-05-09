@@ -24,7 +24,7 @@ DISCORD_WEBHOOK_COMEBACK  = "https://discord.com/api/webhooks/150125226663031616
 DISCORD_WEBHOOK_TORFLUT   = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
 DISCORD_WEBHOOK_ROTKARTE  = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
 DISCORD_WEBHOOK_HZ1TORE  = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
-DISCORD_WEBHOOK_SCHUESSE = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"  # #betlab-live-schuesse
+DISCORD_WEBHOOK_SCHUESSE = "DISCORD_WEBHOOK_SCHUESSE_HIER"  # #betlab-live-schuesse
 DISCORD_WEBHOOK_VZTORE   = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
 
 ODDS_API_KEY       = "866948de5d6c34ca51faf6bd77e0bb2a"
@@ -1332,14 +1332,15 @@ def discord_ecken_tipp(home, away, comp, country, score, corners_home, corners_a
     return {
         "title": "📐 Ecken Tipp", "color": FARBE_ECKEN,
         "fields": [
-            {"name": "🏆 Liga",              "value": f"{comp} ({country})", "inline": True},
-            {"name": "⚽ Spiel",             "value": f"{home} vs {away}",   "inline": True},
-            {"name": "📊 Halbzeitstand",     "value": f"**{score}**",        "inline": True},
+            {"name": "🏆 Liga",          "value": f"{comp}",           "inline": True},
+            {"name": "🌍 Land",          "value": f"{country}",        "inline": True},
+            {"name": "📊 Halbzeitstand", "value": f"**{score}**",      "inline": True},
+            {"name": "⚽ Spiel",         "value": f"{home} vs {away}", "inline": False},
             {"name": "📐 Ecken zur Halbzeit",
              "value": f"🔵 {home}: **{corners_home}**\n🔴 {away}: **{corners_away}**\n📊 Gesamt: **{corners}**", "inline": False},
             {"name": "🎯 Empfehlung", "value": f"Unter **{grenze} Ecken** (Gesamtspiel){qt}", "inline": False},
         ],
-        "footer": {"text": f"Fixture • {heute()} {jetzt()}"},
+        "footer": {"text": f"Ecken-Bot • {heute()} {jetzt()}"},
     }
 
 def discord_ecken_over_tipp(home, away, comp, country, score, minute, corners_home, corners_away, corners, quote):
@@ -1347,14 +1348,15 @@ def discord_ecken_over_tipp(home, away, comp, country, score, minute, corners_ho
     return {
         "title": "📐 Ecken ÜBER Tipp", "color": FARBE_ECKEN_OVER,
         "fields": [
-            {"name": "🏆 Liga",         "value": f"{comp} ({country})",               "inline": True},
-            {"name": "⚽ Spiel",        "value": f"{home} vs {away}",                 "inline": True},
-            {"name": "📊 Stand",        "value": f"**{score}** | Min. **{minute}'**", "inline": True},
+            {"name": "🏆 Liga",      "value": f"{comp}",                        "inline": True},
+            {"name": "🌍 Land",      "value": f"{country}",                     "inline": True},
+            {"name": "📊 Stand",     "value": f"**{score}** | Min. **{minute}'**", "inline": True},
+            {"name": "⚽ Spiel",     "value": f"{home} vs {away}",              "inline": False},
             {"name": "📐 Ecken bisher",
              "value": f"🔵 {home}: **{corners_home}**\n🔴 {away}: **{corners_away}**\n📊 Gesamt: **{corners}**", "inline": False},
             {"name": "🎯 Empfehlung", "value": f"Über **14 Ecken** (Gesamtspiel){qt}", "inline": False},
         ],
-        "footer": {"text": f"Fixture • {heute()} {jetzt()}"},
+        "footer": {"text": f"Ecken-Über-Bot • {heute()} {jetzt()}"},
     }
 
 def discord_karten_tipp(home, away, comp, country, score, minute, karten_liste, quote):
@@ -1362,13 +1364,14 @@ def discord_karten_tipp(home, away, comp, country, score, minute, karten_liste, 
     return {
         "title": "🃏 Karten Signal", "color": FARBE_KARTEN,
         "fields": [
-            {"name": "🏆 Liga",  "value": f"{comp} ({country})",               "inline": True},
-            {"name": "⚽ Spiel", "value": f"{home} vs {away}",                 "inline": True},
-            {"name": "📊 Stand", "value": f"**{score}** | Min. **{minute}'**", "inline": True},
-            {"name": "🃏 Karten", "value": "\n".join(karten_liste) or "–",     "inline": False},
+            {"name": "🏆 Liga",   "value": f"{comp}",                         "inline": True},
+            {"name": "🌍 Land",   "value": f"{country}",                      "inline": True},
+            {"name": "📊 Stand",  "value": f"**{score}** | Min. **{minute}'**", "inline": True},
+            {"name": "⚽ Spiel",  "value": f"{home} vs {away}",               "inline": False},
+            {"name": "🃏 Karten bis Minute 40", "value": "\n".join(karten_liste) or "–", "inline": False},
             {"name": "🎯 Empfehlung", "value": f"Über **5 Karten** gesamt{qt}", "inline": False},
         ],
-        "footer": {"text": f"Fixture • {heute()} {jetzt()}"},
+        "footer": {"text": f"Karten-Bot • {heute()} {jetzt()}"},
     }
 
 def discord_torwart_tipp(home, away, comp, country, shots_home, shots_away, saves_h, saves_a, poss_h, poss_a, min_text, quote):
@@ -1376,15 +1379,17 @@ def discord_torwart_tipp(home, away, comp, country, shots_home, shots_away, save
     return {
         "title": "🧤 Torwart Alarm", "color": FARBE_TORWART,
         "fields": [
-            {"name": "🏆 Liga",             "value": f"{comp} ({country})",                                        "inline": True},
-            {"name": "⚽ Spiel",            "value": f"{home} vs {away}",                                          "inline": True},
-            {"name": "📊 Stand",            "value": f"**0:0** | {min_text}",                                      "inline": True},
-            {"name": "🎯 Schüsse aufs Tor", "value": f"Gesamt: **{shots_home+shots_away}** ({shots_home}|{shots_away})", "inline": True},
-            {"name": "🧤 Paraden",          "value": f"Gesamt: **{saves_h+saves_a}** ({saves_h}|{saves_a})",       "inline": True},
-            {"name": "⚽ Ballbesitz",       "value": f"{poss_h}% | {poss_a}%",                                     "inline": True},
+            {"name": "🏆 Liga",             "value": f"{comp}",           "inline": True},
+            {"name": "🌍 Land",             "value": f"{country}",        "inline": True},
+            {"name": "📊 Stand",            "value": f"**0:0** | {min_text}", "inline": True},
+            {"name": "⚽ Spiel",            "value": f"{home} vs {away}", "inline": False},
+            {"name": "🎯 Schüsse aufs Tor",
+             "value": f"🔵 {home}: **{shots_home}**\n🔴 {away}: **{shots_away}**\n📊 Gesamt: **{shots_home+shots_away}**", "inline": True},
+            {"name": "🧤 Paraden",          "value": f"🔵 {saves_h} | 🔴 {saves_a}", "inline": True},
+            {"name": "⚽ Ballbesitz",       "value": f"{poss_h}% | {poss_a}%",        "inline": True},
             {"name": "🎯 Empfehlung", "value": f"Mindestens **1 Tor** fällt noch{qt}", "inline": False},
         ],
-        "footer": {"text": f"Fixture • {heute()} {jetzt()}"},
+        "footer": {"text": f"Torwart-Bot • {heute()} {jetzt()}"},
     }
 
 def discord_druck_tipp(home, away, comp, country, score, minute, druck_team,
@@ -1393,15 +1398,16 @@ def discord_druck_tipp(home, away, comp, country, score, minute, druck_team,
     return {
         "title": "🔥 Druck Signal", "color": FARBE_DRUCK,
         "fields": [
-            {"name": "🏆 Liga",        "value": f"{comp} ({country})",               "inline": True},
-            {"name": "⚽ Spiel",       "value": f"{home} vs {away}",                 "inline": True},
-            {"name": "📊 Stand",       "value": f"**{score}** | Min. **{minute}'**", "inline": True},
-            {"name": "🔥 Dominantes Team", "value": f"**{druck_team}**",             "inline": False},
-            {"name": "📐 Ecken",       "value": f"**{ecken_stark}** : {ecken_schwach}", "inline": True},
-            {"name": "🦵 Freistöße",  "value": f"**{fk_stark}** : {fk_schwach}",    "inline": True},
+            {"name": "🏆 Liga",    "value": f"{comp}",                         "inline": True},
+            {"name": "🌍 Land",    "value": f"{country}",                      "inline": True},
+            {"name": "📊 Stand",   "value": f"**{score}** | Min. **{minute}'**", "inline": True},
+            {"name": "⚽ Spiel",   "value": f"{home} vs {away}",               "inline": False},
+            {"name": "🔥 Dominantes Team", "value": f"**{druck_team}**",       "inline": False},
+            {"name": "📐 Ecken",   "value": f"**{ecken_stark}** : {ecken_schwach}", "inline": True},
+            {"name": "🦵 Freistöße","value": f"**{fk_stark}** : {fk_schwach}", "inline": True},
             {"name": "🎯 Empfehlung", "value": f"Nächste Ecke / Tor für **{druck_team}**{qt}", "inline": False},
         ],
-        "footer": {"text": f"Fixture • {heute()} {jetzt()}"},
+        "footer": {"text": f"Druck-Bot • {heute()} {jetzt()}"},
     }
 
 def discord_comeback_tipp(home, away, comp, country, score, minute,
@@ -1410,30 +1416,35 @@ def discord_comeback_tipp(home, away, comp, country, score, minute,
     return {
         "title": "🔄 Comeback Signal", "color": FARBE_COMEBACK,
         "fields": [
-            {"name": "🏆 Liga",          "value": f"{comp} ({country})",               "inline": True},
-            {"name": "⚽ Spiel",         "value": f"{home} vs {away}",                 "inline": True},
-            {"name": "📊 Stand",         "value": f"**{score}** | Min. **{minute}'**", "inline": True},
-            {"name": "📉 Rückliegendes Team", "value": f"**{rueckliegend}**",          "inline": True},
-            {"name": "📈 Führendes Team",     "value": f"**{fuehrend}**",              "inline": True},
-            {"name": "🎯 Schüsse (Rückliegend)", "value": f"**{shots_r}** aufs Tor",  "inline": True},
-            {"name": "⚽ Ballbesitz",     "value": f"**{poss_r}%**",                   "inline": True},
+            {"name": "🏆 Liga",    "value": f"{comp}",                         "inline": True},
+            {"name": "🌍 Land",    "value": f"{country}",                      "inline": True},
+            {"name": "📊 Stand",   "value": f"**{score}** | Min. **{minute}'**", "inline": True},
+            {"name": "⚽ Spiel",   "value": f"{home} vs {away}",               "inline": False},
+            {"name": "📉 Rückliegend", "value": f"**{rueckliegend}**",         "inline": True},
+            {"name": "📈 Führend",     "value": f"**{fuehrend}**",             "inline": True},
+            {"name": "🎯 Schüsse Rückliegend", "value": f"**{shots_r}** | Gegner: {shots_f}", "inline": True},
+            {"name": "⚽ Ballbesitz",  "value": f"**{poss_r}%**",              "inline": True},
             {"name": "🎯 Empfehlung", "value": f"Beide Teams treffen (Comeback){qt}", "inline": False},
         ],
-        "footer": {"text": f"Fixture • {heute()} {jetzt()}"},
+        "footer": {"text": f"Comeback-Bot • {heute()} {jetzt()}"},
     }
 
-def discord_torflut_tipp(home, away, comp, country, score_hz1, tore_hz1, grenze, quote):
+def discord_torflut_tipp(home, away, comp, country, score_hz1, tore_hz1, grenze, quote,
+                          shots_ges=0, poss_h="?", poss_a="?"):
     qt = f"\n💶 **Quote:** {quote}" if quote else ""
     return {
         "title": "🌊 Torflut Signal", "color": FARBE_TORFLUT,
         "fields": [
-            {"name": "🏆 Liga",        "value": f"{comp} ({country})", "inline": True},
-            {"name": "⚽ Spiel",       "value": f"{home} vs {away}",   "inline": True},
-            {"name": "📊 Halbzeitstand", "value": f"**{score_hz1}**",  "inline": True},
-            {"name": "⚽ Tore HZ1",    "value": f"**{tore_hz1}** Tore", "inline": True},
-            {"name": "🎯 Empfehlung", "value": f"Über **{grenze} Tore** im Gesamtspiel{qt}", "inline": False},
+            {"name": "🏆 Liga",            "value": f"{comp}",          "inline": True},
+            {"name": "🌍 Land",            "value": f"{country}",       "inline": True},
+            {"name": "📊 Halbzeitstand",   "value": f"**{score_hz1}**", "inline": True},
+            {"name": "⚽ Spiel",           "value": f"{home} vs {away}", "inline": False},
+            {"name": "⚽ Tore HZ1",        "value": f"**{tore_hz1}** Tore", "inline": True},
+            {"name": "🎯 Schüsse gesamt",  "value": f"**{shots_ges}**", "inline": True},
+            {"name": "⚽ Ballbesitz",      "value": f"{poss_h}% | {poss_a}%", "inline": True},
+            {"name": "🎯 Empfehlung",      "value": f"Über **{grenze} Tore** im Gesamtspiel{qt}", "inline": False},
         ],
-        "footer": {"text": f"Fixture • {heute()} {jetzt()}"},
+        "footer": {"text": f"Torflut-Bot • {heute()} {jetzt()}"},
     }
 
 def discord_rotkarte_tipp(home, away, comp, country, score, minute,
@@ -1442,14 +1453,16 @@ def discord_rotkarte_tipp(home, away, comp, country, score, minute,
     return {
         "title": "🟥 Rote Karte Signal", "color": FARBE_ROTKARTE,
         "fields": [
-            {"name": "🏆 Liga",           "value": f"{comp} ({country})",               "inline": True},
-            {"name": "⚽ Spiel",          "value": f"{home} vs {away}",                 "inline": True},
-            {"name": "📊 Stand",          "value": f"**{score}** | Min. **{minute}'**", "inline": True},
-            {"name": "🟥 Rote Karte für", "value": f"**{spieler}** ({rote_karte_team})", "inline": False},
-            {"name": "💪 Überzahl",       "value": f"**{ueberzahl_team}**",              "inline": True},
+            {"name": "🏆 Liga",    "value": f"{comp}",                         "inline": True},
+            {"name": "🌍 Land",    "value": f"{country}",                      "inline": True},
+            {"name": "📊 Stand",   "value": f"**{score}** | Min. **{minute}'**", "inline": True},
+            {"name": "⚽ Spiel",   "value": f"{home} vs {away}",               "inline": False},
+            {"name": "🟥 Rote Karte für", "value": f"**{spieler}**",           "inline": True},
+            {"name": "🔴 Team",    "value": f"{rote_karte_team}",              "inline": True},
+            {"name": "💪 Überzahl-Team", "value": f"**{ueberzahl_team}**",     "inline": True},
             {"name": "🎯 Empfehlung", "value": f"Nächstes Tor für **{ueberzahl_team}**{qt}", "inline": False},
         ],
-        "footer": {"text": f"Fixture • {heute()} {jetzt()}"},
+        "footer": {"text": f"Rotkarte-Bot • {heute()} {jetzt()}"},
     }
 
 def discord_hz1tore_tipp(home, away, comp, country, richtung, linie,
@@ -2690,8 +2703,12 @@ def bot_torflut():
                            f"🎯 Tipp: Über <b>{grenze}</b> Tore im Gesamtspiel{ql}\n"
                            f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                 send_telegram(msg)
+                stats_tf   = get_statistiken(match_id)
+                shots_tf   = stats_tf["shots_on_target_home"] + stats_tf["shots_on_target_away"]
+                poss_th    = stats_tf["possession_home"]
+                poss_ta    = stats_tf["possession_away"]
                 send_discord_embed(DISCORD_WEBHOOK_TORFLUT,
-                    discord_torflut_tipp(home, away, comp, country, score_str, tore_hz1, grenze, quote))
+                    discord_torflut_tipp(home, away, comp, country, score_str, tore_hz1, grenze, quote, shots_tf, poss_th, poss_ta))
                 notified_torflut.add(match_id)
                 beobachtung_hinzufuegen(match_id, {
                     "typ": "torflut", "match_id": match_id,
@@ -3334,7 +3351,7 @@ def bot_watchdog():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v29")
+    print("  ⚽ FUSSBALL BOTS v30")
     print("  Telegram Befehle · Bankroll · Multi-Signal · API-Monitor · Persistenz · Comeback+")
     print("=" * 50 + "\n")
 
