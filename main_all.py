@@ -1,4 +1,4 @@
-# v28 - Auswertungs-Fix + Schüsse-Bot
+# v27 - Telegram Befehle, Persistenz, Bankroll, Multi-Signal, API-Monitor, Comeback+
 import requests
 import re
 import time
@@ -24,8 +24,8 @@ DISCORD_WEBHOOK_COMEBACK  = "https://discord.com/api/webhooks/150125226663031616
 DISCORD_WEBHOOK_TORFLUT   = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
 DISCORD_WEBHOOK_ROTKARTE  = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
 DISCORD_WEBHOOK_HZ1TORE  = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
+DISCORD_WEBHOOK_SCHUESSE = "DISCORD_WEBHOOK_SCHUESSE_HIER"  # #betlab-live-schuesse
 DISCORD_WEBHOOK_VZTORE   = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
-DISCORD_WEBHOOK_SCHUESSE = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"  # #betlab-live-schuesse
 
 ODDS_API_KEY       = "866948de5d6c34ca51faf6bd77e0bb2a"
 ANTHROPIC_API_KEY  = "ANTHROPIC_API_KEY_HIER_EINTRAGEN"  # claude.ai → API Keys
@@ -2046,7 +2046,7 @@ def bot_auswertung_und_berichte():
         "hz1tore":    auswertung_hz1tore,
         "vztore":     auswertung_vztore,
     }
-    FT_STATI        = {"FT", "Finished", "FINISHED", "AET", "PEN", "finished", "aet", "pen", "Full Time", "full time", "FULL TIME", "After Extra Time", "Penalties", "ft", "FT."}
+    FT_STATI        = {"FT", "Finished", "FINISHED", "AET", "PEN", "finished", "aet", "pen"}
     leerer_status   = {}  # match_id → Anzahl leerer Status-Antworten
     ft_bestaetigung = {}  # match_id → Zeitstempel erste FT-Erkennung (Bestätigung nach 2 Min)
 
@@ -2078,18 +2078,14 @@ def bot_auswertung_und_berichte():
                     continue
                 try:
                     match  = ls_get_single_match(match_id)
-                    status = match.get("status", "") or ""
-                    time_val = str(match.get("time", "") or "")
-                    minute = _safe_int(time_val) if time_val.isdigit() else 0
-                    # livescore gibt manchmal "FT" im time Feld statt status
-                    if time_val.upper() in ("FT", "FULL TIME", "AET"):
-                        status = "FT"
+                    status = match.get("status", "")
+                    minute = _safe_int(match.get("time", 0))
 
                     # FIX: Leerer Status + 0 Minuten = Spiel aus API gefallen → beendet
                     if status == "" and minute == 0:
                         leerer_status[match_id] = leerer_status.get(match_id, 0) + 1
                         print(f"  [Auswertung] {spiel['home']} vs {spiel['away']} | Kein Status ({leerer_status[match_id]}x)")
-                        if leerer_status[match_id] >= 3:  # Nach 3x keinem Status (6 Min) → auswerten
+                        if leerer_status[match_id] >= 8:
                             # Doppel-Check: ist das Spiel noch in der Live-Liste?
                             alle_live = get_live_matches()
                             live_ids  = {m.get("id") for m in alle_live}
@@ -3310,82 +3306,6 @@ def bot_prematch_erinnerung():
 
 _bot_targets = {}  # thread_name → target_function (wird beim Start befüllt)
 
-
-def bot_schuesse():
-    """Signal wenn viele Schüsse aufs Tor fallen – kein Filter, viele Signale."""
-    SCHUESSE_MIN = 4  # Eigene Mindestanzahl – unabhängig von MIN_SHOTS_ON_TARGET
-    print(f"[Schüsse-Bot] Gestartet | Signal ab {SCHUESSE_MIN}+ Schüsse | Kein Filter")
-    while True:
-        try:
-            matches  = get_live_matches()
-            laufend  = [m for m in matches if m.get("status") in
-                        ("IN PLAY", "ADDED TIME", "HALF TIME BREAK", "EXTRA TIME")]
-            print(f"[{jetzt()}] [Schüsse-Bot] {len(laufend)} Spiele geprüft")
-            for game in laufend:
-                match_id = str(game.get("id"))
-                if match_id in notified_schuesse:
-                    continue
-                home    = game.get("home", {}).get("name", "?")
-                away    = game.get("away", {}).get("name", "?")
-                comp    = game.get("competition", {}).get("name", "?")
-                country = (game.get("country") or {}).get("name", "?")
-                score   = game.get("scores", {}).get("score", "?")
-                minute  = game.get("time", "?")
-                status  = game.get("status", "")
-                min_text = "Halbzeit" if status == "HALF TIME BREAK" else f"{minute}'"
-                stats     = get_statistiken(match_id)
-                shots_h   = stats["shots_on_target_home"]
-                shots_a   = stats["shots_on_target_away"]
-                shots_ges = shots_h + shots_a
-                if shots_ges < SCHUESSE_MIN:
-                    continue
-                saves_h   = stats["saves_home"]
-                saves_a   = stats["saves_away"]
-                poss_h    = stats["possession_home"]
-                poss_a    = stats["possession_away"]
-                corners_h = stats["corners_home"]
-                corners_a = stats["corners_away"]
-                msg = (f"🎯 <b>Viele Torschüsse!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
-                       f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
-                       f"📊 Stand: <b>{score}</b> | {min_text}\n"
-                       f"━━━━━━━━━━━━━━━━━━━━\n"
-                       f"🎯 Schüsse aufs Tor:\n"
-                       f"  🔵 {home}: <b>{shots_h}</b>\n"
-                       f"  🔴 {away}: <b>{shots_a}</b>\n"
-                       f"  📊 Gesamt: <b>{shots_ges}</b>\n"
-                       f"🧤 Paraden: {saves_h} | {saves_a}\n"
-                       f"⚽ Ballbesitz: {poss_h}% | {poss_a}%\n"
-                       f"📐 Ecken: {corners_h} | {corners_a}\n"
-                       f"━━━━━━━━━━━━━━━━━━━━\n"
-                       f"🎯 Idee: Over Tore / BTTS / Nächste Ecke\n"
-                       f"🕐 {jetzt()} Uhr")
-                send_telegram(msg)
-                embed = {
-                    "title": "🎯 Viele Torschüsse – Signal!",
-                    "color": 0xFF6B35,
-                    "fields": [
-                        {"name": "🏆 Liga",   "value": f"{comp} ({country})", "inline": True},
-                        {"name": "⚽ Spiel",  "value": f"{home} vs {away}",   "inline": True},
-                        {"name": "📊 Stand",  "value": f"**{score}** | {min_text}", "inline": True},
-                        {"name": "🎯 Schüsse aufs Tor",
-                         "value": f"🔵 {home}: **{shots_h}**\n🔴 {away}: **{shots_a}**\n📊 Gesamt: **{shots_ges}**",
-                         "inline": False},
-                        {"name": "🧤 Paraden",    "value": f"{saves_h} | {saves_a}",     "inline": True},
-                        {"name": "⚽ Ballbesitz", "value": f"{poss_h}% | {poss_a}%",     "inline": True},
-                        {"name": "📐 Ecken",      "value": f"{corners_h} | {corners_a}", "inline": True},
-                        {"name": "🎯 Tipp-Idee",  "value": "Over Tore / BTTS / Nächste Ecke", "inline": False},
-                    ],
-                    "footer": {"text": f"Schüsse-Bot • {heute()} {jetzt()}"},
-                }
-                send_discord_embed(DISCORD_WEBHOOK_SCHUESSE, embed)
-                notified_schuesse.add(match_id)
-                print(f"  [Schüsse-Bot] ✅ {home} vs {away} | {shots_ges} Schüsse ({shots_h}|{shots_a})")
-                time.sleep(0.5)
-            bot_fehler_reset("Schüsse-Bot")
-        except Exception as e:
-            bot_fehler_melden("Schüsse-Bot", e)
-        time.sleep(FUSSBALL_INTERVAL * 60)
-
 def bot_watchdog():
     """Überwacht alle Bot-Threads und startet sie neu falls sie abstürzen."""
     print("[Watchdog] Gestartet")
@@ -3414,7 +3334,7 @@ def bot_watchdog():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v28")
+    print("  ⚽ FUSSBALL BOTS v29")
     print("  Telegram Befehle · Bankroll · Multi-Signal · API-Monitor · Persistenz · Comeback+")
     print("=" * 50 + "\n")
 
@@ -3436,7 +3356,6 @@ if __name__ == "__main__":
         ("Erinnerungs-Bot",  bot_prematch_erinnerung),
         ("Backup-Bot",       bot_github_backup),
         ("Auswertung-Bot",   bot_auswertung_und_berichte),
-        ("Schüsse-Bot",      bot_schuesse),
     ]
 
     # Targets für Watchdog merken
