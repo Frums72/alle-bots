@@ -24,11 +24,17 @@ DISCORD_WEBHOOK_COMEBACK  = "https://discord.com/api/webhooks/150125226663031616
 DISCORD_WEBHOOK_TORFLUT   = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
 DISCORD_WEBHOOK_ROTKARTE  = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
 DISCORD_WEBHOOK_HZ1TORE  = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
-DISCORD_WEBHOOK_SCHUESSE = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"  # #betlab-live-schuesse
 DISCORD_WEBHOOK_VZTORE   = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
 
 ODDS_API_KEY       = "866948de5d6c34ca51faf6bd77e0bb2a"
-ANTHROPIC_API_KEY  = "ANTHROPIC_API_KEY_HIER_EINTRAGEN"  # claude.ai → API Keys
+PANDASCORE_API_KEY = "qeVqpzDJKy5rt6Ky7vmWCdqEkkUt9j53togKOK9gzeIvGNCEbMg"  # pandascore.co
+
+# Value Bet Finder
+VALUE_BET_MIN_QUOTE   = 1.6   # Mindestquote damit ein Value Bet interessant ist
+VALUE_BET_MIN_VALUE   = 0.15  # Mindest-Edge (15%) damit Signal gesendet wird
+DISCORD_WEBHOOK_VALUE = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"  # #betlab-value-bets
+DISCORD_WEBHOOK_CS2   = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"  # #betlab-cs2
+ANTHROPIC_API_KEY  = ""  # claude.ai → API Keys (leer = deaktiviert)
 EINSATZ            = 10.0
 
 # Pre-Match Bot
@@ -145,7 +151,6 @@ notified_torflut    = set()
 notified_rotkarte   = set()
 notified_hz1tore    = set()
 notified_vztore     = set()
-notified_schuesse   = set()
 beobachtete_spiele  = {}
 auswertung_done     = set()
 
@@ -1730,7 +1735,7 @@ def send_tagesbericht():
            f"━━━━━━━━━━━━━━━━━━━━\n"
            f"✅ Gewonnen: <b>{gw}</b>\n❌ Verloren: <b>{vl}</b>\n"
            f"🎯 Trefferquote: <b>{pct}%</b>\n"
-           f"{ei} Simulation ({EINSATZ}€/Tipp): <b>{'+' if gn>=0 else ''}{gn}€</b>\n"
+           f"{ei} Simulation: <b>{'+' if gn>=0 else ''}{gn}€</b>\n"
            f"━━━━━━━━━━━━━━━━━━━━\n📊 <b>Nach Wetttyp:</b>\n"
            f"📐 {statistik_zeile('Ecken Unter',  statistik['ecken'])}\n"
            f"📐 {statistik_zeile('Ecken Über',   statistik['ecken_over'])}\n"
@@ -1755,7 +1760,40 @@ def send_tagesbericht():
             f"💰 <b>Bankroll:</b> {br}€ ({br_pfeil}{diff}€ seit Start)\n"
             f"{api_monitor_bericht()}")
     send_telegram(msg)
-    send_discord(DISCORD_WEBHOOK_BILANZ, msg)
+    # Discord Embed für Tagesbericht
+    gw_ges  = sum(statistik[t]["gewonnen"] for t in statistik)
+    vl_ges  = sum(statistik[t]["verloren"] for t in statistik)
+    ges_ges = gw_ges + vl_ges
+    pct_ges = round(gw_ges / ges_ges * 100) if ges_ges else 0
+    gn_ges  = round(sum(statistik[t]["gewinn"] for t in statistik), 2)
+    br_embed = bankroll_laden()
+    diff_embed = round(br_embed - BANKROLL, 2)
+    farbe_embed = 0x2ECC71 if gn_ges >= 0 else 0xE74C3C
+    tages_embed = {
+        "title": f"📋 Tagesbericht – {heute()}",
+        "color": farbe_embed,
+        "fields": [
+            {"name": "✅ Gewonnen",      "value": f"**{gw_ges}**",  "inline": True},
+            {"name": "❌ Verloren",      "value": f"**{vl_ges}**",  "inline": True},
+            {"name": "🎯 Trefferquote", "value": f"**{pct_ges}%**", "inline": True},
+            {"name": "📈 Simulation",   "value": f"**{'+' if gn_ges >= 0 else ''}{gn_ges}€**", "inline": True},
+            {"name": "💰 Bankroll",     "value": f"**{br_embed}€** ({'+' if diff_embed >= 0 else ''}{diff_embed}€)", "inline": True},
+            {"name": "📊 Nach Wetttyp", "value": "\n".join([
+                f"📐 Ecken U: {statistik['ecken']['gewonnen']}/{statistik['ecken']['gewonnen']+statistik['ecken']['verloren']}",
+                f"📐 Ecken Ü: {statistik['ecken_over']['gewonnen']}/{statistik['ecken_over']['gewonnen']+statistik['ecken_over']['verloren']}",
+                f"🃏 Karten: {statistik['karten']['gewonnen']}/{statistik['karten']['gewonnen']+statistik['karten']['verloren']}",
+                f"🧤 Torwart: {statistik['torwart']['gewonnen']}/{statistik['torwart']['gewonnen']+statistik['torwart']['verloren']}",
+                f"🔥 Druck: {statistik['druck']['gewonnen']}/{statistik['druck']['gewonnen']+statistik['druck']['verloren']}",
+                f"🔄 Comeback: {statistik['comeback']['gewonnen']}/{statistik['comeback']['gewonnen']+statistik['comeback']['verloren']}",
+                f"🌊 Torflut: {statistik['torflut']['gewonnen']}/{statistik['torflut']['gewonnen']+statistik['torflut']['verloren']}",
+                f"🟥 Rotkarte: {statistik['rotkarte']['gewonnen']}/{statistik['rotkarte']['gewonnen']+statistik['rotkarte']['verloren']}",
+                f"🥅 HZ1-Tore: {statistik['hz1tore']['gewonnen']}/{statistik['hz1tore']['gewonnen']+statistik['hz1tore']['verloren']}",
+                f"🏆 VZ-Tore: {statistik['vztore']['gewonnen']}/{statistik['vztore']['gewonnen']+statistik['vztore']['verloren']}",
+            ]), "inline": False},
+        ],
+        "footer": {"text": f"BetlabLIVE • {heute()} {jetzt()}"},
+    }
+    send_discord_embed(DISCORD_WEBHOOK_BILANZ, tages_embed)
     for t in statistik:
         statistik[t] = {"gewonnen": 0, "verloren": 0, "gewinn": 0.0}
     print(f"  [Bericht] Tagesbericht gesendet ({heute()})")
@@ -1771,7 +1809,7 @@ def send_wochenbericht():
            f"━━━━━━━━━━━━━━━━━━━━\n"
            f"✅ Gewonnen: <b>{gw}</b>\n❌ Verloren: <b>{vl}</b>\n"
            f"🎯 Trefferquote: <b>{pct}%</b>\n"
-           f"{ei} Simulation ({EINSATZ}€/Tipp): <b>{'+' if gn>=0 else ''}{gn}€</b>\n"
+           f"{ei} Simulation: <b>{'+' if gn>=0 else ''}{gn}€</b>\n"
            f"━━━━━━━━━━━━━━━━━━━━\n📊 <b>Nach Wetttyp:</b>\n"
            f"📐 {statistik_zeile('Ecken Unter',  wochen_statistik['ecken'])}\n"
            f"📐 {statistik_zeile('Ecken Über',   wochen_statistik['ecken_over'])}\n"
@@ -1797,7 +1835,7 @@ def send_wochenbericht():
 def auswertung_ecken(spiel):
     match_id  = spiel["match_id"]
     hz1_ecken = spiel["hz1_ecken"]
-    grenze    = hz1_ecken * 2 + 3
+    grenze    = hz1_ecken * 2 + 1
     home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
     try:
         stats       = get_statistiken(match_id)
@@ -2085,37 +2123,71 @@ def bot_auswertung_und_berichte():
             # Fallback: zu alte Beobachtungen entfernen
             auswertung_fallback_check()
 
-            # Direkte FT-Erkennung: jeden beobachteten Match einzeln abfragen
+            # Live-Liste einmal laden – für alle Spiele verwenden
+            try:
+                alle_live = get_live_matches()
+                live_ids  = {str(m.get("id")) for m in alle_live}
+            except Exception as e:
+                print(f"  [Auswertung] Live-Liste Fehler: {e}")
+                live_ids = set()
+
+            # FT-Erkennung: Live-Liste + Single-Match kombiniert
             for match_id, spiel in list(beobachtete_spiele.items()):
                 if match_id in auswertung_done:
                     continue
+
+                home_str = spiel.get("home", "?")
+                away_str = spiel.get("away", "?")
+
+                # Mindest-Wartezeit prüfen (vor API-Call um Anfragen zu sparen)
+                signal_zeit = spiel.get("signal_zeit", 0)
+                minuten_seit_signal = (time.time() - signal_zeit) / 60 if signal_zeit else 999
+                min_warte_check = {
+                    "ecken": 50, "torflut": 50, "hz1tore": 35,
+                    "vztore": 75, "karten": 75, "torwart": 30,
+                    "comeback": 25, "druck": 25, "rotkarte": 20, "ecken_over": 20,
+                }.get(spiel.get("typ", ""), 25)
+                if signal_zeit > 0 and minuten_seit_signal < min_warte_check:
+                    continue
+
+                # Methode 1: Nicht in Live-Liste?
+                nicht_live = match_id not in live_ids
+
+                # Methode 2: Single-Match Status prüfen
+                status = ""
+                minute = 0
                 try:
-                    match  = ls_get_single_match(match_id)
-                    status = match.get("status", "")
-                    minute = _safe_int(match.get("time", 0))
+                    match    = ls_get_single_match(match_id)
+                    status   = str(match.get("status", "") or "")
+                    time_val = str(match.get("time", "") or "")
+                    minute   = _safe_int(time_val) if time_val.isdigit() else 0
+                    if time_val.upper() in ("FT", "FULL TIME", "AET"):
+                        status = "FT"
+                except Exception as e:
+                    # API-Fehler → leerer_status erhöhen
+                    leerer_status[match_id] = leerer_status.get(match_id, 0) + 1
+                    print(f"  [Auswertung] API-Fehler {home_str} vs {away_str} ({leerer_status[match_id]}x): {e}")
 
-                    # FIX: Leerer Status + 0 Minuten = Spiel aus API gefallen → beendet
-                    if status == "" and minute == 0:
-                        leerer_status[match_id] = leerer_status.get(match_id, 0) + 1
-                        print(f"  [Auswertung] {spiel['home']} vs {spiel['away']} | Kein Status ({leerer_status[match_id]}x)")
-                        if leerer_status[match_id] >= 8:
-                            # Doppel-Check: ist das Spiel noch in der Live-Liste?
-                            alle_live = get_live_matches()
-                            live_ids  = {m.get("id") for m in alle_live}
-                            if match_id in live_ids:
-                                print(f"  [Auswertung] {spiel['home']} vs {spiel['away']} | Noch in Live-Liste – warte weiter")
-                                leerer_status[match_id] = 0  # Reset – Spiel läuft noch
-                                continue
-                            print(f"  [Auswertung] ⚠️ Kein Status + nicht live – werte aus")
-                            status = "FT"
-                        else:
-                            continue
+                status_ft = status in FT_STATI
 
-                    if status not in FT_STATI:
-                        print(f"  [Auswertung] {spiel['home']} vs {spiel['away']} | {status} | {minute}'")
+                # Leerer Status zählen
+                if status == "" and minute == 0 and not status_ft:
+                    leerer_status[match_id] = leerer_status.get(match_id, 0) + 1
+                    print(f"  [Auswertung] {home_str} vs {away_str} | Kein Status ({leerer_status[match_id]}x)")
+                elif status and status not in FT_STATI:
+                    print(f"  [Auswertung] {home_str} vs {away_str} | {status} | {minute}'")
+                    if nicht_live:
+                        print(f"  [Auswertung] Nicht in Live-Liste aber Status={status} – zähle")
+                    else:
                         leerer_status.pop(match_id, None)
-                        ft_bestaetigung.pop(match_id, None)  # Status nicht FT → Reset
+                        ft_bestaetigung.pop(match_id, None)
                         continue
+
+                # FT erkennen wenn: Status FT, ODER (nicht live + 2x kein Status)
+                ist_fertig = status_ft or (nicht_live and leerer_status.get(match_id, 0) >= 2)
+
+                if not ist_fertig:
+                    continue
 
                     # FT-Bestätigung: erst beim 2. FT-Signal auswerten (verhindert API-Fehler)
                     if match_id not in ft_bestaetigung:
@@ -2126,29 +2198,9 @@ def bot_auswertung_und_berichte():
                         # Noch keine 90 Sekunden vergangen – warte noch
                         continue
 
-                    # Mindest-Wartezeit je nach Tipp-Typ
-                    signal_zeit = spiel.get("signal_zeit", 0)
-                    minuten_seit_signal = (time.time() - signal_zeit) / 60
-                    min_warte = {
-                        "ecken":      50,  # Halbzeit-Signal → 2. HZ dauert ~45 Min
-                        "torflut":    50,  # Halbzeit-Signal → 2. HZ dauert ~45 Min
-                        "hz1tore":    35,  # Signal Min. 1-15 → HZ1 Ende ~30-45 Min weg
-                        "vztore":     75,  # Signal Min. 1-15 → ganzes Spiel abwarten
-                        "karten":     75,  # Signal Min. 1-40 → ganzes Spiel abwarten
-                        "torwart":    30,  # 0:0 Signal → mind. 30 Min warten
-                        "comeback":   25,  # In-Game Signal → mind. 25 Min warten
-                        "druck":      25,  # In-Game Signal → mind. 25 Min warten
-                        "rotkarte":   20,  # In-Game Signal → mind. 20 Min warten
-                        "ecken_over": 20,  # In-Game Signal → mind. 20 Min warten
-                    }.get(spiel.get("typ", ""), 25)
-                    if signal_zeit > 0 and minuten_seit_signal < min_warte:
-                        print(f"  [Auswertung] {spiel['home']} vs {spiel['away']} | Warte noch {min_warte - minuten_seit_signal:.0f} Min. ({spiel.get('typ')})")
-                        leerer_status.pop(match_id, None)
-                        continue
-
                     # Spiel beendet!
-                    print(f"  [Auswertung] ✅ FT: {spiel['home']} vs {spiel['away']} ({status})")
-                    time.sleep(15)
+                    print(f"  [Auswertung] ✅ Werte aus: {home_str} vs {away_str}")
+                    time.sleep(10)
 
                     typ        = spiel["typ"]
                     webhook    = spiel["webhook"]
@@ -2176,9 +2228,6 @@ def bot_auswertung_und_berichte():
                         print(f"  [Auswertung] ⚠️ Keine Auswertung für {spiel['home']} vs {spiel['away']} – versuche später")
                     leerer_status.pop(match_id, None)
                     ft_bestaetigung.pop(match_id, None)
-
-                except Exception as e:
-                    print(f"  [Auswertung] Fehler bei {match_id}: {e}")
 
         except Exception as e:
             print(f"  [Auswertung-Bot] Fehler: {e}")
@@ -2208,7 +2257,7 @@ def bot_ecken():
                 comp    = game.get("competition", {}).get("name", "?")
                 country = (game.get("country") or {}).get("name", "International")
                 score   = game.get("scores", {}).get("score", "?")
-                grenze  = corners * 2 + 3
+                grenze  = corners * 2 + 1
                 if corners == 0:
                     print(f"  [Ecken-Bot] {home} vs {away} | Keine Ecken-Statistik von API")
                     continue
@@ -2239,7 +2288,7 @@ def bot_ecken():
                     # Wetter-Anpassung
                     schlecht = schlechtes_wetter(country)
                     wetter_bonus = 1 if schlecht else 0
-                    grenze = corners * 2 + 3 + wetter_bonus
+                    grenze = corners * 2 + 1 + wetter_bonus
                     # Ecken-Durchschnitt Check
                     if not ecken_tipp_sinnvoll(game, grenze):
                         print(f"  [Ecken-Bot] Durchschnitt passt nicht – übersprungen")
@@ -2383,8 +2432,6 @@ def bot_karten():
                 country = (game.get("country") or {}).get("name", "International")
                 score   = game.get("scores", {}).get("score", "?")
                 if len(karten) >= MIN_KARTEN:
-                    if not tipp_erlaubt(match_id, "Karten-Bot"):
-                        continue
                     quote  = get_quote(home, away, "karten")
                     if quote and quote < MIN_QUOTE:
                         continue
@@ -2543,8 +2590,6 @@ def bot_druck():
                     fk_schwach   = f_home
                 if not druck_team:
                     continue
-                if not tipp_erlaubt(match_id, "Druck-Bot"):
-                    continue
                 home    = game.get("home", {}).get("name", "?")
                 away    = game.get("away", {}).get("name", "?")
                 comp    = game.get("competition", {}).get("name", "?")
@@ -2629,8 +2674,6 @@ def bot_comeback():
                 druck_ok = (shots_r > shots_f) or (da_r > da_f * 1.3)
                 if not druck_ok or poss_r <= 45:
                     continue
-                if not tipp_erlaubt(match_id, "Comeback-Bot"):
-                    continue
                 comp    = game.get("competition", {}).get("name", "?")
                 country = (game.get("country") or {}).get("name", "International")
                 minute  = game.get("time", "?")
@@ -2684,13 +2727,39 @@ def bot_torflut():
                 tore_hz1  = h + a
                 if tore_hz1 < TORFLUT_MIN_TORE:
                     continue
-                if not tipp_erlaubt(match_id, "Torflut-Bot"):
-                    continue
                 home    = game.get("home", {}).get("name", "?")
                 away    = game.get("away", {}).get("name", "?")
                 comp    = game.get("competition", {}).get("name", "?")
                 country = (game.get("country") or {}).get("name", "International")
-                grenze  = tore_hz1 + 1  # z.B. 3 Tore HZ1 → Tipp Über 4 gesamt
+                # Stats laden für Discord Embed + intelligente Grenze
+                stats_tf   = get_statistiken(match_id)
+                shots_h_tf = stats_tf["shots_on_target_home"]
+                shots_a_tf = stats_tf["shots_on_target_away"]
+                shots_tf   = shots_h_tf + shots_a_tf
+                poss_th    = stats_tf["possession_home"]
+                poss_ta    = stats_tf["possession_away"]
+                if shots_tf == 0:
+                    shots_h_tf = stats_tf["dangerous_attacks_home"]
+                    shots_a_tf = stats_tf["dangerous_attacks_away"]
+                    shots_tf   = shots_h_tf + shots_a_tf
+                # Intelligente Grenze basierend auf Spielsituation
+                # Schüsse aufs Tor in HZ1 = Indikator für weiteres Torpotenzial
+                # Formel: Tore HZ1 + erwartete HZ2 Tore (min. 1, max. 4)
+                shots_pro_tor = max(1, shots_tf / max(tore_hz1, 1))
+                # Erwartete Tore in HZ2 basierend auf Schüssen-Rate
+                erwartete_hz2 = round(shots_tf / max(shots_pro_tor, 1.5), 1)
+                erwartete_hz2 = max(1, min(4, erwartete_hz2))
+                grenze_roh    = tore_hz1 + erwartete_hz2
+                # Sinnvolle Grenze wählen (0.5er Schritte)
+                if grenze_roh <= tore_hz1 + 1.5:
+                    grenze = tore_hz1 + 1
+                elif grenze_roh <= tore_hz1 + 2.5:
+                    grenze = tore_hz1 + 2
+                else:
+                    grenze = tore_hz1 + 3
+                # Bei sehr torreichem Spiel mind. +2 empfehlen
+                if tore_hz1 >= 4:
+                    grenze = max(grenze, tore_hz1 + 2)
                 quote   = get_quote(home, away, "torflut")
                 if quote and quote < MIN_QUOTE:
                     continue
@@ -2703,10 +2772,6 @@ def bot_torflut():
                            f"🎯 Tipp: Über <b>{grenze}</b> Tore im Gesamtspiel{ql}\n"
                            f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                 send_telegram(msg)
-                stats_tf   = get_statistiken(match_id)
-                shots_tf   = stats_tf["shots_on_target_home"] + stats_tf["shots_on_target_away"]
-                poss_th    = stats_tf["possession_home"]
-                poss_ta    = stats_tf["possession_away"]
                 send_discord_embed(DISCORD_WEBHOOK_TORFLUT,
                     discord_torflut_tipp(home, away, comp, country, score_str, tore_hz1, grenze, quote, shots_tf, poss_th, poss_ta))
                 notified_torflut.add(match_id)
@@ -2750,8 +2815,6 @@ def bot_rotkarte():
                 karte_min    = _safe_int(letzte_karte.get("time") or 0)
                 # Nur wenn Karte in den letzten 10 Minuten kam
                 if minute - karte_min > 10:
-                    continue
-                if not tipp_erlaubt(match_id, "Rotkarte-Bot"):
                     continue
                 home    = game.get("home", {}).get("name", "?")
                 away    = game.get("away", {}).get("name", "?")
@@ -3120,31 +3183,51 @@ def filtere_top_spiele(fixtures: list) -> list:
             top.append(f)
     return top
 
-def claude_prematch_analyse(home: str, away: str, liga: str, anstoß: str) -> dict | None:
+def claude_prematch_analyse(home: str, away: str, liga: str, anstoß: str,
+                             bereits_tipps: list = None) -> dict | None:
     """
-    Fragt Claude nach Pre-Match Analyse.
-    Gibt {"tipp": str, "analyse": str} zurück.
+    Fragt Claude nach Pre-Match Analyse mit echter Abwechslung.
+    Gibt {"tipp": str, "analyse": str, "konfidenz": int} zurück.
     """
+    bereits = ", ".join(bereits_tipps) if bereits_tipps else "keine"
     if not ANTHROPIC_API_KEY or ANTHROPIC_API_KEY.startswith("ANTHROPIC"):
-        return {"tipp": "Beide Teams treffen", "analyse": "Starke Offensive auf beiden Seiten."}
+        # Fallback ohne API: abwechselnde Tipps
+        import random
+        fallbacks = [
+            {"tipp": "Über 2.5 Tore",    "analyse": "Beide Teams sind offensivstark und spielen aktiv nach vorne.", "konfidenz": 6},
+            {"tipp": "Heimsieg",          "analyse": "Der Heimvorteil spielt eine entscheidende Rolle bei diesem Duell.", "konfidenz": 6},
+            {"tipp": "Unter 2.5 Tore",   "analyse": "Beide Defensivreihen sind stabil und lassen wenig zu.", "konfidenz": 5},
+            {"tipp": "Beide Teams treffen","analyse": "Beide Mannschaften kommen regelmäßig zu Torabschlüssen.", "konfidenz": 6},
+            {"tipp": "Doppelte Chance 1X","analyse": "Der Gastgeber ist leichter Favorit, ein Unentschieden ist aber möglich.", "konfidenz": 7},
+        ]
+        verfuegbar = [f for f in fallbacks if f["tipp"] not in (bereits_tipps or [])]
+        return random.choice(verfuegbar) if verfuegbar else random.choice(fallbacks)
     try:
         prompt = (
-            f"Du bist ein erfahrener Sportwetten-Analyst. Analysiere dieses Spiel auf Deutsch:\n\n"
+            f"Du bist ein erfahrener Sportwetten-Analyst. Analysiere dieses Spiel basierend auf deinem Wissen über diese Teams.\n\n"
             f"Spiel: {home} vs {away}\n"
             f"Liga: {liga}\n"
             f"Anstoß: {anstoß} Uhr\n\n"
-            f"Wähle NUR EINEN dieser Tipp-Typen:\n"
+            f"Bereits gewählte Tipps in diesem Post (NICHT wiederholen): {bereits}\n\n"
+            f"Wähle den WAHRSCHEINLICHSTEN Tipp für dieses konkrete Spiel.\n"
+            f"Berücksichtige: aktuelle Form, Heimvorteil, Defensivstärke, Offensivstärke, direkte Duelle.\n"
+            f"Erlaubte Tipp-Typen (EINER davon):\n"
             f"- Über 2.5 Tore\n"
             f"- Unter 2.5 Tore\n"
+            f"- Über 1.5 Tore\n"
+            f"- Unter 1.5 Tore HZ1\n"
+            f"- Über 0.5 Tore HZ1\n"
             f"- Beide Teams treffen\n"
+            f"- Keine Beide Teams treffen\n"
             f"- Heimsieg\n"
             f"- Auswärtssieg\n"
             f"- Doppelte Chance 1X\n"
             f"- Doppelte Chance X2\n"
-            f"- Über 1.5 Tore\n\n"
-            f"Antworte NUR in diesem Format:\n"
-            f"TIPP: [gewählter Tipp-Typ]\n"
-            f"ANALYSE: [max. 2 Sätze Begründung]"
+            f"- Unentschieden\n\n"
+            f"Antworte NUR so:\n"
+            f"TIPP: [Tipp-Typ]\n"
+            f"KONFIDENZ: [1-10]\n"
+            f"ANALYSE: [2-3 konkrete Sätze warum, spezifisch auf das Spiel bezogen]"
         )
         resp = requests.post(
             "https://api.anthropic.com/v1/messages",
@@ -3155,7 +3238,7 @@ def claude_prematch_analyse(home: str, away: str, liga: str, anstoß: str) -> di
             },
             json={
                 "model": "claude-sonnet-4-20250514",
-                "max_tokens": 150,
+                "max_tokens": 200,
                 "messages": [{"role": "user", "content": prompt}]
             },
             timeout=20
@@ -3165,14 +3248,20 @@ def claude_prematch_analyse(home: str, away: str, liga: str, anstoß: str) -> di
         text         = resp.json().get("content", [{}])[0].get("text", "").strip()
         tipp         = ""
         analyse_text = ""
+        konfidenz    = 6
         for line in text.split("\n"):
             if line.startswith("TIPP:"):
                 tipp = line.replace("TIPP:", "").strip()
             elif line.startswith("ANALYSE:"):
                 analyse_text = line.replace("ANALYSE:", "").strip()
+            elif line.startswith("KONFIDENZ:"):
+                try:
+                    konfidenz = int(line.replace("KONFIDENZ:", "").strip())
+                except:
+                    konfidenz = 6
         if not tipp:
             return None
-        return {"tipp": tipp, "analyse": analyse_text}
+        return {"tipp": tipp, "analyse": analyse_text, "konfidenz": konfidenz}
     except Exception as e:
         print(f"  [PreMatch] Claude Fehler: {e}")
         return None
@@ -3181,7 +3270,7 @@ def bot_prematch():
     """Sendet automatisch Pre-Match Tipps um 10:00, 16:00 und 20:00 Uhr."""
     import random
     print(f"[PreMatch-Bot] Gestartet | Posts um {PREMATCH_UHRZEITEN} Uhr")
-    gesendet = set()  # "YYYY-MM-DD_HH" → bereits gesendet
+    gesendet = set()
 
     while True:
         try:
@@ -3192,33 +3281,48 @@ def bot_prematch():
             if now.hour in PREMATCH_UHRZEITEN and now.minute < 5 and key not in gesendet:
                 print(f"  [PreMatch-Bot] Starte Post um {now.hour}:00 Uhr")
 
-                # Fixtures laden und filtern
                 fixtures = ls_get_fixtures(datum)
                 top      = filtere_top_spiele(fixtures)
 
+                # Zeitfenster-Filter je nach Uhrzeit
+                def anstoß_stunde(spiel):
+                    try:
+                        return int(spiel.get("time", "0:0").split(":")[0])
+                    except:
+                        return 0
+
+                if now.hour == 10:
+                    # 10 Uhr: nur Spiele die vor 16 Uhr starten
+                    top = [s for s in top if anstoß_stunde(s) < 16]
+                elif now.hour == 16:
+                    # 16 Uhr: nur Spiele zwischen 16 und 20 Uhr
+                    top = [s for s in top if 16 <= anstoß_stunde(s) < 20]
+                elif now.hour == 20:
+                    # 20 Uhr: nur Spiele ab 20 Uhr
+                    top = [s for s in top if anstoß_stunde(s) >= 20]
+
                 if not top:
-                    print(f"  [PreMatch-Bot] Keine Top-Liga Spiele heute")
+                    print(f"  [PreMatch-Bot] Keine passenden Spiele für {now.hour}:00 Uhr")
                     gesendet.add(key)
                     time.sleep(60)
                     continue
 
-                # Zufällig auswählen
-                auswahl   = random.sample(top, min(PREMATCH_MAX_TIPPS, len(top)))
-                analysen  = []
+                auswahl  = random.sample(top, min(PREMATCH_MAX_TIPPS, len(top)))
+                analysen = []
+                bereits_tipps = []
 
                 for spiel in auswahl:
-                    home     = (spiel.get("home_name")
-                                or spiel.get("home", {}).get("name", "?"))
-                    away     = (spiel.get("away_name")
-                                or spiel.get("away", {}).get("name", "?"))
-                    liga     = spiel.get("competition", {}).get("name", "?")
-                    country  = (spiel.get("country") or {}).get("name", "")
-                    anstoß   = spiel.get("time", "?")
+                    home    = (spiel.get("home_name") or spiel.get("home", {}).get("name", "?"))
+                    away    = (spiel.get("away_name") or spiel.get("away", {}).get("name", "?"))
+                    liga    = spiel.get("competition", {}).get("name", "?")
+                    country = (spiel.get("country") or {}).get("name", "")
+                    anstoß  = spiel.get("time", "?")
 
-                    result = claude_prematch_analyse(home, away, liga, anstoß)
+                    # Bereits verwendete Tipps übergeben damit Claude variiert
+                    result = claude_prematch_analyse(home, away, liga, anstoß, bereits_tipps)
                     if not result:
                         continue
-                    # Verletzungs-Check
+                    bereits_tipps.append(result["tipp"])
                     match_id_fix = str(spiel.get("id", spiel.get("fixture_id", "")))
                     verletzung   = verletzungs_check(match_id_fix, home, away) if match_id_fix else ""
                     analysen.append({
@@ -3227,9 +3331,10 @@ def bot_prematch():
                         "anstoß": anstoß,
                         "tipp": result["tipp"],
                         "analyse": result["analyse"],
+                        "konfidenz": result.get("konfidenz", 6),
                         "verletzung": verletzung,
                     })
-                    time.sleep(1)  # kurze Pause zwischen Claude-Calls
+                    time.sleep(1)
 
                 if analysen:
                     uhr_emoji = "🌅" if now.hour == 10 else ("🌆" if now.hour == 16 else "🌙")
@@ -3241,10 +3346,12 @@ def bot_prematch():
                     for i, a in enumerate(analysen, 1):
                         liga_str   = f"{a['liga']}" + (f" ({a['country']})" if a['country'] else "")
                         verletzung = f"\n{a['verletzung']}" if a.get('verletzung') else ""
+                        ke         = konfidenz_emoji(a['konfidenz'])
                         msg += (f"🏆 <b>{liga_str}</b>\n"
                                 f"⚽ <b>{a['home']} vs {a['away']}</b>\n"
                                 f"🕐 Anstoß: <b>{a['anstoß']} Uhr</b>\n"
                                 f"🎯 Tipp: <b>{a['tipp']}</b>\n"
+                                f"{ke} Konfidenz: <b>{a['konfidenz']}/10</b>\n"
                                 f"📊 {a['analyse']}{verletzung}\n")
                         if i < len(analysen):
                             msg += "\n━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -3254,10 +3361,9 @@ def bot_prematch():
                             f"⚠️ 18+ | Verantwortungsvoll spielen")
 
                     send_telegram_gruppe(msg)
-                    print(f"  [PreMatch-Bot] ✅ {len(analysen)} Tipps um {now.hour}:00 gesendet")
+                    print(f"  [PreMatch-Bot] ✅ {len(analysen)} Tipps um {now.hour}:00 Uhr | Tipps: {bereits_tipps}")
 
                 gesendet.add(key)
-                # Nur heutige Keys behalten
                 heute_str = now.strftime('%Y-%m-%d')
                 gesendet  = {k for k in gesendet if k.startswith(heute_str)}
 
@@ -3323,6 +3429,587 @@ def bot_prematch_erinnerung():
 
 _bot_targets = {}  # thread_name → target_function (wird beim Start befüllt)
 
+
+# ============================================================
+#  VALUE BET FINDER
+# ============================================================
+
+notified_value = set()
+
+# Erwartete Wahrscheinlichkeit basierend auf Spielsituation
+VALUE_REGELN = [
+    # (typ, beschreibung, tipp, mindest_quote, berechne_prob_fn)
+    # Karten: Minute 60+, nur 0-1 Karten → Unter 4.5 sehr wahrscheinlich
+    {
+        "typ": "karten_unter",
+        "name": "Karten Unter 4.5",
+        "check": lambda s, ev, st: (
+            60 <= _safe_int(s.get("time", 0)) <= 80
+            and len([e for e in ev if e.get("event") in KARTEN_TYPEN]) <= 1
+        ),
+        "prob": lambda s, ev, st: 0.82,
+        "linie": 4.5,
+        "richtung": "unter",
+    },
+    # Karten: Minute 75+, 3 Karten → Über 4.5 möglich
+    {
+        "typ": "karten_ueber",
+        "name": "Karten Über 4.5",
+        "check": lambda s, ev, st: (
+            _safe_int(s.get("time", 0)) >= 75
+            and len([e for e in ev if e.get("event") in KARTEN_TYPEN]) == 3
+        ),
+        "prob": lambda s, ev, st: 0.70,
+        "linie": 4.5,
+        "richtung": "über",
+    },
+    # Ecken: Minute 70+, unter 7 Ecken gesamt → Unter 9.5 sehr wahrscheinlich
+    {
+        "typ": "ecken_unter",
+        "name": "Ecken Unter 9.5",
+        "check": lambda s, ev, st: (
+            _safe_int(s.get("time", 0)) >= 70
+            and st["corners_home"] + st["corners_away"] <= 6
+        ),
+        "prob": lambda s, ev, st: 0.80,
+        "linie": 9.5,
+        "richtung": "unter",
+    },
+    # Tore: Minute 70+, 0:0 → Unter 1.5 Tore sehr wahrscheinlich
+    {
+        "typ": "tore_unter",
+        "name": "Tore Unter 1.5",
+        "check": lambda s, ev, st: (
+            _safe_int(s.get("time", 0)) >= 70
+            and s.get("scores", {}).get("score", "") in ("0 - 0", "0-0")
+        ),
+        "prob": lambda s, ev, st: 0.75,
+        "linie": 1.5,
+        "richtung": "unter",
+    },
+    # Tore: Minute 60+, 3+ Tore → Über 3.5 sehr wahrscheinlich
+    {
+        "typ": "tore_ueber",
+        "name": "Tore Über 3.5",
+        "check": lambda s, ev, st: (
+            _safe_int(s.get("time", 0)) >= 60
+            and sum(parse_score(s.get("scores", {}).get("score", "0-0"))) >= 3
+        ),
+        "prob": lambda s, ev, st: 0.78,
+        "linie": 3.5,
+        "richtung": "über",
+    },
+    # Ecken: Minute 60+, bereits 10+ Ecken → Über 11.5 wahrscheinlich
+    {
+        "typ": "ecken_ueber_live",
+        "name": "Ecken Über 11.5",
+        "check": lambda s, ev, st: (
+            _safe_int(s.get("time", 0)) >= 60
+            and st["corners_home"] + st["corners_away"] >= 10
+        ),
+        "prob": lambda s, ev, st: 0.72,
+        "linie": 11.5,
+        "richtung": "über",
+    },
+]
+
+def get_live_odds_fuer_spiel(home: str, away: str) -> dict:
+    """Holt alle verfügbaren Live-Quoten für ein Spiel."""
+    if not ODDS_API_KEY:
+        return {}
+    try:
+        url    = "https://api.the-odds-api.com/v4/sports/soccer/odds/"
+        params = {"apiKey": ODDS_API_KEY, "regions": "eu",
+                  "markets": "totals,spreads", "oddsFormat": "decimal"}
+        resp   = requests.get(url, params=params, timeout=8)
+        if resp.status_code != 200:
+            return {}
+        for game in resp.json():
+            h = game.get("home_team", "").lower()
+            a = game.get("away_team", "").lower()
+            if home.lower()[:5] in h or away.lower()[:5] in a:
+                quoten = {}
+                for bm in game.get("bookmakers", []):
+                    for market in bm.get("markets", []):
+                        key = market.get("key", "")
+                        for outcome in market.get("outcomes", []):
+                            name  = outcome.get("name", "")
+                            point = outcome.get("point", "")
+                            q     = round(outcome.get("price", 0), 2)
+                            k     = f"{key}_{name}_{point}"
+                            if k not in quoten or q > quoten[k]["quote"]:
+                                quoten[k] = {"quote": q, "name": name,
+                                             "point": point, "market": key,
+                                             "bookmaker": bm.get("title", "")}
+                return quoten
+        return {}
+    except Exception as e:
+        print(f"  [Value] Odds Fehler: {e}")
+        return {}
+
+def berechne_value(prob: float, quote: float) -> float:
+    """Berechnet den Value Edge: (prob * quote) - 1"""
+    return round(prob * quote - 1, 3)
+
+def vergleiche_quoten_bookmaker(home: str, away: str) -> list:
+    """Vergleicht Quoten zwischen Bookmarkern und findet Ausreißer."""
+    if not ODDS_API_KEY:
+        return []
+    try:
+        url    = "https://api.the-odds-api.com/v4/sports/soccer/odds/"
+        params = {"apiKey": ODDS_API_KEY, "regions": "eu",
+                  "markets": "totals", "oddsFormat": "decimal"}
+        resp   = requests.get(url, params=params, timeout=8)
+        if resp.status_code != 200:
+            return []
+        ausreisser = []
+        for game in resp.json():
+            h = game.get("home_team", "").lower()
+            a = game.get("away_team", "").lower()
+            if home.lower()[:5] not in h and away.lower()[:5] not in a:
+                continue
+            # Alle Quoten pro Markt sammeln
+            markt_quoten = {}
+            for bm in game.get("bookmakers", []):
+                for market in bm.get("markets", []):
+                    for outcome in market.get("outcomes", []):
+                        k = f"{outcome.get('name')}_{outcome.get('point', '')}"
+                        if k not in markt_quoten:
+                            markt_quoten[k] = []
+                        markt_quoten[k].append({
+                            "quote": outcome.get("price", 0),
+                            "bookmaker": bm.get("title", "?"),
+                            "name": outcome.get("name"),
+                            "point": outcome.get("point", ""),
+                        })
+            # Ausreißer finden: Quote > 20% über Durchschnitt
+            for k, quoten_liste in markt_quoten.items():
+                if len(quoten_liste) < 3:
+                    continue
+                alle_q = [q["quote"] for q in quoten_liste if q["quote"] > 1.0]
+                if not alle_q:
+                    continue
+                avg_q  = sum(alle_q) / len(alle_q)
+                max_q  = max(alle_q)
+                if max_q < VALUE_BET_MIN_QUOTE:
+                    continue
+                abweichung = (max_q - avg_q) / avg_q
+                if abweichung >= 0.12:  # 12% über Durchschnitt = Ausreißer
+                    bester = next(q for q in quoten_liste if q["quote"] == max_q)
+                    ausreisser.append({
+                        "name": bester["name"],
+                        "point": bester["point"],
+                        "beste_quote": round(max_q, 2),
+                        "avg_quote": round(avg_q, 2),
+                        "bookmaker": bester["bookmaker"],
+                        "abweichung": round(abweichung * 100, 1),
+                    })
+        return ausreisser
+    except Exception as e:
+        print(f"  [Value] Bookmaker-Vergleich Fehler: {e}")
+        return []
+
+def bot_value_bet():
+    """Sucht nach Value Bets – Quoten-Fehler + Spielsituation."""
+    print(f"[Value-Bot] Gestartet | Min. Quote {VALUE_BET_MIN_QUOTE} | Min. Edge {VALUE_BET_MIN_VALUE*100:.0f}%")
+    while True:
+        try:
+            matches = get_live_matches()
+            laufend = [m for m in matches if m.get("status") in
+                       ("IN PLAY", "ADDED TIME", "HALF TIME BREAK")]
+            print(f"[{jetzt()}] [Value-Bot] {len(laufend)} Spiele geprüft")
+            for game in laufend:
+                match_id = str(game.get("id"))
+                home    = game.get("home", {}).get("name", "?")
+                away    = game.get("away", {}).get("name", "?")
+                comp    = game.get("competition", {}).get("name", "?")
+                country = (game.get("country") or {}).get("name", "?")
+                minute  = _safe_int(game.get("time", 0))
+                score   = game.get("scores", {}).get("score", "?")
+                try:
+                    events = get_events(match_id)
+                    stats  = get_statistiken(match_id)
+                except Exception as e:
+                    print(f"  [Value-Bot] Stats Fehler {home}: {e}")
+                    continue
+                # Alle Value-Regeln prüfen
+                for regel in VALUE_REGELN:
+                    regel_key = f"{match_id}_{regel['typ']}"
+                    if regel_key in notified_value:
+                        continue
+                    try:
+                        if not regel["check"](game, events, stats):
+                            continue
+                    except Exception:
+                        continue
+                    prob  = regel["prob"](game, events, stats)
+                    linie = regel["linie"]
+                    rich  = regel["richtung"]
+                    # Passende Quote suchen
+                    quoten = get_live_odds_fuer_spiel(home, away)
+                    if not quoten:
+                        continue
+                    beste_quote = None
+                    bester_bm   = ""
+                    for k, v in quoten.items():
+                        if (rich == "unter" and "Under" in v["name"] and
+                                abs(float(v.get("point", 0)) - linie) < 0.1):
+                            if beste_quote is None or v["quote"] > beste_quote:
+                                beste_quote = v["quote"]
+                                bester_bm   = v["bookmaker"]
+                        elif (rich == "über" and "Over" in v["name"] and
+                                abs(float(v.get("point", 0)) - linie) < 0.1):
+                            if beste_quote is None or v["quote"] > beste_quote:
+                                beste_quote = v["quote"]
+                                bester_bm   = v["bookmaker"]
+                    if not beste_quote or beste_quote < VALUE_BET_MIN_QUOTE:
+                        continue
+                    edge = berechne_value(prob, beste_quote)
+                    if edge < VALUE_BET_MIN_VALUE:
+                        continue
+                    # Value Bet gefunden!
+                    notified_value.add(regel_key)
+                    edge_pct = round(edge * 100, 1)
+                    karten_anz = len([e for e in events if e.get("event") in KARTEN_TYPEN])
+                    ecken_anz  = stats["corners_home"] + stats["corners_away"]
+                    h_tore, a_tore = parse_score(score)
+                    kontext = f"Karten: {karten_anz}" if "karten" in regel["typ"] else                               f"Ecken: {ecken_anz}" if "ecken" in regel["typ"] else                               f"Stand: {score} ({h_tore+a_tore} Tore)"
+                    msg = (f"💎 <b>VALUE BET GEFUNDEN!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                           f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
+                           f"📊 Stand: <b>{score}</b> | Minute: <b>{minute}'</b>\n"
+                           f"━━━━━━━━━━━━━━━━━━━━\n"
+                           f"🎯 Tipp: <b>{regel['name']}</b>\n"
+                           f"📊 Situation: {kontext}\n"
+                           f"📈 Wahrscheinlichkeit: <b>{round(prob*100)}%</b>\n"
+                           f"💶 Beste Quote: <b>{beste_quote}</b> ({bester_bm})\n"
+                           f"💎 Value Edge: <b>+{edge_pct}%</b>\n"
+                           f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
+                    send_telegram(msg)
+                    embed = {
+                        "title": "💎 Value Bet – Fehlerhafte Quote entdeckt!",
+                        "color": 0xF1C40F,
+                        "fields": [
+                            {"name": "🏆 Liga",     "value": f"{comp}",            "inline": True},
+                            {"name": "🌍 Land",     "value": f"{country}",         "inline": True},
+                            {"name": "⏱️ Minute",   "value": f"**{minute}'**",    "inline": True},
+                            {"name": "⚽ Spiel",    "value": f"{home} vs {away}", "inline": False},
+                            {"name": "📊 Stand",    "value": f"**{score}**",       "inline": True},
+                            {"name": "📋 Situation","value": kontext,               "inline": True},
+                            {"name": "🎯 Value Tipp","value": f"**{regel['name']}**", "inline": False},
+                            {"name": "📈 Wahrsch.", "value": f"**{round(prob*100)}%**", "inline": True},
+                            {"name": "💶 Quote",    "value": f"**{beste_quote}** ({bester_bm})", "inline": True},
+                            {"name": "💎 Edge",     "value": f"**+{edge_pct}%**",  "inline": True},
+                        ],
+                        "footer": {"text": f"Value-Bot • {heute()} {jetzt()}"},
+                    }
+                    send_discord_embed(DISCORD_WEBHOOK_VALUE, embed)
+                    print(f"  [Value-Bot] ✅ {home} vs {away} | {regel['name']} | Edge +{edge_pct}%")
+                # EXTRA: Bookmaker-Ausreißer Check (unabhängig von Spielsituation)
+                ausreisser = vergleiche_quoten_bookmaker(home, away)
+                for ar in ausreisser:
+                    ar_key = f"{match_id}_bm_{ar['name']}_{ar['point']}"
+                    if ar_key in notified_value:
+                        continue
+                    notified_value.add(ar_key)
+                    msg_ar = (f"💎 <b>Quoten-Ausreißer gefunden!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                              f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
+                              f"📊 Stand: <b>{score}</b> | Min. <b>{minute}'</b>\n"
+                              f"━━━━━━━━━━━━━━━━━━━━\n"
+                              f"🎯 Markt: <b>{ar['name']} {ar['point']}</b>\n"
+                              f"💶 Beste Quote: <b>{ar['beste_quote']}</b> ({ar['bookmaker']})\n"
+                              f"📊 Ø Marktquote: <b>{ar['avg_quote']}</b>\n"
+                              f"💎 Abweichung: <b>+{ar['abweichung']}%</b> über Markt\n"
+                              f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
+                    send_telegram(msg_ar)
+                    embed_ar = {
+                        "title": "💎 Quoten-Ausreißer – Möglicher Bookmaker-Fehler!",
+                        "color": 0xF39C12,
+                        "fields": [
+                            {"name": "🏆 Liga",      "value": f"{comp}",                    "inline": True},
+                            {"name": "🌍 Land",      "value": f"{country}",                 "inline": True},
+                            {"name": "⏱️ Minute",    "value": f"**{minute}'**",            "inline": True},
+                            {"name": "⚽ Spiel",     "value": f"{home} vs {away}",          "inline": False},
+                            {"name": "🎯 Markt",     "value": f"**{ar['name']} {ar['point']}**", "inline": True},
+                            {"name": "💶 Beste Quote","value": f"**{ar['beste_quote']}** ({ar['bookmaker']})", "inline": True},
+                            {"name": "📊 Ø Markt",   "value": f"**{ar['avg_quote']}**",    "inline": True},
+                            {"name": "💎 Abweichung","value": f"**+{ar['abweichung']}%** über Markt", "inline": True},
+                        ],
+                        "footer": {"text": f"Value-Bot • {heute()} {jetzt()}"},
+                    }
+                    send_discord_embed(DISCORD_WEBHOOK_VALUE, embed_ar)
+                    print(f"  [Value-Bot] 💎 Ausreißer: {home} vs {away} | {ar['name']} {ar['point']} | +{ar['abweichung']}%")
+                time.sleep(0.5)
+            bot_fehler_reset("Value-Bot")
+        except Exception as e:
+            bot_fehler_melden("Value-Bot", e)
+        time.sleep(FUSSBALL_INTERVAL * 60)
+
+# ============================================================
+#  CS2 BOT (via PandaScore API)
+# ============================================================
+
+notified_cs2 = set()
+CS2_BASE = "https://api.pandascore.co"
+
+def cs2_get_live_matches() -> list:
+    """Holt laufende CS2 Matches von PandaScore."""
+    if not PANDASCORE_API_KEY or PANDASCORE_API_KEY.startswith("PANDASCORE"):
+        return []
+    try:
+        headers = {"Authorization": f"Bearer {PANDASCORE_API_KEY}"}
+        resp    = requests.get(f"{CS2_BASE}/csgo/matches/running",
+                               headers=headers, timeout=10)
+        if resp.status_code != 200:
+            print(f"  [CS2] API Fehler: {resp.status_code}")
+            return []
+        return resp.json() or []
+    except Exception as e:
+        print(f"  [CS2] Fehler: {e}")
+        return []
+
+def cs2_get_match_details(match_id: int) -> dict:
+    """Holt Details für ein CS2 Match."""
+    if not PANDASCORE_API_KEY or PANDASCORE_API_KEY.startswith("PANDASCORE"):
+        return {}
+    try:
+        headers = {"Authorization": f"Bearer {PANDASCORE_API_KEY}"}
+        resp    = requests.get(f"{CS2_BASE}/csgo/matches/{match_id}",
+                               headers=headers, timeout=10)
+        return resp.json() if resp.status_code == 200 else {}
+    except Exception as e:
+        print(f"  [CS2] Match Details Fehler: {e}")
+        return {}
+
+def cs2_get_upcoming_matches() -> list:
+    """Holt bevorstehende CS2 Matches (nächste 24h)."""
+    if not PANDASCORE_API_KEY or PANDASCORE_API_KEY.startswith("PANDASCORE"):
+        return []
+    try:
+        headers = {"Authorization": f"Bearer {PANDASCORE_API_KEY}"}
+        resp    = requests.get(f"{CS2_BASE}/csgo/matches/upcoming",
+                               headers=headers,
+                               params={"per_page": 20, "sort": "begin_at"},
+                               timeout=10)
+        return resp.json() if resp.status_code == 200 else []
+    except Exception as e:
+        print(f"  [CS2] Upcoming Fehler: {e}")
+        return []
+
+def cs2_analysiere_team(team_id: int) -> dict:
+    """Analysiert letzte 5 Spiele eines Teams."""
+    if not PANDASCORE_API_KEY or PANDASCORE_API_KEY.startswith("PANDASCORE"):
+        return {}
+    try:
+        headers = {"Authorization": f"Bearer {PANDASCORE_API_KEY}"}
+        resp    = requests.get(f"{CS2_BASE}/csgo/teams/{team_id}/matches",
+                               headers=headers,
+                               params={"per_page": 5, "filter[status]": "finished"},
+                               timeout=10)
+        if resp.status_code != 200:
+            return {}
+        matches = resp.json() or []
+        siege = 0
+        for m in matches:
+            results = m.get("results", [])
+            winner  = m.get("winner", {})
+            if winner and str(winner.get("id", "")) == str(team_id):
+                siege += 1
+        form_pct = round(siege / len(matches) * 100) if matches else 0
+        return {"siege": siege, "spiele": len(matches), "form_pct": form_pct}
+    except Exception as e:
+        print(f"  [CS2] Team Analyse Fehler: {e}")
+        return {}
+
+def bot_cs2():
+    """CS2 Bot – Live-Signale + Pre-Match Analyse + Statistiken."""
+    print("[CS2-Bot] Gestartet | Live + PreMatch | PandaScore")
+    prematch_gesendet = set()
+    while True:
+        try:
+            # ── LIVE MATCHES ──────────────────────────────────
+            matches = cs2_get_live_matches()
+            print(f"[{jetzt()}] [CS2-Bot] {len(matches)} Live | PandaScore")
+            for match in matches:
+                match_id = str(match.get("id", ""))
+                if match_id in notified_cs2:
+                    continue
+                opponents = match.get("opponents", [])
+                if len(opponents) < 2:
+                    continue
+                team1 = (opponents[0].get("opponent") or {}).get("name", "?")
+                team2 = (opponents[1].get("opponent") or {}).get("name", "?")
+                t1_id = (opponents[0].get("opponent") or {}).get("id", 0)
+                t2_id = (opponents[1].get("opponent") or {}).get("id", 0)
+                liga       = (match.get("league") or {}).get("name", "?")
+                tournament = (match.get("tournament") or {}).get("name", "?")
+                results    = match.get("results", [])
+                score1     = results[0].get("score", 0) if len(results) > 0 else 0
+                score2     = results[1].get("score", 0) if len(results) > 1 else 0
+                n_games    = match.get("number_of_games", 3)
+                wins_needed = (n_games // 2) + 1
+                # Aktuelle Map Infos
+                games_liste = match.get("games", []) or []
+                akt_map     = next((g for g in games_liste if g.get("status") == "running"), None)
+                map_score   = ""
+                map_name    = ""
+                if akt_map:
+                    map_name  = (akt_map.get("map") or {}).get("name", "")
+                    r_list    = akt_map.get("results", [])
+                    if len(r_list) >= 2:
+                        map_score = f"{r_list[0].get('score',0)}:{r_list[1].get('score',0)}"
+                signal = None
+                # Signal 1: Match Point
+                if score1 == wins_needed - 1 or score2 == wins_needed - 1:
+                    fuehrend = team1 if score1 > score2 else team2
+                    signal = {
+                        "typ": "match_point",
+                        "titel": "🎯 CS2 – Match Point!",
+                        "text": f"**{fuehrend}** ist auf Match Point!",
+                        "tipp": f"Match-Gewinner: **{fuehrend}**",
+                        "farbe": 0xFF6B35,
+                        "extra": f"Stand: **{score1}:{score2}** | BO{n_games}",
+                    }
+                # Signal 2: 2:0 oder höhere Dominanz
+                elif abs(score1 - score2) >= 2 and (score1 + score2) >= 2:
+                    fuehrend = team1 if score1 > score2 else team2
+                    signal = {
+                        "typ": "dominanz",
+                        "titel": "🔥 CS2 – Klare Dominanz!",
+                        "text": f"**{fuehrend}** dominiert das Match",
+                        "tipp": f"Match-Gewinner: **{fuehrend}**",
+                        "farbe": 0x3498DB,
+                        "extra": f"Stand: **{score1}:{score2}** | BO{n_games}",
+                    }
+                # Signal 3: Hohe Map-Runden (enge Map = Over Runden möglich)
+                elif akt_map and map_score:
+                    teile = map_score.split(":")
+                    if len(teile) == 2:
+                        r1, r2 = _safe_int(teile[0]), _safe_int(teile[1])
+                        if r1 + r2 >= 24:  # Sehr enge Map (Overtime möglich)
+                            signal = {
+                                "typ": "overtime",
+                                "titel": "⚡ CS2 – Overtime droht!",
+                                "text": f"Sehr enge Map auf **{map_name}**",
+                                "tipp": f"Overtime auf {map_name} | Beide Teams eng",
+                                "farbe": 0x9B59B6,
+                                "extra": f"Map-Stand: **{map_score}** | Match: {score1}:{score2}",
+                            }
+                if not signal:
+                    continue
+                notified_cs2.add(match_id)
+                stream_url = ""
+                for stream in (match.get("streams_list") or []):
+                    if stream.get("main"):
+                        stream_url = stream.get("raw_url", "")
+                        break
+                stream_text = f"\n🎮 Stream: {stream_url}" if stream_url else ""
+                msg = (f"🎮 <b>CS2 Signal!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                       f"🏆 {liga} – {tournament}\n"
+                       f"📌 {team1} vs {team2}\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n"
+                       f"{signal['text']}\n"
+                       f"📊 {signal['extra']}\n"
+                       f"🎯 Tipp: <b>{signal['tipp']}</b>{stream_text}\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
+                send_telegram(msg)
+                embed = {
+                    "title": f"{signal['titel']}: {team1} vs {team2}",
+                    "color": signal["farbe"],
+                    "fields": [
+                        {"name": "🏆 Turnier",   "value": f"{liga} – {tournament}",             "inline": False},
+                        {"name": "🔵 Team 1",    "value": f"**{team1}**",                        "inline": True},
+                        {"name": "🔴 Team 2",    "value": f"**{team2}**",                        "inline": True},
+                        {"name": "📊 Stand",     "value": signal["extra"],                       "inline": True},
+                        {"name": "📋 Format",    "value": f"BO{n_games}",                        "inline": True},
+                        {"name": "🗺️ Akt. Map",  "value": f"{map_name} ({map_score})" if map_name else "–", "inline": True},
+                        {"name": "🎯 Tipp",      "value": f"**{signal['tipp']}**",               "inline": False},
+                    ],
+                    "footer": {"text": f"CS2-Bot • {heute()} {jetzt()}"},
+                }
+                if stream_url:
+                    embed["fields"].append({"name": "🎮 Stream", "value": stream_url, "inline": False})
+                send_discord_embed(DISCORD_WEBHOOK_CS2, embed)
+                print(f"  [CS2-Bot] ✅ {team1} vs {team2} | {signal['typ']}")
+                time.sleep(0.5)
+
+            # ── PRE-MATCH ANALYSE ─────────────────────────────
+            try:
+                upcoming = cs2_get_upcoming_matches()
+                for match in upcoming[:10]:
+                    match_id = f"pre_{match.get('id', '')}"
+                    if match_id in prematch_gesendet:
+                        continue
+                    # Nur Matches in den nächsten 2 Stunden
+                    begin_at = match.get("begin_at", "")
+                    if not begin_at:
+                        continue
+                    try:
+                        from datetime import datetime, timezone
+                        begin_dt = datetime.fromisoformat(begin_at.replace("Z", "+00:00"))
+                        diff_min = (begin_dt - datetime.now(timezone.utc)).total_seconds() / 60
+                        if not (30 <= diff_min <= 120):
+                            continue
+                    except Exception:
+                        continue
+                    opponents = match.get("opponents", [])
+                    if len(opponents) < 2:
+                        continue
+                    team1   = (opponents[0].get("opponent") or {}).get("name", "?")
+                    team2   = (opponents[1].get("opponent") or {}).get("name", "?")
+                    t1_id   = (opponents[0].get("opponent") or {}).get("id", 0)
+                    t2_id   = (opponents[1].get("opponent") or {}).get("id", 0)
+                    liga    = (match.get("league") or {}).get("name", "?")
+                    tourn   = (match.get("tournament") or {}).get("name", "?")
+                    n_games = match.get("number_of_games", 3)
+                    anstoß  = begin_dt.strftime("%H:%M") if begin_at else "?"
+                    # Team-Form analysieren
+                    form1 = cs2_analysiere_team(t1_id)
+                    form2 = cs2_analysiere_team(t2_id)
+                    # Favorit bestimmen
+                    favorit = ""
+                    if form1.get("form_pct", 50) > form2.get("form_pct", 50) + 20:
+                        favorit = team1
+                    elif form2.get("form_pct", 50) > form1.get("form_pct", 50) + 20:
+                        favorit = team2
+                    form1_text = f"{form1.get('siege',0)}/{form1.get('spiele',0)} ({form1.get('form_pct',0)}%)" if form1 else "Keine Daten"
+                    form2_text = f"{form2.get('siege',0)}/{form2.get('spiele',0)} ({form2.get('form_pct',0)}%)" if form2 else "Keine Daten"
+                    msg = (f"🎮 <b>CS2 Pre-Match!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                           f"🏆 {liga} – {tourn}\n"
+                           f"📌 {team1} vs {team2}\n"
+                           f"🕐 Anstoß: <b>{anstoß} Uhr</b> | BO{n_games}\n"
+                           f"━━━━━━━━━━━━━━━━━━━━\n"
+                           f"📊 Form {team1}: {form1_text}\n"
+                           f"📊 Form {team2}: {form2_text}\n"
+                           + (f"🎯 Favorit: <b>{favorit}</b>\n" if favorit else "") +
+                           f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
+                    send_telegram(msg)
+                    farbe = 0x27AE60 if favorit else 0x95A5A6
+                    embed = {
+                        "title": f"🎮 CS2 Pre-Match – In ~{int(diff_min)} Minuten!",
+                        "color": farbe,
+                        "fields": [
+                            {"name": "🏆 Turnier",  "value": f"{liga} – {tourn}",     "inline": False},
+                            {"name": "🎮 Match",    "value": f"**{team1}** vs **{team2}**", "inline": False},
+                            {"name": "🕐 Anstoß",   "value": f"**{anstoß} Uhr**",     "inline": True},
+                            {"name": "📋 Format",   "value": f"BO{n_games}",           "inline": True},
+                            {"name": f"📊 {team1} Form", "value": form1_text,          "inline": True},
+                            {"name": f"📊 {team2} Form", "value": form2_text,          "inline": True},
+                        ],
+                        "footer": {"text": f"CS2-Bot • {heute()} {jetzt()}"},
+                    }
+                    if favorit:
+                        embed["fields"].append({"name": "🎯 Favorit", "value": f"**{favorit}**", "inline": False})
+                    send_discord_embed(DISCORD_WEBHOOK_CS2, embed)
+                    prematch_gesendet.add(match_id)
+                    print(f"  [CS2-Bot] PreMatch: {team1} vs {team2} in ~{int(diff_min)} Min")
+            except Exception as e:
+                print(f"  [CS2-Bot] PreMatch Fehler: {e}")
+
+            bot_fehler_reset("CS2-Bot")
+        except Exception as e:
+            bot_fehler_melden("CS2-Bot", e)
+        time.sleep(5 * 60)  # CS2 alle 5 Minuten
+
 def bot_watchdog():
     """Überwacht alle Bot-Threads und startet sie neu falls sie abstürzen."""
     print("[Watchdog] Gestartet")
@@ -3351,8 +4038,8 @@ def bot_watchdog():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v30")
-    print("  Telegram Befehle · Bankroll · Multi-Signal · API-Monitor · Persistenz · Comeback+")
+    print("  ⚽ FUSSBALL BOTS v34")
+    print("  Value Bets · CS2 · Telegram Befehle · Bankroll · Multi-Signal · Persistenz")
     print("=" * 50 + "\n")
 
     statistik_laden()
@@ -3373,6 +4060,8 @@ if __name__ == "__main__":
         ("Erinnerungs-Bot",  bot_prematch_erinnerung),
         ("Backup-Bot",       bot_github_backup),
         ("Auswertung-Bot",   bot_auswertung_und_berichte),
+        ("Value-Bot",        bot_value_bet),
+        ("CS2-Bot",          bot_cs2),
     ]
 
     # Targets für Watchdog merken
