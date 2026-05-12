@@ -1,4 +1,4 @@
-# v27 - Telegram Befehle, Persistenz, Bankroll, Multi-Signal, API-Monitor, Comeback+
+# v35 - Value Bets · CS2 PreMatch Filter · Auswertungs-Fix · Tagesbericht Embed
 import requests
 import re
 import time
@@ -1776,7 +1776,7 @@ def send_tagesbericht():
             {"name": "✅ Gewonnen",      "value": f"**{gw_ges}**",  "inline": True},
             {"name": "❌ Verloren",      "value": f"**{vl_ges}**",  "inline": True},
             {"name": "🎯 Trefferquote", "value": f"**{pct_ges}%**", "inline": True},
-            {"name": "📈 Simulation",   "value": f"**{'+' if gn_ges >= 0 else ''}{gn_ges}€**", "inline": True},
+
             {"name": "💰 Bankroll",     "value": f"**{br_embed}€** ({'+' if diff_embed >= 0 else ''}{diff_embed}€)", "inline": True},
             {"name": "📊 Nach Wetttyp", "value": "\n".join([
                 f"📐 Ecken U: {statistik['ecken']['gewonnen']}/{statistik['ecken']['gewonnen']+statistik['ecken']['verloren']}",
@@ -2189,45 +2189,77 @@ def bot_auswertung_und_berichte():
                 if not ist_fertig:
                     continue
 
-                    # FT-Bestätigung: erst beim 2. FT-Signal auswerten (verhindert API-Fehler)
-                    if match_id not in ft_bestaetigung:
-                        ft_bestaetigung[match_id] = time.time()
-                        print(f"  [Auswertung] {spiel['home']} vs {spiel['away']} | FT erkannt – warte Bestätigung")
-                        continue
-                    elif time.time() - ft_bestaetigung[match_id] < 90:
-                        # Noch keine 90 Sekunden vergangen – warte noch
-                        continue
+                # FT-Bestätigung: erst beim 2. FT-Signal auswerten
+                if match_id not in ft_bestaetigung:
+                    ft_bestaetigung[match_id] = time.time()
+                    print(f"  [Auswertung] {home_str} vs {away_str} | FT erkannt – warte 90s")
+                    continue
+                elif time.time() - ft_bestaetigung[match_id] < 90:
+                    continue
 
-                    # Spiel beendet!
-                    print(f"  [Auswertung] ✅ Werte aus: {home_str} vs {away_str}")
-                    time.sleep(10)
+                # Spiel beendet – jetzt auswerten!
+                print(f"  [Auswertung] ✅ Werte aus: {home_str} vs {away_str}")
+                time.sleep(10)
 
-                    typ        = spiel["typ"]
-                    webhook    = spiel["webhook"]
-                    auswert_fn = AUSWERTUNG_FNS.get(typ)
-                    msg        = auswert_fn(spiel) if auswert_fn else None
+                typ        = spiel["typ"]
+                webhook    = spiel["webhook"]
+                auswert_fn = AUSWERTUNG_FNS.get(typ)
+                msg        = auswert_fn(spiel) if auswert_fn else None
 
-                    if msg:
-                        send_telegram(msg)
-                        gewonnen = "GEWONNEN" in msg
-                        details  = {"📊 Typ": f"**{typ.upper()}**"}
-                        embed    = discord_auswertung(typ, spiel["home"], spiel["away"], gewonnen, details)
-                        send_discord_embed(webhook, embed)
-                        print(f"  [Auswertung] Gesendet: {spiel['home']} vs {spiel['away']} ({typ})")
-                        # Verloren-Analyse via Claude
-                        if not gewonnen:
-                            threading.Thread(
-                                target=claude_verloren_analyse,
-                                args=(spiel["home"], spiel["away"], typ, msg),
-                                daemon=True
-                            ).start()
-                        auswertung_done.add(match_id)  # Nur als done markieren wenn erfolgreich
+                if msg:
+                    send_telegram(msg)
+                    gewonnen = "GEWONNEN" in msg
+                    if typ in ("ecken", "ecken_over"):
+                        hz1    = spiel.get("hz1_ecken", 0)
+                        grenze = hz1 * 2 + 1 if typ == "ecken" else 14
+                        m_e    = re.search(r"Tatsächlich.*?(\d+)", msg)
+                        total  = m_e.group(1) if m_e else "?"
+                        details = {"📐 Ecken HZ1": f"**{hz1}**",
+                                   "🎯 Tipp": f"{'Unter' if typ == 'ecken' else 'Über'} **{grenze}** Ecken",
+                                   "📈 Endstand": f"**{total}** Ecken gesamt"}
+                    elif typ == "karten":
+                        m_k    = re.search(r"Tatsächlich.*?(\d+)", msg)
+                        total  = m_k.group(1) if m_k else "?"
+                        details = {"🃏 Karten Signal": f"**{spiel.get('karten_anzahl','?')}**",
+                                   "🎯 Tipp": "Über **5** Karten",
+                                   "📈 Endstand": f"**{total}** Karten"}
+                    elif typ == "torwart":
+                        m_s    = re.search(r"Endstand.*?(\d+ - \d+)", msg)
+                        details = {"🎯 Tipp": "Mind. **1 Tor**",
+                                   "📈 Endstand": f"**{m_s.group(1) if m_s else '?'}**"}
+                    elif typ == "druck":
+                        details = {"🔥 Druck-Team": f"**{spiel.get('druck_team','?')}**",
+                                   "📈 Ergebnis": "✅ Tor" if gewonnen else "❌ Kein Tor"}
+                    elif typ == "comeback":
+                        m_s    = re.search(r"Endstand.*?(\d+ - \d+)", msg)
+                        details = {"🔄 Rückliegend": f"**{spiel.get('rueckliegend','?')}**",
+                                   "🎯 Tipp": "Beide Teams treffen",
+                                   "📈 Endstand": f"**{m_s.group(1) if m_s else '?'}**"}
+                    elif typ == "torflut":
+                        m_s    = re.search(r"Endstand.*?(\d+ - \d+)", msg)
+                        details = {"⚽ Tore HZ1": f"**{spiel.get('hz1_tore','?')}**",
+                                   "🎯 Tipp": f"Über **{spiel.get('grenze','?')}** Tore",
+                                   "📈 Endstand": f"**{m_s.group(1) if m_s else '?'}**"}
+                    elif typ == "rotkarte":
+                        details = {"💪 Überzahl": f"**{spiel.get('ueberzahl_team','?')}**",
+                                   "📊 Stand Signal": f"**{spiel.get('score_signal','?')}**"}
+                    elif typ in ("hz1tore", "vztore"):
+                        details = {"🎯 Tipp": f"**{spiel.get('richtung','?').capitalize()} {spiel.get('linie','?')}** Tore",
+                                   "📈 Ergebnis": "✅ Gewonnen" if gewonnen else "❌ Verloren"}
                     else:
-                        # Auswertung fehlgeschlagen (z.B. kein HZ1-Score) → erneut versuchen
-                        ft_bestaetigung.pop(match_id, None)  # Reset damit nächster Versuch klappt
-                        print(f"  [Auswertung] ⚠️ Keine Auswertung für {spiel['home']} vs {spiel['away']} – versuche später")
-                    leerer_status.pop(match_id, None)
+                        details = {"📊 Typ": f"**{typ.upper()}**"}
+                    embed = discord_auswertung(typ, home_str, away_str, gewonnen, details)
+                    send_discord_embed(webhook, embed)
+                    print(f"  [Auswertung] ✅ Gesendet: {home_str} vs {away_str} ({typ})")
+                    if not gewonnen:
+                        threading.Thread(target=claude_verloren_analyse,
+                            args=(home_str, away_str, typ, msg), daemon=True).start()
+                    auswertung_done.add(match_id)
+                else:
                     ft_bestaetigung.pop(match_id, None)
+                    print(f"  [Auswertung] ⚠️ Kein Ergebnis für {home_str} vs {away_str} – retry")
+                leerer_status.pop(match_id, None)
+                ft_bestaetigung.pop(match_id, None)
 
         except Exception as e:
             print(f"  [Auswertung-Bot] Fehler: {e}")
@@ -3947,7 +3979,7 @@ def bot_cs2():
                         from datetime import datetime, timezone
                         begin_dt = datetime.fromisoformat(begin_at.replace("Z", "+00:00"))
                         diff_min = (begin_dt - datetime.now(timezone.utc)).total_seconds() / 60
-                        if not (30 <= diff_min <= 120):
+                        if not (5 <= diff_min <= 120):  # Innerhalb der nächsten 2 Stunden
                             continue
                     except Exception:
                         continue
@@ -3965,14 +3997,29 @@ def bot_cs2():
                     # Team-Form analysieren
                     form1 = cs2_analysiere_team(t1_id)
                     form2 = cs2_analysiere_team(t2_id)
-                    # Favorit bestimmen
-                    favorit = ""
-                    if form1.get("form_pct", 50) > form2.get("form_pct", 50) + 20:
-                        favorit = team1
-                    elif form2.get("form_pct", 50) > form1.get("form_pct", 50) + 20:
-                        favorit = team2
-                    form1_text = f"{form1.get('siege',0)}/{form1.get('spiele',0)} ({form1.get('form_pct',0)}%)" if form1 else "Keine Daten"
-                    form2_text = f"{form2.get('siege',0)}/{form2.get('spiele',0)} ({form2.get('form_pct',0)}%)" if form2 else "Keine Daten"
+                    p1 = form1.get("form_pct", 50)
+                    p2 = form2.get("form_pct", 50)
+
+                    # Nur senden wenn klarer Favorit + genug Daten vorhanden
+                    # Bedingung: Formunterschied mind. 25% UND mind. 3 Spiele pro Team
+                    hat_daten = form1.get("spiele", 0) >= 3 and form2.get("spiele", 0) >= 3
+                    diff_form = abs(p1 - p2)
+                    if not hat_daten or diff_form < 25:
+                        print(f"  [CS2-Bot] PreMatch übersprungen: {team1} vs {team2} | Form-Diff {diff_form}% < 25% oder zu wenig Daten")
+                        prematch_gesendet.add(match_id)  # nicht nochmal prüfen
+                        continue
+
+                    favorit  = team1 if p1 > p2 else team2
+                    underdog = team2 if p1 > p2 else team1
+                    fav_pct  = max(p1, p2)
+                    und_pct  = min(p1, p2)
+
+                    # Value-Score: je größer der Unterschied, desto besser der Bet
+                    value_score = diff_form
+                    value_label = "Sehr stark" if value_score >= 40 else "Klar" if value_score >= 30 else "Leicht"
+
+                    form1_text = f"{form1.get('siege',0)}/{form1.get('spiele',0)} ({p1}%)"
+                    form2_text = f"{form2.get('siege',0)}/{form2.get('spiele',0)} ({p2}%)"
                     msg = (f"🎮 <b>CS2 Pre-Match!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                            f"🏆 {liga} – {tourn}\n"
                            f"📌 {team1} vs {team2}\n"
@@ -3980,28 +4027,30 @@ def bot_cs2():
                            f"━━━━━━━━━━━━━━━━━━━━\n"
                            f"📊 Form {team1}: {form1_text}\n"
                            f"📊 Form {team2}: {form2_text}\n"
-                           + (f"🎯 Favorit: <b>{favorit}</b>\n" if favorit else "") +
+                           f"🎯 Favorit: <b>{favorit}</b> ({value_label} favorisiert)\n"
+                           f"💎 Tipp: <b>{favorit} gewinnt das Match</b>\n"
                            f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                     send_telegram(msg)
-                    farbe = 0x27AE60 if favorit else 0x95A5A6
+                    farbe = 0x2ECC71 if value_score >= 40 else 0x3498DB if value_score >= 30 else 0x95A5A6
                     embed = {
                         "title": f"🎮 CS2 Pre-Match – In ~{int(diff_min)} Minuten!",
                         "color": farbe,
                         "fields": [
-                            {"name": "🏆 Turnier",  "value": f"{liga} – {tourn}",     "inline": False},
-                            {"name": "🎮 Match",    "value": f"**{team1}** vs **{team2}**", "inline": False},
-                            {"name": "🕐 Anstoß",   "value": f"**{anstoß} Uhr**",     "inline": True},
-                            {"name": "📋 Format",   "value": f"BO{n_games}",           "inline": True},
-                            {"name": f"📊 {team1} Form", "value": form1_text,          "inline": True},
-                            {"name": f"📊 {team2} Form", "value": form2_text,          "inline": True},
+                            {"name": "🏆 Turnier",   "value": f"{liga} – {tourn}",              "inline": False},
+                            {"name": "🎮 Match",     "value": f"**{team1}** vs **{team2}**",    "inline": False},
+                            {"name": "🕐 Anstoß",    "value": f"**{anstoß} Uhr**",              "inline": True},
+                            {"name": "📋 Format",    "value": f"BO{n_games}",                   "inline": True},
+                            {"name": f"📊 {team1}",  "value": form1_text,                       "inline": True},
+                            {"name": f"📊 {team2}",  "value": form2_text,                       "inline": True},
+                            {"name": "🎯 Favorit",   "value": f"**{favorit}** ({value_label})", "inline": True},
+                            {"name": "💎 Value",     "value": f"Form-Edge: **+{diff_form}%**",  "inline": True},
+                            {"name": "🎯 Tipp",      "value": f"**{favorit} gewinnt**",         "inline": False},
                         ],
                         "footer": {"text": f"CS2-Bot • {heute()} {jetzt()}"},
                     }
-                    if favorit:
-                        embed["fields"].append({"name": "🎯 Favorit", "value": f"**{favorit}**", "inline": False})
                     send_discord_embed(DISCORD_WEBHOOK_CS2, embed)
                     prematch_gesendet.add(match_id)
-                    print(f"  [CS2-Bot] PreMatch: {team1} vs {team2} in ~{int(diff_min)} Min")
+                    print(f"  [CS2-Bot] ✅ PreMatch: {team1} vs {team2} | {favorit} favorisiert | Edge +{diff_form}%")
             except Exception as e:
                 print(f"  [CS2-Bot] PreMatch Fehler: {e}")
 
@@ -4038,7 +4087,7 @@ def bot_watchdog():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v34")
+    print("  ⚽ FUSSBALL BOTS v35")
     print("  Value Bets · CS2 · Telegram Befehle · Bankroll · Multi-Signal · Persistenz")
     print("=" * 50 + "\n")
 
