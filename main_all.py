@@ -53,7 +53,7 @@ MAX_CORNERS          = 5
 MIN_KARTEN           = 2
 KARTEN_BIS_MINUTE    = 40
 MIN_SHOTS_ON_TARGET  = 3
-FUSSBALL_INTERVAL    = 3
+FUSSBALL_INTERVAL    = 2  # Reduziert von 3 Min für schnellere Signale
 TAGESBERICHT_UHRZEIT = 0
 
 # Wett-Optimierung
@@ -139,7 +139,7 @@ ROTKARTE_TYPEN = {"Red Card", "Yellow Red Card"}
 _cache_matches   = []
 _cache_timestamp = 0
 _cache_lock      = threading.Lock()
-CACHE_TTL        = 45
+CACHE_TTL        = 20  # Reduziert von 45s für schnellere Signale
 
 notified_ecken      = set()
 notified_ecken_over = set()
