@@ -119,6 +119,10 @@ GITHUB_BACKUP_UHRZEIT = 2  # Uhrzeit für tägliches Backup (02:00)
 # ── Auswertungs-Fallback ─────────────────────────────────────
 MAX_BEOBACHTUNG_STUNDEN = 3   # Nach X Stunden ohne FT → aus Beobachtung entfernen
 
+# ── Signal Tracker (neues robustes System) ───────────────────
+SIGNAL_TRACKER_DATEI = "signal_tracker.json"
+# Status: "offen" → noch nicht ausgewertet, "ausgewertet" → fertig
+
 # ── Tipp-Kombinationen ───────────────────────────────────────
 KOMBI_SIGNAL_TYPEN   = {
     frozenset(["hz1tore", "torflut"]): "Torreiches Spiel",
@@ -1152,6 +1156,8 @@ def beobachtung_hinzufuegen(match_id: str, spiel: dict):
     # Hauptdict für Kompatibilität weiterhin befüllen
     beobachtete_spiele[match_id] = spiel
     beobachtete_spiele_speichern()
+    # Im Signal-Tracker registrieren für robuste Auswertung
+    tracker_signal_hinzufuegen(match_id, spiel)
     # Kombi-Signal prüfen
     kombi_signal_check(match_id)
 
@@ -4059,6 +4065,240 @@ def bot_cs2():
             bot_fehler_melden("CS2-Bot", e)
         time.sleep(5 * 60)  # CS2 alle 5 Minuten
 
+
+# ============================================================
+#  SIGNAL TRACKER – Robustes Auswertungs-System
+# ============================================================
+
+_signal_tracker = {}  # match_id+typ → signal dict
+_tracker_lock   = threading.Lock()
+
+def tracker_laden():
+    """Lädt alle offenen Signale beim Start."""
+    import json, os
+    global _signal_tracker
+    if not os.path.exists(SIGNAL_TRACKER_DATEI):
+        return
+    try:
+        with open(SIGNAL_TRACKER_DATEI, "r") as f:
+            data = json.load(f)
+        with _tracker_lock:
+            _signal_tracker = data
+        offen = sum(1 for s in data.values() if s.get("status") == "offen")
+        print(f"  [Tracker] {len(data)} Signale geladen, {offen} noch offen")
+    except Exception as e:
+        print(f"  [Tracker] Ladefehler: {e}")
+
+def tracker_speichern():
+    """Speichert Signal-Tracker."""
+    import json
+    try:
+        with _tracker_lock:
+            data = dict(_signal_tracker)
+        with open(SIGNAL_TRACKER_DATEI, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"  [Tracker] Speicherfehler: {e}")
+
+def tracker_signal_hinzufuegen(match_id: str, spiel: dict):
+    """Registriert ein neues Signal im Tracker."""
+    key = f"{match_id}_{spiel.get('typ', '')}"
+    with _tracker_lock:
+        _signal_tracker[key] = {
+            **spiel,
+            "match_id":    match_id,
+            "status":      "offen",
+            "signal_zeit": time.time(),
+            "versuche":    0,
+            "letzter_versuch": 0,
+        }
+    tracker_speichern()
+    print(f"  [Tracker] ✅ Registriert: {spiel.get('home','?')} vs {spiel.get('away','?')} ({spiel.get('typ','')})")
+
+def tracker_ausgewertet_markieren(key: str, gewonnen: bool):
+    """Markiert ein Signal als ausgewertet."""
+    with _tracker_lock:
+        if key in _signal_tracker:
+            _signal_tracker[key]["status"]    = "ausgewertet"
+            _signal_tracker[key]["gewonnen"]  = gewonnen
+            _signal_tracker[key]["ausgewertet_um"] = de_now().strftime("%Y-%m-%d %H:%M")
+    tracker_speichern()
+
+def tracker_get_offene() -> list:
+    """Gibt alle noch offenen Signale zurück."""
+    jetzt_ts = time.time()
+    with _tracker_lock:
+        offene = []
+        for key, sig in _signal_tracker.items():
+            if sig.get("status") != "offen":
+                continue
+            # Nach 5 Stunden aufgeben
+            alter_h = (jetzt_ts - sig.get("signal_zeit", jetzt_ts)) / 3600
+            if alter_h > 5:
+                _signal_tracker[key]["status"] = "abgelaufen"
+                continue
+            offene.append((key, sig))
+    return offene
+
+def ls_get_match_result(match_id: str) -> dict | None:
+    """
+    Versucht das Endergebnis eines Spiels zu finden.
+    Probiert mehrere Quellen: single_match, history, events.
+    """
+    # Methode 1: Single Match
+    try:
+        match = ls_get_single_match(match_id)
+        status = str(match.get("status", "") or "")
+        time_val = str(match.get("time", "") or "")
+        score = (match.get("scores") or {}).get("score", "")
+        ht_score = (match.get("scores") or {}).get("ht_score", "")
+
+        FT_STATI = {"FT", "Finished", "FINISHED", "AET", "PEN",
+                    "finished", "aet", "pen", "Full Time", "full time",
+                    "FULL TIME", "After Extra Time", "Penalties", "ft", "FT."}
+
+        if time_val.upper() in ("FT", "FULL TIME", "AET"):
+            status = "FT"
+
+        if status in FT_STATI and score:
+            return {"status": "FT", "score": score, "ht_score": ht_score,
+                    "quelle": "single_match"}
+    except Exception as e:
+        print(f"  [Tracker] single_match Fehler: {e}")
+
+    # Methode 2: Nicht mehr in Live-Liste
+    try:
+        live = get_live_matches()
+        live_ids = {str(m.get("id")) for m in live}
+        if match_id not in live_ids:
+            # Spiel ist nicht mehr live – versuche Score aus Events
+            events = ls_get_events(match_id)
+            tore = [e for e in events if e.get("event") in ("Goal", "goal", "Tor")]
+            if events:  # Events vorhanden = Spiel hat stattgefunden
+                return {"status": "FT_vermutet", "score": None,
+                        "ht_score": None, "quelle": "nicht_live",
+                        "events": events}
+    except Exception as e:
+        print(f"  [Tracker] Live-Check Fehler: {e}")
+
+    return None
+
+def bot_nachschau():
+    """
+    Dedizierter Nachschau-Bot: prüft alle offenen Signale
+    alle 3 Minuten und wertet ab sobald das Spiel fertig ist.
+    Viel aggressiver als der normale Auswertungs-Bot.
+    """
+    print("[Nachschau-Bot] Gestartet | Prüft offene Signale alle 3 Min")
+
+    AUSWERTUNG_FNS = {
+        "ecken":      auswertung_ecken,
+        "ecken_over": auswertung_ecken_over,
+        "karten":     auswertung_karten,
+        "torwart":    auswertung_torwart,
+        "druck":      auswertung_druck,
+        "comeback":   auswertung_comeback,
+        "torflut":    auswertung_torflut,
+        "rotkarte":   auswertung_rotkarte,
+        "hz1tore":    auswertung_hz1tore,
+        "vztore":     auswertung_vztore,
+    }
+
+    MIN_WARTE = {
+        "ecken": 50, "torflut": 50, "hz1tore": 35,
+        "vztore": 75, "karten": 75, "torwart": 30,
+        "comeback": 25, "druck": 25, "rotkarte": 20, "ecken_over": 20,
+    }
+
+    while True:
+        try:
+            offene = tracker_get_offene()
+            if offene:
+                print(f"[{jetzt()}] [Nachschau-Bot] {len(offene)} offene Signale prüfen")
+
+            for key, sig in offene:
+                match_id  = sig.get("match_id", "")
+                typ       = sig.get("typ", "")
+                home      = sig.get("home", "?")
+                away      = sig.get("away", "?")
+
+                # Mindest-Wartezeit einhalten
+                signal_zeit = sig.get("signal_zeit", 0)
+                min_seit    = (time.time() - signal_zeit) / 60
+                min_warte   = MIN_WARTE.get(typ, 25)
+                if min_seit < min_warte:
+                    print(f"  [Nachschau] {home} vs {away} | Warte noch {min_warte-min_seit:.0f} Min")
+                    continue
+
+                # Nicht öfter als alle 4 Minuten versuchen
+                letzter = sig.get("letzter_versuch", 0)
+                if time.time() - letzter < 240:
+                    continue
+
+                # Versuchszähler erhöhen
+                with _tracker_lock:
+                    if key in _signal_tracker:
+                        _signal_tracker[key]["versuche"] += 1
+                        _signal_tracker[key]["letzter_versuch"] = time.time()
+
+                print(f"  [Nachschau] Prüfe: {home} vs {away} ({typ}) | Versuch #{sig.get('versuche',0)+1}")
+
+                # Ergebnis holen
+                result = ls_get_match_result(match_id)
+                if not result:
+                    print(f"  [Nachschau] {home} vs {away} | Noch kein Ergebnis")
+                    continue
+
+                # Kurz warten für stabile Daten
+                time.sleep(8)
+
+                # Auswertung durchführen
+                auswert_fn = AUSWERTUNG_FNS.get(typ)
+                if not auswert_fn:
+                    tracker_ausgewertet_markieren(key, False)
+                    continue
+
+                msg = None
+                try:
+                    msg = auswert_fn(sig)
+                except Exception as e:
+                    print(f"  [Nachschau] Auswertungs-Fehler {home} vs {away}: {e}")
+
+                if not msg:
+                    # Nach 5 Versuchen aufgeben
+                    if sig.get("versuche", 0) >= 5:
+                        print(f"  [Nachschau] ❌ Aufgegeben nach 5 Versuchen: {home} vs {away}")
+                        tracker_ausgewertet_markieren(key, False)
+                    continue
+
+                # Ergebnis senden
+                gewonnen = "GEWONNEN" in msg
+                send_telegram(msg)
+
+                # Discord Embed
+                webhook = sig.get("webhook", "")
+                emoji   = "✅" if gewonnen else "❌"
+                details = {"📊 Typ": f"**{typ.upper()}**",
+                           "⚽ Spiel": f"**{home} vs {away}**"}
+                embed = discord_auswertung(typ, home, away, gewonnen, details)
+                send_discord_embed(webhook, embed)
+
+                tracker_ausgewertet_markieren(key, gewonnen)
+                print(f"  [Nachschau] ✅ Ausgewertet: {home} vs {away} ({typ}) → {'GEWONNEN' if gewonnen else 'VERLOREN'}")
+
+                # Claude Verlust-Analyse
+                if not gewonnen:
+                    threading.Thread(target=claude_verloren_analyse,
+                        args=(home, away, typ, msg), daemon=True).start()
+
+                time.sleep(1)
+
+            tracker_speichern()
+            bot_fehler_reset("Nachschau-Bot")
+        except Exception as e:
+            bot_fehler_melden("Nachschau-Bot", e)
+        time.sleep(3 * 60)  # Alle 3 Minuten
+
 def bot_watchdog():
     """Überwacht alle Bot-Threads und startet sie neu falls sie abstürzen."""
     print("[Watchdog] Gestartet")
@@ -4087,12 +4327,13 @@ def bot_watchdog():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v35")
+    print("  ⚽ FUSSBALL BOTS v36")
     print("  Value Bets · CS2 · Telegram Befehle · Bankroll · Multi-Signal · Persistenz")
     print("=" * 50 + "\n")
 
     statistik_laden()
     beobachtete_spiele_laden()
+    tracker_laden()
 
     bot_definitionen = [
         ("Ecken-Bot",        bot_ecken),
@@ -4109,6 +4350,7 @@ if __name__ == "__main__":
         ("Erinnerungs-Bot",  bot_prematch_erinnerung),
         ("Backup-Bot",       bot_github_backup),
         ("Auswertung-Bot",   bot_auswertung_und_berichte),
+        ("Nachschau-Bot",    bot_nachschau),
         ("Value-Bot",        bot_value_bet),
         ("CS2-Bot",          bot_cs2),
     ]
