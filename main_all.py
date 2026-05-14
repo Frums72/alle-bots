@@ -9351,7 +9351,7 @@ if __name__ == "__main__":
     dashboard = threading.Thread(target=bot_web_dashboard, daemon=True, name="Dashboard")
     dashboard.start()
 
-    # Watchdog starten
+    # Watchdog starten # 
     watchdog = threading.Thread(target=bot_watchdog, daemon=True, name="Watchdog")
     watchdog.start()
 
