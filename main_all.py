@@ -1,4 +1,4 @@
-# v42 - EV-Score + Kalibrierung + Onboarding + Erklärungen + Tageszeit + Gegner
+# v45 - GitHub Persistenz + Restore beim Start + Signal-Spam Schutz
 import requests
 import re
 import time
@@ -350,6 +350,20 @@ def html_zu_discord(text):
     text = text.replace("<b>", "**").replace("</b>", "**")
     text = re.sub(r"<[^>]+>", "", text)
     return text
+
+_signal_stunde_zaehler = {}
+
+def signal_spam_check() -> bool:
+    """Gibt False zurück wenn mehr als 8 Signale pro Stunde gesendet wurden."""
+    stunde = de_now().strftime("%Y-%m-%d-%H")
+    _signal_stunde_zaehler[stunde] = _signal_stunde_zaehler.get(stunde, 0) + 1
+    for k in list(_signal_stunde_zaehler.keys()):
+        if k != stunde:
+            del _signal_stunde_zaehler[k]
+    if _signal_stunde_zaehler[stunde] > 8:
+        print(f"  [Spam] Signal unterdrückt – {_signal_stunde_zaehler[stunde]}/8 diese Stunde")
+        return False
+    return True
 
 def send_telegram(message: str):
     if BOT_PAUSIERT:
@@ -1286,6 +1300,7 @@ def kelly_einsatz_bankroll(quote: float, typ: str) -> float:
 _api_monitor = {"heute": 0, "datum": ""}
 
 def api_monitor_increment():
+    check_rate_limit_warnung() if _api_monitor.get("heute", 0) % 5000 == 0 else None
     """Zählt jeden API-Call mit."""
     heute_str = de_now().strftime("%Y-%m-%d")
     if _api_monitor["datum"] != heute_str:
@@ -1451,8 +1466,16 @@ def verletzungs_check(match_id: str, home: str, away: str) -> str:
         return ""
 
 # ── GitHub Backup ─────────────────────────────────────────────
+PERSISTENZ_DATEIEN = [
+    "statistik.json", "signal_tracker.json", "beobachtete_spiele.json",
+    "notified_sets.json", "bankroll.json", "dynamische_filter.json",
+    "whitelist.json", "community_tipps.json", "admins.json",
+    "bekannte_user.json", "manuell_tipps.json", "ab_test.json",
+]
+GITHUB_DATA_PFAD = "data/latest"  # Fester Pfad in Repo → immer überschrieben
+
 def github_backup():
-    """Pusht statistik.json und signal_log.json täglich auf GitHub."""
+    """Pusht ALLE Datendateien auf GitHub (fester Pfad → wird überschrieben)."""
     import json, base64, os
     if not GITHUB_TOKEN or GITHUB_TOKEN.startswith("GITHUB"):
         print("  [Backup] Kein GitHub Token konfiguriert")
@@ -1461,27 +1484,21 @@ def github_backup():
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json",
     }
-    dateien = []
-    if os.path.exists(STATISTIK_DATEI):
-        dateien.append(STATISTIK_DATEI)
-    if os.path.exists(SIGNAL_LOG_DATEI):
-        dateien.append(SIGNAL_LOG_DATEI)
-    if os.path.exists(BANKROLL_DATEI):
-        dateien.append(BANKROLL_DATEI)
-
-    for datei in dateien:
+    gesichert = 0
+    for datei in PERSISTENZ_DATEIEN:
+        if not os.path.exists(datei):
+            continue
         try:
             with open(datei, "rb") as f:
                 inhalt = base64.b64encode(f.read()).decode()
-            pfad    = f"backup/{de_now().strftime('%Y-%m-%d')}/{datei}"
+            pfad    = f"{GITHUB_DATA_PFAD}/{datei}"
             api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{pfad}"
-            # Prüfen ob Datei bereits existiert (SHA nötig für Update)
             sha     = None
             check   = requests.get(api_url, headers=headers, timeout=10)
             if check.status_code == 200:
                 sha = check.json().get("sha")
             payload = {
-                "message": f"Auto-Backup {de_now().strftime('%Y-%m-%d %H:%M')}",
+                "message": f"Data-Backup {de_now().strftime('%Y-%m-%d %H:%M')}",
                 "content": inhalt,
             }
             if sha:
@@ -1489,25 +1506,77 @@ def github_backup():
             resp = requests.put(api_url, headers=headers,
                                 json=payload, timeout=15)
             if resp.status_code in (200, 201):
+                gesichert += 1
                 print(f"  [Backup] ✅ {datei} → GitHub")
             else:
                 print(f"  [Backup] ❌ {datei}: {resp.status_code}")
         except Exception as e:
             print(f"  [Backup] Fehler bei {datei}: {e}")
+    return gesichert
+
+def github_restore():
+    """
+    Lädt beim Start alle Datendateien von GitHub herunter.
+    Verhindert Datenverlust nach Railway-Neustart.
+    """
+    import base64, os
+    if not GITHUB_TOKEN or GITHUB_TOKEN.startswith("GITHUB"):
+        print("  [Restore] Kein GitHub Token – übersprungen")
+        return 0
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json",
+    }
+    wiederhergestellt = 0
+    for datei in PERSISTENZ_DATEIEN:
+        # Nur herunterladen wenn Datei NICHT lokal existiert (Neustart)
+        if os.path.exists(datei):
+            print(f"  [Restore] {datei} bereits lokal vorhanden – übersprungen")
+            continue
+        try:
+            pfad    = f"{GITHUB_DATA_PFAD}/{datei}"
+            api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{pfad}"
+            resp    = requests.get(api_url, headers=headers, timeout=10)
+            if resp.status_code != 200:
+                print(f"  [Restore] {datei}: nicht auf GitHub ({resp.status_code})")
+                continue
+            inhalt = base64.b64decode(resp.json().get("content", ""))
+            with open(datei, "wb") as f:
+                f.write(inhalt)
+            wiederhergestellt += 1
+            print(f"  [Restore] ✅ {datei} ← GitHub")
+        except Exception as e:
+            print(f"  [Restore] Fehler bei {datei}: {e}")
+    if wiederhergestellt > 0:
+        print(f"  [Restore] {wiederhergestellt} Dateien wiederhergestellt ✅")
+        send_telegram(f"🔄 <b>Daten wiederhergestellt!</b>\n"
+                      f"━━━━━━━━━━━━━━━━━━━━\n"
+                      f"✅ {wiederhergestellt} Dateien von GitHub geladen\n"
+                      f"📊 Statistiken, Bankroll & Signale sind wiederhergestellt\n"
+                      f"🕐 {jetzt()} Uhr")
+    return wiederhergestellt
 
 def bot_github_backup():
-    """Täglicher GitHub Backup Thread."""
-    print(f"[Backup-Bot] Gestartet | Backup täglich um {GITHUB_BACKUP_UHRZEIT}:00 Uhr")
-    backup_gesendet = None
+    """Stündlicher GitHub Backup + täglicher vollständiger Backup."""
+    print(f"[Backup-Bot] Gestartet | Stündlich + täglich {GITHUB_BACKUP_UHRZEIT}:00 Uhr")
+    backup_gesendet   = None
+    letzter_std_backup = 0
     while True:
         try:
-            now = de_now()
+            now    = de_now()
+            now_ts = time.time()
+            # Stündlicher Backup (alle 60 Min)
+            if now_ts - letzter_std_backup >= 3600:
+                letzter_std_backup = now_ts
+                github_backup()
+                print(f"  [Backup] Stündlicher Backup abgeschlossen")
+            # Täglicher Backup mit Telegram-Meldung
             if now.hour == GITHUB_BACKUP_UHRZEIT and backup_gesendet != now.date():
-                print("  [Backup] Starte tägliches GitHub Backup...")
                 github_backup()
                 backup_gesendet = now.date()
-                send_telegram(f"💾 <b>Backup abgeschlossen</b>\n"
-                              f"statistik.json + signal_log.json → GitHub\n"
+                send_telegram(f"💾 <b>Tages-Backup abgeschlossen</b>\n"
+                              f"✅ {len(PERSISTENZ_DATEIEN)} Dateien → GitHub\n"
+                              f"🛡️ Daten sind sicher bei Neustart\n"
                               f"🕐 {jetzt()} Uhr")
         except Exception as e:
             print(f"  [Backup-Bot] Fehler: {e}")
@@ -2043,6 +2112,7 @@ def send_wochenbericht():
         "footer": {"text": f"BetlabLIVE • KW {de_now().isocalendar()[1]} • {heute()}"},
     }
     send_discord_embed(DISCORD_WEBHOOK_BILANZ, woche_embed)
+    ab_test_auswerten()
     for t in wochen_statistik:
         wochen_statistik[t] = {"gewonnen": 0, "verloren": 0, "gewinn": 0.0}
     # Weekly Performance Chart
@@ -3419,6 +3489,14 @@ def bot_telegram_befehle():
                 chat_id  = str(msg_obj.get("chat", {}).get("id", ""))
                 text     = msg_obj.get("text", "").strip()
 
+                # Sprache erkennen + speichern
+                if text and len(text) > 5:
+                    _user_sprache[user_id] = erkenne_sprache(text)
+
+                # Menu Callback verarbeiten
+                if "callback_query" not in update and not text:
+                    continue
+
                 # Onboarding für neue User
                 if user_id and user_id not in BEKANNTE_USER:
                     BEKANNTE_USER.add(user_id)
@@ -3547,6 +3625,76 @@ def bot_telegram_befehle():
 
                 elif text == "/gegner":
                     antwort = analysiere_gegner() or "Noch zu wenig Daten (mind. 30 Tipps)"
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text in ("/start", "/menu"):
+                    sende_hauptmenu(chat_id)
+                    continue
+
+                elif text == "/effizienz":
+                    eff = berechne_markt_effizienz()
+                    if not eff.get("ausreichend"):
+                        antwort = "⚠️ Noch zu wenig Value-Tipps (mind. 10)"
+                    else:
+                        zeilen = []
+                        for kat, d in eff.get("kategorien", {}).items():
+                            kat_labels = {"sehr_gut": "💎 Sehr gut (EV≥15%)",
+                                          "gut": "✅ Gut (EV 8-15%)",
+                                          "grenzwertig": "🟡 Grenzwertig (EV 0-8%)"}
+                            zeilen.append(f"{kat_labels.get(kat,kat)}: {d['pct']}% | ROI {d['roi']:+.1f}% ({d['tipps']} Tipps)")
+                        antwort = "📊 <b>Wettmarkt-Effizienz</b>\n━━━━━━━━━━━━━━━━━━━━\n" + "\n".join(zeilen)
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text == "/compound":
+                    sim = simuliere_compound_bankroll(wochen=20)
+                    if not sim.get("ausreichend"):
+                        antwort = "⚠️ Noch zu wenig Daten (mind. 10 Tipps)"
+                    else:
+                        verlauf_text = " → ".join([f"{v}€" for v in sim["verlauf"][::4]])
+                        antwort = (f"📈 <b>Compound Bankroll Simulation</b>\n"
+                                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                                   f"💰 Start: <b>{sim['start']}€</b>\n"
+                                   f"🎯 Trefferquote: <b>{sim['trefferquote']}%</b>\n"
+                                   f"📐 Kelly-Einsatz: <b>{sim['kelly_pct']}% pro Tipp</b>\n"
+                                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                                   f"Nach 20 Wochen: <b>{sim['end']}€</b>\n"
+                                   f"📈 Rendite: <b>{sim['rendite_pct']:+.1f}%</b>\n"
+                                   f"📊 Verlauf: {verlauf_text}")
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text == "/export":
+                    pfad = erstelle_excel_export()
+                    if pfad:
+                        try:
+                            with open(pfad, "rb") as f:
+                                requests.post(
+                                    f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument",
+                                    data={"chat_id": chat_id, "caption": f"📊 Daten-Export – letzte 30 Tage"},
+                                    files={"document": f}, timeout=30
+                                )
+                        except Exception as e:
+                            requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                          json={"chat_id": chat_id, "text": f"⚠️ Export Fehler: {e}"}, timeout=10)
+                    else:
+                        requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                      json={"chat_id": chat_id, "text": "⚠️ openpyxl nicht installiert: pip install openpyxl"}, timeout=10)
+
+                elif text.startswith("/suche "):
+                    suchbegriff = text.replace("/suche ", "").strip()
+                    antwort     = suche_signale(suchbegriff)
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text == "/clustering":
+                    cluster = analysiere_tipp_clustering()
+                    if cluster:
+                        zeilen = [f"🏆 {k}: {v['quote']}% ({v['tipps']} Tipps)" for k, v in cluster.items()]
+                        antwort = "🧩 <b>Tipp-Clustering</b>\n━━━━━━━━━━━━━━━━━━━━\n" + "\n".join(zeilen)
+                    else:
+                        antwort = "⚠️ Noch zu wenig Daten (mind. 50 Tipps)"
                     requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                                   json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
 
@@ -4763,11 +4911,47 @@ def bot_telegram_gruppe():
 
             for update in resp.json().get("result", []):
                 letzter_update = update["update_id"]
+                # Callback Query (Inline-Buttons + Menu)
+                if "callback_query" in update:
+                    cq     = update["callback_query"]
+                    data   = cq.get("data", "")
+                    cq_id  = cq.get("id", "")
+                    cq_chat = str(cq.get("message", {}).get("chat", {}).get("id", ""))
+                    if data.startswith("menu_"):
+                        cmd = MENU_ANTWORTEN.get(data, "")
+                        if cmd.startswith("/"):
+                            # Führe Command aus (als ob User es getippt hätte)
+                            requests.post(
+                                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery",
+                                json={"callback_query_id": cq_id, "text": f"Ausführe {cmd}..."}, timeout=5
+                            )
+                            # Simuliere Command-Nachricht
+                            msg_obj = {"chat": {"id": int(cq_chat)}, "from": {"id": int(cq_chat), "first_name": "Menu"}, "text": cmd}
+                        else:
+                            requests.post(
+                                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                json={"chat_id": cq_chat, "text": cmd, "parse_mode": "HTML"}, timeout=10
+                            )
+                            requests.post(
+                                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery",
+                                json={"callback_query_id": cq_id}, timeout=5
+                            )
+                    else:
+                        verarbeite_callback_query(data, cq_id)
+                    continue
                 msg_obj  = update.get("message", {})
                 chat_id  = str(msg_obj.get("chat", {}).get("id", ""))
                 user_id  = str(msg_obj.get("from", {}).get("id", ""))
                 username = msg_obj.get("from", {}).get("first_name", "Anonym")
                 text     = msg_obj.get("text", "").strip()
+
+                # Sprache erkennen + speichern
+                if text and len(text) > 5:
+                    _user_sprache[user_id] = erkenne_sprache(text)
+
+                # Menu Callback verarbeiten
+                if "callback_query" not in update and not text:
+                    continue
 
                 # Onboarding für neue User
                 if user_id and user_id not in BEKANNTE_USER:
@@ -5420,6 +5604,1051 @@ def multi_modell_vote(home, away, typ, analyse, score, minute):
 
 
 
+
+
+# ============================================================
+#  STARTUP & HEALTH CHECK
+# ============================================================
+
+BOT_START_ZEIT = time.time()
+
+def bot_startup_alarm():
+    """Sendet Alarm wenn Bot neu startet."""
+    try:
+        start_str = de_now().strftime("%d.%m.%Y %H:%M")
+        msg = (f"🔄 <b>Bot neu gestartet!</b>\n"
+               f"━━━━━━━━━━━━━━━━━━━━\n"
+               f"🕐 {start_str} Uhr\n"
+               f"✅ Alle {len(bot_definitionen)} Bots werden gestartet\n"
+               f"📊 Signal-Tracker geladen\n"
+               f"━━━━━━━━━━━━━━━━━━━━\n"
+               f"⚡ BetlabLIVE ist wieder aktiv!")
+        send_telegram(msg)
+    except Exception as e:
+        print(f"  [Startup] Alarm Fehler: {e}")
+
+def bot_health_check_server():
+    """
+    Einfacher HTTP-Server für Railway Health-Checks.
+    Railway ruft /health auf – antwortet mit 200 OK wenn Bot läuft.
+    """
+    try:
+        from http.server import HTTPServer, BaseHTTPRequestHandler
+        import json
+
+        class HealthHandler(BaseHTTPRequestHandler):
+            def log_message(self, fmt, *args):
+                pass
+
+            def do_GET(self):
+                if self.path == "/health":
+                    uptime_min = round((time.time() - BOT_START_ZEIT) / 60)
+                    gw  = sum(statistik[t]["gewonnen"] for t in statistik)
+                    vl  = sum(statistik[t]["verloren"] for t in statistik)
+                    data = {
+                        "status": "ok",
+                        "uptime_min": uptime_min,
+                        "gewonnen": gw,
+                        "verloren": vl,
+                        "api_calls": _api_monitor.get("heute", 0),
+                        "offene_signale": len(tracker_get_offene()),
+                    }
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps(data).encode())
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+
+        # Health auf Port 8081, Dashboard auf 8080
+        server = HTTPServer(("0.0.0.0", 8081), HealthHandler)
+        print("[Health-Check] Gestartet auf Port 8081 /health")
+        server.serve_forever()
+    except Exception as e:
+        print(f"[Health-Check] Fehler: {e}")
+
+# ============================================================
+#  RATE-LIMIT DASHBOARD
+# ============================================================
+
+API_LIMIT_WARNUNG_PCT = 80  # Warnung bei 80% des Tages-Limits
+
+def check_rate_limit_warnung():
+    """Warnt wenn API-Calls 80% des Limits erreichen."""
+    calls_heute = _api_monitor.get("heute", 0)
+    limit       = 50000  # livescore-api Tages-Limit
+    pct         = round(calls_heute / limit * 100, 1)
+    if pct >= API_LIMIT_WARNUNG_PCT:
+        msg = (f"⚠️ <b>API Rate-Limit Warnung!</b>\n"
+               f"━━━━━━━━━━━━━━━━━━━━\n"
+               f"📊 Heute: <b>{calls_heute:,}</b> / {limit:,} Calls\n"
+               f"📈 Auslastung: <b>{pct}%</b>\n"
+               f"{'🔴 KRITISCH – Bot könnte gedrosselt werden!' if pct >= 95 else '⚠️ Hohe Auslastung'}\n"
+               f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
+        send_telegram(msg)
+        return True
+    return False
+
+# ============================================================
+#  TIPP-CLUSTERING
+# ============================================================
+
+def analysiere_tipp_clustering() -> dict:
+    """
+    Findet welche Faktor-Kombinationen am häufigsten gewinnen.
+    Beispiel: Typ=druck + Liga=Premier League + Stunde=20 → 78% Trefferquote
+    """
+    with _tracker_lock:
+        alle = [s for s in _signal_tracker.values()
+                if s.get("status") == "ausgewertet"]
+    if len(alle) < 50:
+        return {}
+    import datetime
+    cluster = {}
+    for s in alle:
+        typ  = s.get("typ", "?")
+        liga = s.get("competition", s.get("liga", "?"))[:20] if s.get("competition") or s.get("liga") else "?"
+        try:
+            h = datetime.datetime.fromtimestamp(s["signal_zeit"]).hour
+            block = "Abend" if h >= 18 else ("Nachmittag" if h >= 13 else "Morgen")
+        except Exception:
+            block = "?"
+        key = f"{typ}+{block}"
+        if key not in cluster:
+            cluster[key] = {"g": 0, "total": 0}
+        cluster[key]["total"] += 1
+        if s.get("gewonnen"):
+            cluster[key]["g"] += 1
+    # Beste Cluster (min. 5 Tipps)
+    beste = sorted(
+        [(k, v) for k, v in cluster.items() if v["total"] >= 5],
+        key=lambda x: x[1]["g"] / x[1]["total"],
+        reverse=True
+    )[:5]
+    return {k: {"quote": round(v["g"]/v["total"]*100), "tipps": v["total"]} for k, v in beste}
+
+# ============================================================
+#  ANOMALIE-ERKENNUNG
+# ============================================================
+
+notified_anomalie = set()
+
+def bot_anomalie_erkennung():
+    """
+    Erkennt statistisch außergewöhnliche Spiele.
+    Beispiel: 15 Ecken in 30 Min, 8 Schüsse aufs Tor in 15 Min.
+    """
+    print("[Anomalie-Bot] Gestartet | Statistische Ausreißer erkennen")
+    while True:
+        try:
+            matches = get_live_matches()
+            laufend = [m for m in matches if m.get("status") == "IN PLAY"
+                       and _safe_int(m.get("time", 0)) >= 15]
+            for game in laufend:
+                match_id = str(game.get("id"))
+                if match_id in notified_anomalie:
+                    continue
+                home    = game.get("home", {}).get("name", "?")
+                away    = game.get("away", {}).get("name", "?")
+                comp    = game.get("competition", {}).get("name", "?")
+                minute  = _safe_int(game.get("time", 0))
+                score   = game.get("scores", {}).get("score", "?")
+                stats   = get_statistiken(match_id)
+                ecken_ges   = stats["corners_home"] + stats["corners_away"]
+                schuesse_ges = stats["shots_on_target_home"] + stats["shots_on_target_away"]
+                da_ges      = stats["dangerous_attacks_home"] + stats["dangerous_attacks_away"]
+                anomalien = []
+                # Ecken-Rate: normal ~4-6 in 30 Min → Anomalie wenn >12
+                if minute <= 35 and ecken_ges >= 12:
+                    anomalien.append(f"📐 {ecken_ges} Ecken in Minute {minute} (extrem hoch!)")
+                # Schüsse-Rate: normal ~3-5 in 20 Min → Anomalie wenn >10
+                if minute <= 25 and schuesse_ges >= 10:
+                    anomalien.append(f"🎯 {schuesse_ges} Schüsse aufs Tor in Minute {minute}!")
+                # Gefährliche Angriffe: Anomalie wenn >60 in 30 Min
+                if minute <= 35 and da_ges >= 60:
+                    anomalien.append(f"⚡ {da_ges} gefährliche Angriffe in Minute {minute}!")
+                if not anomalien:
+                    continue
+                notified_anomalie.add(match_id)
+                notified_sets_speichern()
+                msg = (f"🚨 <b>Anomalie erkannt!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                       f"🏆 {comp}\n📌 {home} vs {away}\n"
+                       f"📊 Stand: <b>{score}</b> | Min. <b>{minute}'</b>\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n"
+                       + "\n".join(anomalien) +
+                       f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                       f"💡 Statistisch außergewöhnlich – lohnt Blick auf Live-Märkte!\n"
+                       f"🕐 {jetzt()} Uhr")
+                send_telegram(msg)
+                embed = {
+                    "title": "🚨 Statistische Anomalie!",
+                    "color": 0xFF0000,
+                    "fields": [
+                        {"name": "🏆 Liga",    "value": comp,                 "inline": True},
+                        {"name": "⏱️ Minute", "value": f"**{minute}'**",      "inline": True},
+                        {"name": "⚽ Spiel",  "value": f"{home} vs {away}",  "inline": False},
+                        {"name": "📊 Stand",  "value": f"**{score}**",       "inline": True},
+                        {"name": "🚨 Anomalie","value": "\n".join(anomalien),"inline": False},
+                    ],
+                    "footer": {"text": f"Anomalie-Bot • {heute()} {jetzt()}"},
+                }
+                send_discord_embed(DISCORD_WEBHOOK_VALUE, embed)
+                print(f"  [Anomalie] 🚨 {home} vs {away}: {anomalien}")
+            bot_fehler_reset("Anomalie-Bot")
+        except Exception as e:
+            bot_fehler_melden("Anomalie-Bot", e)
+        time.sleep(90)
+
+# ============================================================
+#  GEGNERMODELL
+# ============================================================
+
+_team_profile_cache = {}
+
+def erstelle_team_profil(team_id: str, team_name: str) -> dict:
+    """
+    Analysiert Spielweise eines Teams:
+    - Offensiv (viele Schüsse) vs Defensiv (wenige)
+    - Pressingintensiv (viele gefährliche Angriffe) vs Passiv
+    - Eckenstark vs Eckenschwach
+    """
+    if team_id in _team_profile_cache:
+        return _team_profile_cache[team_id]
+    try:
+        params = {**LS_AUTH, "team_id": team_id, "number": 8}
+        resp   = api_get_with_retry(f"{LS_BASE}/matches/history.json", params)
+        spiele = resp.json().get("data", {}).get("match", []) or []
+        if len(spiele) < 4:
+            return {}
+        shots_avg = []
+        ecken_avg = []
+        tore_avg  = []
+        for m in spiele:
+            stats_m  = (m.get("stats") or {})
+            home_id  = str((m.get("home") or {}).get("id", ""))
+            ist_heim = home_id == team_id
+            side     = "home" if ist_heim else "away"
+            s = stats_m.get(f"shots_on_target_{side}", 0) or 0
+            e = stats_m.get(f"corners_{side}", 0) or 0
+            score_m  = (m.get("scores") or {}).get("score", "")
+            h_m, a_m = parse_score(score_m)
+            t = h_m if ist_heim else a_m
+            shots_avg.append(_safe_int(s))
+            ecken_avg.append(_safe_int(e))
+            tore_avg.append(t)
+        shots_m  = round(sum(shots_avg) / len(shots_avg), 1) if shots_avg else 0
+        ecken_m  = round(sum(ecken_avg) / len(ecken_avg), 1) if ecken_avg else 0
+        tore_m   = round(sum(tore_avg)  / len(tore_avg),  1) if tore_avg  else 0
+        stil = "offensiv" if shots_m >= 5 else ("defensiv" if shots_m <= 2 else "ausgewogen")
+        profil = {
+            "team":      team_name,
+            "shots_avg": shots_m,
+            "ecken_avg": ecken_m,
+            "tore_avg":  tore_m,
+            "stil":      stil,
+            "eckenstark": ecken_m >= 5,
+        }
+        _team_profile_cache[team_id] = profil
+        return profil
+    except Exception as e:
+        print(f"  [Gegnermodell] Fehler {team_name}: {e}")
+        return {}
+
+def profil_zu_text(p1: dict, p2: dict) -> str:
+    """Kurzer Profiltext für Signale."""
+    if not p1 and not p2:
+        return ""
+    zeilen = []
+    if p1.get("stil"):
+        zeilen.append(f"🎭 {p1['team']}: {p1['stil'].capitalize()} (Ø {p1['shots_avg']} Schüsse)")
+    if p2.get("stil"):
+        zeilen.append(f"🎭 {p2['team']}: {p2['stil'].capitalize()} (Ø {p2['shots_avg']} Schüsse)")
+    return "\n".join(zeilen)
+
+# ============================================================
+#  KONFIDENZ-DECAY
+# ============================================================
+
+def wende_konfidenz_decay_an():
+    """
+    Reduziert Konfidenz offener Signale über Zeit.
+    Nach 30 Min ohne Auswertung: -1 Konfidenz alle 15 Min.
+    """
+    now = time.time()
+    with _tracker_lock:
+        for key, sig in _signal_tracker.items():
+            if sig.get("status") != "offen":
+                continue
+            alter_min = (now - sig.get("signal_zeit", now)) / 60
+            if alter_min < 30:
+                continue
+            decay_stufen = int((alter_min - 30) / 15)
+            orig_konfidenz = sig.get("konfidenz_original",
+                                     sig.get("konfidenz", 6))
+            if "konfidenz_original" not in sig:
+                _signal_tracker[key]["konfidenz_original"] = orig_konfidenz
+            neue_konfidenz = max(1, orig_konfidenz - decay_stufen)
+            _signal_tracker[key]["konfidenz"] = neue_konfidenz
+
+# ============================================================
+#  TRANSFER LEARNING
+# ============================================================
+
+LIGA_AEHNLICHKEITEN = {
+    "Bundesliga":         ["Eredivisie", "Belgian Pro League", "Austrian Bundesliga"],
+    "Premier League":     ["Championship", "Scottish Premiership", "MLS"],
+    "La Liga":            ["Primeira Liga", "Serie A", "Ligue 1"],
+    "Serie A":            ["La Liga", "Ligue 1", "Super Lig"],
+    "Ligue 1":            ["Serie A", "Eredivisie", "Belgian Pro League"],
+    "Eredivisie":         ["Bundesliga", "Belgian Pro League"],
+    "Primera Division":   ["La Liga", "Serie A"],
+}
+
+def transfer_konfidenz_bonus(typ: str, liga: str) -> int:
+    """
+    Gibt Konfidenz-Bonus wenn ähnliche Ligen gute Erfahrung mit diesem Bot-Typ haben.
+    """
+    with _tracker_lock:
+        alle = [s for s in _signal_tracker.values()
+                if s.get("typ") == typ and s.get("status") == "ausgewertet"]
+    aehnliche = LIGA_AEHNLICHKEITEN.get(liga, [])
+    if not aehnliche:
+        return 0
+    relevant = [s for s in alle
+                if any(a.lower() in (s.get("competition") or "").lower()
+                       for a in aehnliche)]
+    if len(relevant) < 8:
+        return 0
+    gw  = sum(1 for s in relevant if s.get("gewonnen"))
+    pct = gw / len(relevant)
+    if pct >= 0.65:
+        return 1
+    elif pct >= 0.75:
+        return 2
+    return 0
+
+# ============================================================
+#  A/B TESTING
+# ============================================================
+
+AB_FILTER = {
+    "ecken_unter": {
+        "A": {"max_hz1_corners": 5, "label": "≤5 HZ1"},
+        "B": {"max_hz1_corners": 4, "label": "≤4 HZ1"},
+        "ergebnisse": {"A": {"g": 0, "total": 0}, "B": {"g": 0, "total": 0}},
+    }
+}
+AB_DATEI = "ab_test.json"
+
+def ab_test_laden():
+    import json, os
+    global AB_FILTER
+    if os.path.exists(AB_DATEI):
+        try:
+            with open(AB_DATEI) as f:
+                AB_FILTER = json.load(f)
+        except Exception:
+            pass
+
+def ab_test_speichern():
+    import json
+    try:
+        with open(AB_DATEI, "w") as f:
+            json.dump(AB_FILTER, f, indent=2)
+    except Exception:
+        pass
+
+def ab_test_variante(test_name: str) -> str:
+    """Gibt A oder B zurück (gleichmäßige Verteilung)."""
+    if test_name not in AB_FILTER:
+        return "A"
+    erg = AB_FILTER[test_name]["ergebnisse"]
+    total_a = erg["A"]["total"]
+    total_b = erg["B"]["total"]
+    return "A" if total_a <= total_b else "B"
+
+def ab_test_auswerten():
+    """Wertet A/B Tests aus und behält die bessere Variante."""
+    for test, data in AB_FILTER.items():
+        erg = data["ergebnisse"]
+        for v in ("A", "B"):
+            if erg[v]["total"] < 20:
+                continue
+        total_a = erg["A"]["total"]
+        total_b = erg["B"]["total"]
+        if total_a < 20 or total_b < 20:
+            continue
+        q_a = erg["A"]["g"] / total_a
+        q_b = erg["B"]["g"] / total_b
+        gewinner = "A" if q_a >= q_b else "B"
+        msg = (f"🧪 <b>A/B Test Ergebnis: {test}</b>\n"
+               f"━━━━━━━━━━━━━━━━━━━━\n"
+               f"A ({data['A']['label']}): {round(q_a*100)}% ({erg['A']['g']}/{total_a})\n"
+               f"B ({data['B']['label']}): {round(q_b*100)}% ({erg['B']['g']}/{total_b})\n"
+               f"🏆 Gewinner: Variante <b>{gewinner}</b>\n"
+               f"✅ Wird ab sofort als Standard verwendet")
+        send_telegram(msg)
+        print(f"  [A/B] {test}: Variante {gewinner} gewinnt")
+
+# ============================================================
+#  SHARP MONEY TRACKER
+# ============================================================
+
+_sharp_history = {}
+notified_sharp = set()
+
+def bot_sharp_money():
+    """
+    Erkennt professionelle Wetter-Bewegungen:
+    - Mehrere Bookmaker bewegen gleichzeitig dieselbe Quote
+    - Bewegung gegen den intuitiven Trend (z.B. Favorit-Quote fällt obwohl mehr Geld auf Außenseiter)
+    """
+    print("[Sharp-Money-Bot] Gestartet | Pro-Wetter Bewegungen")
+    while True:
+        try:
+            if not ODDS_API_KEY:
+                time.sleep(10 * 60)
+                continue
+            url    = "https://api.the-odds-api.com/v4/sports/soccer/odds/"
+            params = {"apiKey": ODDS_API_KEY, "regions": "eu",
+                      "markets": "h2h", "oddsFormat": "decimal"}
+            resp   = requests.get(url, params=params, timeout=10)
+            if resp.status_code != 200:
+                time.sleep(10 * 60)
+                continue
+            now = time.time()
+            for game in resp.json():
+                home_t = game.get("home_team", "?")
+                away_t = game.get("away_team", "?")
+                key    = f"{home_t}_{away_t}"
+                # Alle Bookmaker Quoten sammeln
+                bm_quoten = {}
+                for bm in game.get("bookmakers", []):
+                    for market in bm.get("markets", []):
+                        if market.get("key") != "h2h":
+                            continue
+                        for outcome in market.get("outcomes", []):
+                            name = outcome.get("name", "")
+                            q    = outcome.get("price", 0)
+                            if name not in bm_quoten:
+                                bm_quoten[name] = []
+                            bm_quoten[name].append(q)
+                if key not in _sharp_history:
+                    _sharp_history[key] = {"ts": now, "quoten": bm_quoten}
+                    continue
+                alt = _sharp_history[key]
+                if now - alt["ts"] < 8 * 60:
+                    continue
+                # Vergleiche ob mehrere BMs gleichzeitig dieselbe Richtung bewegen
+                sharp_signals = []
+                for name, quoten in bm_quoten.items():
+                    if name not in alt["quoten"]:
+                        continue
+                    q_neu = sum(quoten) / len(quoten)
+                    q_alt = sum(alt["quoten"][name]) / len(alt["quoten"][name])
+                    bewegung = round((q_neu - q_alt) / q_alt * 100, 1)
+                    # Signifikante Bewegung: >8% bei mehreren BMs
+                    if abs(bewegung) >= 8 and len(quoten) >= 3:
+                        richtung = "📉 gefallen" if bewegung < 0 else "📈 gestiegen"
+                        sharp_signals.append(f"{name}: {q_alt:.2f}→{q_neu:.2f} ({bewegung:+.1f}%) {richtung}")
+                _sharp_history[key] = {"ts": now, "quoten": bm_quoten}
+                if not sharp_signals or key in notified_sharp:
+                    continue
+                notified_sharp.add(key)
+                msg = (f"💼 <b>Sharp Money Signal!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                       f"📌 {home_t} vs {away_t}\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n"
+                       + "\n".join(sharp_signals) +
+                       f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                       f"💡 Professionelle Wetter bewegen den Markt!\n"
+                       f"🕐 {jetzt()} Uhr")
+                send_telegram(msg)
+                embed = {
+                    "title": "💼 Sharp Money – Pro-Wetter aktiv!",
+                    "color": 0x8E44AD,
+                    "fields": [
+                        {"name": "⚽ Spiel",     "value": f"{home_t} vs {away_t}", "inline": False},
+                        {"name": "📊 Bewegungen","value": "\n".join(sharp_signals),"inline": False},
+                    ],
+                    "footer": {"text": f"Sharp-Money-Bot • {heute()} {jetzt()}"},
+                }
+                send_discord_embed(DISCORD_WEBHOOK_VALUE, embed)
+                print(f"  [Sharp] 💼 {home_t} vs {away_t}")
+            bot_fehler_reset("Sharp-Money-Bot")
+        except Exception as e:
+            bot_fehler_melden("Sharp-Money-Bot", e)
+        time.sleep(8 * 60)
+
+# ============================================================
+#  DATEN-EXPORT & SIGNAL-ARCHIV
+# ============================================================
+
+def erstelle_excel_export() -> str | None:
+    """Erstellt Excel-Export der letzten 30 Tage."""
+    try:
+        import openpyxl
+        from openpyxl.styles import PatternFill, Font, Alignment
+        import datetime
+
+        wb  = openpyxl.Workbook()
+        ws  = wb.active
+        ws.title = "BetlabLIVE Tipps"
+        # Header
+        header = ["Datum", "Uhrzeit", "Liga", "Heim", "Gast", "Typ",
+                  "Tipp", "Quote", "Konfidenz", "EV%", "Status", "Ergebnis"]
+        for i, h in enumerate(header, 1):
+            cell = ws.cell(row=1, column=i, value=h)
+            cell.font = PatternFill("solid", fgColor="1F3A5F")
+            cell.font = Font(bold=True, color="FFFFFF")
+        # Daten
+        grenze_ts = time.time() - 30 * 24 * 3600
+        with _tracker_lock:
+            signale = [s for s in _signal_tracker.values()
+                       if s.get("signal_zeit", 0) >= grenze_ts]
+        signale_sort = sorted(signale, key=lambda x: x.get("signal_zeit", 0), reverse=True)
+        for row, s in enumerate(signale_sort, 2):
+            ts = s.get("signal_zeit", 0)
+            try:
+                dt = datetime.datetime.fromtimestamp(ts)
+                datum = dt.strftime("%d.%m.%Y")
+                uhrzeit = dt.strftime("%H:%M")
+            except Exception:
+                datum = uhrzeit = "?"
+            ev = berechne_ev_score(s.get("konfidenz", 6), s.get("quote") or 1.85)
+            status  = s.get("status", "offen")
+            ergebnis = ("✅ GEWONNEN" if s.get("gewonnen") else
+                        ("❌ VERLOREN" if s.get("status") == "ausgewertet" else "⏳ Offen"))
+            werte = [datum, uhrzeit,
+                     s.get("competition", s.get("liga", "?")),
+                     s.get("home", "?"), s.get("away", "?"),
+                     s.get("typ", "?"), s.get("tipp", s.get("typ", "?")),
+                     s.get("quote", ""),
+                     s.get("konfidenz", 6),
+                     ev["ev_pct"],
+                     status, ergebnis]
+            for col, val in enumerate(werte, 1):
+                ws.cell(row=row, column=col, value=val)
+            # Farbe nach Ergebnis
+            fill_color = ("C8E6C9" if "GEWONNEN" in ergebnis else
+                          ("FFCDD2" if "VERLOREN" in ergebnis else "FFF9C4"))
+            for col in range(1, len(header) + 1):
+                ws.cell(row=row, column=col).fill = PatternFill("solid", fgColor=fill_color)
+        # Spaltenbreite
+        for col in ws.columns:
+            ws.column_dimensions[col[0].column_letter].width = 16
+        pfad = "/tmp/betlab_export.xlsx"
+        wb.save(pfad)
+        return pfad
+    except ImportError:
+        print("  [Export] openpyxl nicht installiert")
+        return None
+    except Exception as e:
+        print(f"  [Export] Fehler: {e}")
+        return None
+
+def suche_signale(suchbegriff: str) -> str:
+    """Durchsucht Signal-Archiv nach Team oder Liga."""
+    suchbegriff = suchbegriff.lower().strip()
+    with _tracker_lock:
+        treffer = [s for s in _signal_tracker.values()
+                   if (suchbegriff in (s.get("home", "") or "").lower() or
+                       suchbegriff in (s.get("away", "") or "").lower() or
+                       suchbegriff in (s.get("competition", "") or "").lower() or
+                       suchbegriff in (s.get("liga", "") or "").lower())]
+    if not treffer:
+        return f"❌ Keine Signale gefunden für: {suchbegriff}"
+    treffer_sort = sorted(treffer, key=lambda x: x.get("signal_zeit", 0), reverse=True)[:10]
+    zeilen = [f"🔍 <b>Suchergebnisse: '{suchbegriff}'</b> ({len(treffer)} gesamt)\n━━━━━━━━━━━━━━━━━━━━"]
+    for s in treffer_sort:
+        import datetime
+        ts = s.get("signal_zeit", 0)
+        try:
+            dt   = datetime.datetime.fromtimestamp(ts).strftime("%d.%m %H:%M")
+        except Exception:
+            dt   = "?"
+        ergebnis = ("✅" if s.get("gewonnen") else
+                    ("❌" if s.get("status") == "ausgewertet" else "⏳"))
+        zeilen.append(f"{ergebnis} {dt} | {s.get('home','?')} vs {s.get('away','?')} | {s.get('typ','?')}")
+    return "\n".join(zeilen)
+
+# ============================================================
+#  TELEGRAM INLINE-BUTTONS
+# ============================================================
+
+def send_telegram_mit_buttons(msg: str, match_id: str, typ: str) -> bool:
+    """
+    Sendet Telegram-Nachricht mit ✅/❌ Inline-Buttons für schnelle Auswertung.
+    """
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return False
+    try:
+        keyboard = {
+            "inline_keyboard": [[
+                {"text": "✅ Gewonnen", "callback_data": f"won_{match_id}_{typ}"},
+                {"text": "❌ Verloren", "callback_data": f"lost_{match_id}_{typ}"},
+            ]]
+        }
+        import json
+        resp = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            json={"chat_id": TELEGRAM_CHAT_ID, "text": msg,
+                  "parse_mode": "HTML", "reply_markup": json.dumps(keyboard)},
+            timeout=10
+        )
+        return resp.status_code == 200
+    except Exception as e:
+        print(f"  [Buttons] Fehler: {e}")
+        return False
+
+def verarbeite_callback_query(callback_data: str, callback_query_id: str):
+    """Verarbeitet Button-Drücke (Gewonnen/Verloren)."""
+    try:
+        teile = callback_data.split("_", 2)
+        if len(teile) < 3:
+            return
+        aktion, match_id, typ = teile
+        gewonnen = aktion == "won"
+        key      = f"{match_id}_{typ}"
+        if key in _signal_tracker:
+            tracker_ausgewertet_markieren(key, gewonnen)
+            update_statistik(typ, gewonnen, _signal_tracker[key].get("quote"))
+            check_streak_alarm()
+            antwort = "✅ Als Gewonnen markiert!" if gewonnen else "❌ Als Verloren markiert!"
+        else:
+            antwort = "⚠️ Signal nicht gefunden"
+        # Callback bestätigen
+        requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery",
+            json={"callback_query_id": callback_query_id, "text": antwort},
+            timeout=5
+        )
+    except Exception as e:
+        print(f"  [Callback] Fehler: {e}")
+
+
+# ============================================================
+#  VERSCHLÜSSELUNG API KEYS
+# ============================================================
+
+def _xor_cipher(text: str, key: str = "BetlabLIVE2025") -> str:
+    """Einfache XOR-Verschlüsselung für API Keys."""
+    return "".join(chr(ord(c) ^ ord(key[i % len(key)])) for i, c in enumerate(text))
+
+def verschluessel_key(key: str) -> str:
+    import base64
+    return base64.b64encode(_xor_cipher(key).encode("latin-1")).decode()
+
+def entschluessel_key(enc: str) -> str:
+    import base64
+    return _xor_cipher(base64.b64decode(enc).decode("latin-1"))
+
+def api_keys_sichern():
+    """Speichert API Keys verschlüsselt in keys.enc."""
+    import json
+    keys = {
+        "ls_key":     verschluessel_key(API_KEY),
+        "odds_key":   verschluessel_key(ODDS_API_KEY or ""),
+        "panda_key":  verschluessel_key(PANDASCORE_API_KEY or ""),
+        "tg_token":   verschluessel_key(TELEGRAM_BOT_TOKEN),
+    }
+    try:
+        with open("keys.enc", "w") as f:
+            json.dump(keys, f)
+        print("  [Keys] Verschlüsselt gespeichert in keys.enc")
+    except Exception as e:
+        print(f"  [Keys] Fehler: {e}")
+
+# ============================================================
+#  MEHRSPRACHIGER BOT
+# ============================================================
+
+_user_sprache = {}  # user_id → "de" oder "en"
+
+TEXTE = {
+    "signal_ecken_unter": {
+        "de": "📐 <b>Ecken Signal!</b>",
+        "en": "📐 <b>Corners Signal!</b>",
+    },
+    "gewonnen": {"de": "✅ GEWONNEN", "en": "✅ WON"},
+    "verloren": {"de": "❌ VERLOREN", "en": "❌ LOST"},
+    "onboarding": {
+        "de": "🚀 <b>Willkommen bei BetlabLIVE!</b>",
+        "en": "🚀 <b>Welcome to BetlabLIVE!</b>",
+    },
+}
+
+def erkenne_sprache(text: str) -> str:
+    """Erkennt Sprache anhand häufiger Wörter."""
+    de_words = {"wie", "was", "der", "die", "das", "ich", "du", "ist", "hallo", "danke"}
+    en_words = {"the", "what", "how", "is", "are", "hello", "thanks", "hi", "can", "you"}
+    text_lower = text.lower()
+    de_count = sum(1 for w in de_words if w in text_lower.split())
+    en_count = sum(1 for w in en_words if w in text_lower.split())
+    return "en" if en_count > de_count else "de"
+
+def t(key: str, user_id: str = "") -> str:
+    """Gibt Text in der Sprache des Users zurück."""
+    sprache = _user_sprache.get(str(user_id), "de")
+    return TEXTE.get(key, {}).get(sprache, TEXTE.get(key, {}).get("de", key))
+
+# ============================================================
+#  TELEGRAM INLINE-MENÜ
+# ============================================================
+
+HAUPT_MENU = {
+    "inline_keyboard": [
+        [
+            {"text": "📊 Statistik", "callback_data": "menu_statistik"},
+            {"text": "🔴 Live Signale", "callback_data": "menu_live"},
+        ],
+        [
+            {"text": "📈 Chart", "callback_data": "menu_chart"},
+            {"text": "💰 Bankroll", "callback_data": "menu_bankroll"},
+        ],
+        [
+            {"text": "🔍 Auswertung", "callback_data": "menu_auswertung"},
+            {"text": "🏆 Rangliste", "callback_data": "menu_rangliste"},
+        ],
+        [
+            {"text": "🎯 Tipp abgeben", "callback_data": "menu_tipp_help"},
+            {"text": "📋 Whitelist", "callback_data": "menu_whitelist"},
+        ],
+        [
+            {"text": "🔎 Suche", "callback_data": "menu_suche_help"},
+            {"text": "📤 Export", "callback_data": "menu_export"},
+        ],
+        [
+            {"text": "🧩 Clustering", "callback_data": "menu_clustering"},
+            {"text": "⚙️ System", "callback_data": "menu_system"},
+        ],
+    ]
+}
+
+MENU_ANTWORTEN = {
+    "menu_statistik":    "/statistik",
+    "menu_live":         "/live",
+    "menu_chart":        "/chart",
+    "menu_bankroll":     "/bankroll",
+    "menu_auswertung":   "/auswertung",
+    "menu_rangliste":    "/rangliste",
+    "menu_clustering":   "/clustering",
+    "menu_export":       "/export",
+    "menu_tipp_help":    "📝 Tipp abgeben:\n/tipp [Spiel] [Bet] [Quote]\nBeispiel:\n/tipp ManCity Über2.5 1.85",
+    "menu_whitelist":    "📋 Whitelist Commands:\n/whitelist on/off\n/whitelist liga [Name]\n/whitelist team [Name]\n/whitelist reset",
+    "menu_suche_help":   "🔎 Signal-Archiv durchsuchen:\n/suche [Teamname]\n/suche [Liga]\nBeispiel:\n/suche Manchester",
+    "menu_system":       "⚙️ System Commands:\n/status – Bot-Status\n/api – API-Monitor\n/pause – Bot pausieren\n/kalibrierung – Konfidenz-Check\n/gegner – Liga-Analyse",
+}
+
+def sende_hauptmenu(chat_id: str):
+    import json
+    msg = ("🤖 <b>BetlabLIVE Menü</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+           "Wähle eine Option:")
+    requests.post(
+        f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+        json={"chat_id": chat_id, "text": msg,
+              "parse_mode": "HTML",
+              "reply_markup": json.dumps(HAUPT_MENU)},
+        timeout=10
+    )
+
+# ============================================================
+#  WETTMARKT-EFFIZIENZ
+# ============================================================
+
+def berechne_markt_effizienz() -> dict:
+    """
+    Misst wie oft der Value-Bot echte Fehler findet die aufgehen.
+    Vergleicht EV-Score mit tatsächlichem Ergebnis.
+    """
+    with _tracker_lock:
+        value_tipps = [s for s in _signal_tracker.values()
+                       if s.get("typ") in ("value", "arbitrage")
+                       and s.get("status") == "ausgewertet"
+                       and s.get("ev") is not None]
+    if len(value_tipps) < 10:
+        return {"ausreichend": False}
+    # Gruppiere nach EV-Kategorien
+    kategorien = {
+        "sehr_gut":    [s for s in value_tipps if s.get("ev", 0) >= 0.15],
+        "gut":         [s for s in value_tipps if 0.08 <= s.get("ev", 0) < 0.15],
+        "grenzwertig": [s for s in value_tipps if 0 <= s.get("ev", 0) < 0.08],
+    }
+    ergebnis = {}
+    for kat, tipps in kategorien.items():
+        if not tipps:
+            continue
+        gw   = sum(1 for t in tipps if t.get("gewonnen"))
+        ges  = len(tipps)
+        pct  = round(gw / ges * 100)
+        roi  = round(sum(
+            (t.get("quote", 1) - 1) if t.get("gewonnen") else -1
+            for t in tipps
+        ) / ges * 100, 1)
+        ergebnis[kat] = {"pct": pct, "roi": roi, "tipps": ges}
+    return {"ausreichend": True, "kategorien": ergebnis}
+
+# ============================================================
+#  GEGNERMODELL V2 – HOME/AWAY SPLIT
+# ============================================================
+
+def erstelle_team_profil_v2(team_id: str, team_name: str) -> dict:
+    """
+    Erweitertes Teamprofil mit Home/Away Split.
+    Erkennt Teams die Auswärts deutlich schwächer sind.
+    """
+    basis = erstelle_team_profil(team_id, team_name)
+    try:
+        params = {**LS_AUTH, "team_id": team_id, "number": 12}
+        resp   = api_get_with_retry(f"{LS_BASE}/matches/history.json", params)
+        spiele = resp.json().get("data", {}).get("match", []) or []
+        heim_siege  = auswarts_siege  = 0
+        heim_spiele = auswarts_spiele = 0
+        heim_tore   = auswarts_tore   = []
+        for m in spiele:
+            home_id = str((m.get("home") or {}).get("id", ""))
+            ist_heim = home_id == team_id
+            score    = (m.get("scores") or {}).get("score", "")
+            h, a     = parse_score(score)
+            winner   = str((m.get("winner") or {}).get("id", ""))
+            gewonnen = winner == team_id
+            tore     = h if ist_heim else a
+            if ist_heim:
+                heim_spiele += 1
+                heim_tore.append(tore)
+                if gewonnen:
+                    heim_siege += 1
+            else:
+                auswarts_spiele += 1
+                auswarts_tore.append(tore)
+                if gewonnen:
+                    auswarts_siege += 1
+        heim_rate  = round(heim_siege  / max(heim_spiele,  1) * 100)
+        ausw_rate  = round(auswarts_siege / max(auswarts_spiele, 1) * 100)
+        heim_tore_avg = round(sum(heim_tore) / max(len(heim_tore), 1), 1)
+        ausw_tore_avg = round(sum(auswarts_tore) / max(len(auswarts_tore), 1), 1)
+        heim_schwäche = ausw_rate < heim_rate - 25  # Auswärts deutlich schwächer
+        return {
+            **basis,
+            "heim_siegrate":  heim_rate,
+            "ausw_siegrate":  ausw_rate,
+            "heim_tore_avg":  heim_tore_avg,
+            "ausw_tore_avg":  ausw_tore_avg,
+            "reisemüdigkeit": heim_schwäche,
+            "split_text": (f"🏠 Heim: {heim_rate}% | ✈️ Auswärts: {ausw_rate}%"
+                           + (" ⚠️ Auswärtsschwäche!" if heim_schwäche else "")),
+        }
+    except Exception as e:
+        print(f"  [GegnermodellV2] Fehler: {e}")
+        return basis
+
+# ============================================================
+#  HEDGE-ALARM
+# ============================================================
+
+def bot_hedge_alarm():
+    """
+    Überwacht offene Tipps und empfiehlt Hedge wenn:
+    - Gegentipp-Quote stark gefallen ist (Gewinn sichern)
+    - Oder Signal-Quote stark gestiegen ist (Verlust minimieren)
+    """
+    print("[Hedge-Alarm-Bot] Gestartet | Hedging-Empfehlungen")
+    while True:
+        try:
+            offene = tracker_get_offene()
+            if not ODDS_API_KEY or not offene:
+                time.sleep(5 * 60)
+                continue
+            for key, sig in offene:
+                home      = sig.get("home", "")
+                away      = sig.get("away", "")
+                orig_q    = sig.get("quote")
+                if not orig_q or orig_q <= 1.0:
+                    continue
+                # Aktuelle Quoten holen
+                details   = get_quote_details(home, away)
+                aktuelle_q = details.get("avg_quote", 0)
+                if not aktuelle_q or aktuelle_q <= 1.0:
+                    continue
+                # Quote stark gestiegen → Tipp schlechter geworden (Gegentipp gesunken)
+                anstieg = round((aktuelle_q - orig_q) / orig_q * 100, 1)
+                if anstieg >= 25:
+                    gegentipp_q = round(1 / (1 - 1/aktuelle_q), 2) if aktuelle_q > 1 else 0
+                    einsatz     = EINSATZ
+                    hedge_eins  = round(einsatz / aktuelle_q * gegentipp_q, 2)
+                    gewinn_wenn = round(einsatz * orig_q - einsatz - hedge_eins, 2)
+                    msg = (f"🛡️ <b>Hedge-Empfehlung!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                           f"📌 {home} vs {away}\n"
+                           f"🎯 Dein Tipp: {sig.get('typ','?')}\n"
+                           f"━━━━━━━━━━━━━━━━━━━━\n"
+                           f"💶 Orig. Quote: <b>{orig_q}</b>\n"
+                           f"📈 Aktuelle Quote: <b>{aktuelle_q}</b> (+{anstieg}%)\n"
+                           f"🛡️ Hedge-Einsatz: <b>{hedge_eins}€</b> auf Gegentipp\n"
+                           f"✅ Gesicherter Gewinn: <b>+{gewinn_wenn}€</b>\n"
+                           f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
+                    send_telegram(msg)
+                    print(f"  [Hedge] ✅ {home} vs {away} | Quote +{anstieg}%")
+            bot_fehler_reset("Hedge-Alarm-Bot")
+        except Exception as e:
+            bot_fehler_melden("Hedge-Alarm-Bot", e)
+        time.sleep(10 * 60)
+
+# ============================================================
+#  QUOTENVERGLEICH-BOT (täglich)
+# ============================================================
+
+def bot_quotenvergleich():
+    """
+    Vergleicht täglich um 08:30 Uhr die besten Quoten über 10+ Bookmaker
+    für die Top-Spiele des Tages.
+    """
+    print("[Quotenvergleich-Bot] Gestartet | Täglich 08:30 Uhr")
+    gesendet_qv = set()
+    while True:
+        try:
+            now = de_now()
+            key = now.strftime("%Y-%m-%d")
+            if now.hour == 8 and now.minute >= 30 and now.minute < 35 and key not in gesendet_qv:
+                gesendet_qv.add(key)
+                if not ODDS_API_KEY:
+                    time.sleep(60)
+                    continue
+                url    = "https://api.the-odds-api.com/v4/sports/soccer/odds/"
+                params = {"apiKey": ODDS_API_KEY, "regions": "eu,uk",
+                          "markets": "h2h,totals", "oddsFormat": "decimal"}
+                resp   = requests.get(url, params=params, timeout=10)
+                if resp.status_code != 200:
+                    continue
+                top_werte = []
+                for game in resp.json()[:8]:
+                    home_t = game.get("home_team", "?")
+                    away_t = game.get("away_team", "?")
+                    # Beste Gesamtquote pro Spiel
+                    beste_bm   = None
+                    beste_q    = 0
+                    markt_name = ""
+                    for bm in game.get("bookmakers", []):
+                        for market in bm.get("markets", []):
+                            for outcome in market.get("outcomes", []):
+                                q = outcome.get("price", 0)
+                                if q > beste_q:
+                                    beste_q    = q
+                                    beste_bm   = bm.get("title", "?")
+                                    markt_name = f"{outcome.get('name','')} {outcome.get('point','')}"
+                    if beste_q >= 1.8:
+                        top_werte.append({
+                            "spiel": f"{home_t} vs {away_t}",
+                            "q": beste_q, "bm": beste_bm, "markt": markt_name
+                        })
+                if not top_werte:
+                    continue
+                top_werte.sort(key=lambda x: x["q"], reverse=True)
+                zeilen = "\n".join([
+                    f"⭐ {v['spiel']}\n   💶 {v['q']} @ {v['bm']} ({v['markt']})"
+                    for v in top_werte[:5]
+                ])
+                msg = (f"💹 <b>Beste Quoten heute – {now.strftime('%d.%m.%Y')}</b>\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n"
+                       f"{zeilen}\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n"
+                       f"🕐 {jetzt()} Uhr | Quelle: The Odds API")
+                send_telegram(msg)
+                print(f"  [Quotenvergleich] ✅ {len(top_werte)} Spiele gesendet")
+            bot_fehler_reset("Quotenvergleich-Bot")
+        except Exception as e:
+            bot_fehler_melden("Quotenvergleich-Bot", e)
+        time.sleep(60)
+
+# ============================================================
+#  BONUS-TRACKER
+# ============================================================
+
+BOOKIE_AKTIONEN = {
+    "Leonbet":    {"typ": "keine Steuer",  "info": "Keine Wettsteuer, bis zu 5% Cashback"},
+    "Bet365":     {"typ": "Freiwetten",    "info": "Regelmäßige Freiwetten für aktive Kunden"},
+    "Bwin":       {"typ": "Boost",         "info": "Quoten-Boosts auf ausgewählte Spiele"},
+    "Unibet":     {"typ": "Cashback",      "info": "Cashback auf erste verlorene Wette"},
+    "Betway":     {"typ": "Freiwette",     "info": "Freiwetten für Neukunden"},
+    "20Bet":      {"typ": "Reload",        "info": "Wöchentlicher Reload Bonus"},
+    "Pinnacle":   {"typ": "Keine Boni",    "info": "Kein Bonus aber beste Quoten weltweit"},
+    "Winamax":    {"typ": "Steuerfrei",    "info": "97% Quotenschlüssel, steuerfrei in DE"},
+    "PlayZilla":  {"typ": "Willkommen",    "info": "25-32 Ecken-Märkte, Willkommensbonus"},
+}
+
+BONUS_ERINNERUNG_TAG = 3  # Montag, Mittwoch, Freitag
+
+def bot_bonus_tracker():
+    """Erinnert an Bookmaker-Aktionen montags, mittwochs und freitags."""
+    print("[Bonus-Tracker] Gestartet | Erinnerungen Mo/Mi/Fr")
+    gesendet_bonus = set()
+    while True:
+        try:
+            now = de_now()
+            key = now.strftime("%Y-%m-%d")
+            # Montag=0, Mittwoch=2, Freitag=4
+            if now.weekday() in (0, 2, 4) and now.hour == 9 and now.minute < 5 and key not in gesendet_bonus:
+                gesendet_bonus.add(key)
+                zeilen = []
+                for bm, data in BOOKIE_AKTIONEN.items():
+                    zeilen.append(f"📌 <b>{bm}</b> [{data['typ']}]\n   {data['info']}")
+                msg = (f"🎁 <b>Bookmaker Aktionen – {now.strftime('%d.%m.%Y')}</b>\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n"
+                       + "\n".join(zeilen) +
+                       f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                       f"💡 Immer die besten Konditionen nutzen!\n"
+                       f"⚠️ 18+ | Verantwortungsvoll spielen")
+                send_telegram(msg)
+                print(f"  [Bonus-Tracker] ✅ Aktionen gesendet")
+            bot_fehler_reset("Bonus-Tracker")
+        except Exception as e:
+            bot_fehler_melden("Bonus-Tracker", e)
+        time.sleep(60)
+
+# ============================================================
+#  COMPOUND BANKROLL (Kelly-Simulation)
+# ============================================================
+
+def simuliere_compound_bankroll(startkapital: float = None,
+                                 wochen: int = 20) -> dict:
+    """
+    Simuliert Bankroll-Wachstum bei automatischem Reinvestieren (Compound).
+    Nutzt Kelly-Kriterium und historische Trefferquote.
+    """
+    if startkapital is None:
+        startkapital = bankroll_laden()
+    gw  = sum(statistik[t]["gewonnen"] for t in statistik)
+    vl  = sum(statistik[t]["verloren"] for t in statistik)
+    ges = gw + vl
+    if ges < 10:
+        return {"ausreichend": False}
+    p      = gw / ges
+    q_avg  = 1.85  # Durchschnittsquote
+    kelly  = max(0, (p * q_avg - 1) / (q_avg - 1))
+    kelly  = min(kelly, 0.05)  # Max 5% pro Wette
+    tipps_pro_woche = max(1, ges // max(1, (de_now().isocalendar()[1])))
+    bankroll = startkapital
+    verlauf  = [round(bankroll, 2)]
+    for woche in range(wochen):
+        for _ in range(tipps_pro_woche):
+            einsatz  = bankroll * kelly
+            gewonnen = (gw / ges) > 0.5
+            if gw / ges > 0.5:
+                bankroll += einsatz * (q_avg - 1)
+            else:
+                bankroll -= einsatz
+            bankroll = max(1, bankroll)
+        verlauf.append(round(bankroll, 2))
+    rendite = round((bankroll - startkapital) / startkapital * 100, 1)
+    return {
+        "ausreichend":   True,
+        "start":         round(startkapital, 2),
+        "end":           round(bankroll, 2),
+        "rendite_pct":   rendite,
+        "kelly_pct":     round(kelly * 100, 1),
+        "wochen":        wochen,
+        "verlauf":       verlauf,
+        "trefferquote":  round(p * 100, 1),
+    }
 
 # ============================================================
 #  KONFIDENZ-KALIBRIERUNG
@@ -6788,6 +8017,7 @@ def bot_nachschau():
 
     while True:
         try:
+            wende_konfidenz_decay_an()
             offene = tracker_get_offene()
             if offene:
                 print(f"[{jetzt()}] [Nachschau-Bot] {len(offene)} offene Signale prüfen")
@@ -6904,9 +8134,13 @@ def bot_watchdog():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v42")
+    print("  ⚽ FUSSBALL BOTS v45")
     print("  Value Bets · CS2 · Telegram Befehle · Bankroll · Multi-Signal · Persistenz")
     print("=" * 50 + "\n")
+
+    # Daten von GitHub wiederherstellen (falls Railway neu gestartet hat)
+    print("[Startup] Prüfe ob Daten von GitHub wiederhergestellt werden müssen...")
+    github_restore()
 
     statistik_laden()
     beobachtete_spiele_laden()
@@ -6915,6 +8149,8 @@ if __name__ == "__main__":
     whitelist_laden()
     admins_laden()
     bekannte_user_laden()
+    ab_test_laden()
+    bot_startup_alarm()
     manuell_tipps_laden()
     community_laden()
     dynamische_filter_laden()
@@ -6941,6 +8177,11 @@ if __name__ == "__main__":
         ("EarlyGoal-Bot",    bot_early_goal),
         ("RotkarteEcken-Bot",bot_rotkarte_ecken),
         ("Odds-Tracker",     bot_odds_tracker),
+        ("Anomalie-Bot",     bot_anomalie_erkennung),
+        ("Sharp-Money-Bot",  bot_sharp_money),
+        ("Hedge-Alarm-Bot",  bot_hedge_alarm),
+        ("Quotenvergleich",  bot_quotenvergleich),
+        ("Bonus-Tracker",    bot_bonus_tracker),
         ("HZ2-Tore-Bot",     bot_hz2_tore),
         ("CornerRush-Bot",    bot_corner_rush),
         ("TippDesTages-Bot",  bot_tipp_des_tages),
@@ -6961,6 +8202,10 @@ if __name__ == "__main__":
         threads.append(t)
         t.start()
         time.sleep(2)
+
+    # Health-Check starten (Port 8081)
+    health_thread = threading.Thread(target=bot_health_check_server, daemon=True, name="HealthCheck")
+    health_thread.start()
 
     # Dashboard starten (Port 8080)
     dashboard = threading.Thread(target=bot_web_dashboard, daemon=True, name="Dashboard")
