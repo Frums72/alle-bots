@@ -1,4 +1,5 @@
 # v48 - Claude Budget + Gruppen-Bot Polling-Fix (kein Token-Konflikt)
+import os
 import requests
 import re
 import time
@@ -8,11 +9,11 @@ from datetime import datetime, timezone, timedelta
 # ============================================================
 #  KONFIGURATION
 # ============================================================
-API_KEY            = "OHvYYqv2LTNBi8qU"
-API_SECRET         = "G8lerfJK8OJ8TqMH7iG6Jb8u4V6n3wiK"
+API_KEY            = os.environ.get("LS_API_KEY",     "OHvYYqv2LTNBi8qU")
+API_SECRET         = os.environ.get("LS_API_SECRET",  "G8lerfJK8OJ8TqMH7iG6Jb8u4V6n3wiK")
 
-TELEGRAM_BOT_TOKEN = "8706066107:AAFAQhT3k0jhTZ7ep-VWHPlskOKJVvsfucQ"
-TELEGRAM_CHAT_ID   = "7272001004"
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8706066107:AAHHVuC-M_gz-sr5sbm-7zkb7QGygfoRHoM")
+TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "7272001004")
 
 DISCORD_WEBHOOK_ECKEN     = "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4"
 DISCORD_WEBHOOK_KARTEN    = "https://discord.com/api/webhooks/1501250542788280451/BZ6r8Y2SEDPgya9skt8Gyzbsoetvq0yPY6pWG5HrUzK9moeL-RXYWAiEwWuIlEy7GBfM"
@@ -26,16 +27,16 @@ DISCORD_WEBHOOK_ROTKARTE  = "https://discord.com/api/webhooks/150125226663031616
 DISCORD_WEBHOOK_HZ1TORE  = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
 DISCORD_WEBHOOK_VZTORE   = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
 
-ODDS_API_KEY       = "866948de5d6c34ca51faf6bd77e0bb2a"
-PANDASCORE_API_KEY = "qeVqpzDJKy5rt6Ky7vmWCdqEkkUt9j53togKOK9gzeIvGNCEbMg"  # pandascore.co
-FOOTBALLDATA_KEY   = "e17f09662062462b850a73f857e1f974"  # football-data.org
+ODDS_API_KEY       = os.environ.get("ODDS_API_KEY", "866948de5d6c34ca51faf6bd77e0bb2a")
+PANDASCORE_API_KEY = os.environ.get("PANDASCORE_KEY", "qeVqpzDJKy5rt6Ky7vmWCdqEkkUt9j53togKOK9gzeIvGNCEbMg")
+FOOTBALLDATA_KEY   = os.environ.get("FOOTBALLDATA_KEY", "e17f09662062462b850a73f857e1f974")
 
 # Value Bet Finder
 VALUE_BET_MIN_QUOTE   = 1.6   # Mindestquote damit ein Value Bet interessant ist
 VALUE_BET_MIN_VALUE   = 0.15  # Mindest-Edge (15%) damit Signal gesendet wird
 DISCORD_WEBHOOK_VALUE = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"  # #betlab-value-bets
 DISCORD_WEBHOOK_CS2   = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"  # #betlab-cs2
-ANTHROPIC_API_KEY  = ""  # claude.ai → API Keys (leer = deaktiviert)
+ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_KEY", "")
 CLAUDE_MAX_PRO_TAG = 3    # Maximal 3 Claude-Calls pro Tag
 
 # ── Claude Tages-Budget ──────────────────────────────────────
@@ -151,7 +152,7 @@ BEOBACHTETE_DATEI    = "beobachtete_spiele.json"
 BOT_PAUSIERT         = False   # Wird durch /pause Befehl gesetzt
 
 # ── GitHub Backup ────────────────────────────────────────────
-GITHUB_TOKEN         = "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"
+GITHUB_TOKEN         = os.environ.get("GITHUB_TOKEN", "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")
 GITHUB_REPO          = "Frums72/alle-bots"
 GITHUB_BACKUP_UHRZEIT = 2  # Uhrzeit für tägliches Backup (02:00)
 
