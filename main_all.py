@@ -3557,12 +3557,14 @@ def bot_telegram_befehle():
             updates = resp.json().get("result", [])
             for update in updates:
                 letzter_update_id = update["update_id"]
-                msg_obj  = update.get("message", {})
+                msg_obj  = update.get("message", {}) or {}
                 chat_id  = str(msg_obj.get("chat", {}).get("id", ""))
+                user_id  = str(msg_obj.get("from", {}).get("id", ""))
+                username = msg_obj.get("from", {}).get("first_name", "Anonym")
                 text     = msg_obj.get("text", "").strip()
 
                 # Sprache erkennen + speichern
-                if text and len(text) > 5:
+                if text and len(text) > 5 and user_id:
                     _user_sprache[user_id] = erkenne_sprache(text)
 
                 # Menu Callback verarbeiten
