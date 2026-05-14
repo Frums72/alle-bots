@@ -1,4 +1,4 @@
-# v47 - Triple-Verifikation in ALLEN Auswertungs-Funktionen
+# v48 - Claude Budget: Max 3x/Tag, nur Top-Ligen, Multi-Modell deaktiviert
 import requests
 import re
 import time
@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 API_KEY            = "OHvYYqv2LTNBi8qU"
 API_SECRET         = "G8lerfJK8OJ8TqMH7iG6Jb8u4V6n3wiK"
 
-TELEGRAM_BOT_TOKEN = "8706066107:AAFYwJKzXzC4Zz4HFNCuwrXbyAYtDHFNfds"
+TELEGRAM_BOT_TOKEN = "8706066107:AAFAQhT3k0jhTZ7ep-VWHPlskOKJVvsfucQ"
 TELEGRAM_CHAT_ID   = "7272001004"
 
 DISCORD_WEBHOOK_ECKEN     = "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4"
@@ -19,12 +19,12 @@ DISCORD_WEBHOOK_KARTEN    = "https://discord.com/api/webhooks/150125054278828045
 DISCORD_WEBHOOK_TORWART   = "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1"
 DISCORD_WEBHOOK_BILANZ    = "https://discord.com/api/webhooks/1501251926564667564/fdBE4jOLislDfwpMs2cUURm_4_YzfATKWFmaOjRNEXulHCJu1DB-lUBLqLmm73l-HQ4v"
 # Neue Webhooks – bitte in Discord erstellen und hier eintragen:
-DISCORD_WEBHOOK_DRUCK     = "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1"
-DISCORD_WEBHOOK_COMEBACK  = "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1"
-DISCORD_WEBHOOK_TORFLUT   = "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1"
-DISCORD_WEBHOOK_ROTKARTE  = "https://discord.com/api/webhooks/1501250542788280451/BZ6r8Y2SEDPgya9skt8Gyzbsoetvq0yPY6pWG5HrUzK9moeL-RXYWAiEwWuIlEy7GBfM"
-DISCORD_WEBHOOK_HZ1TORE  = "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1"
-DISCORD_WEBHOOK_VZTORE   = "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1"
+DISCORD_WEBHOOK_DRUCK     = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
+DISCORD_WEBHOOK_COMEBACK  = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
+DISCORD_WEBHOOK_TORFLUT   = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
+DISCORD_WEBHOOK_ROTKARTE  = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
+DISCORD_WEBHOOK_HZ1TORE  = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
+DISCORD_WEBHOOK_VZTORE   = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"
 
 ODDS_API_KEY       = "866948de5d6c34ca51faf6bd77e0bb2a"
 PANDASCORE_API_KEY = "qeVqpzDJKy5rt6Ky7vmWCdqEkkUt9j53togKOK9gzeIvGNCEbMg"  # pandascore.co
@@ -36,6 +36,44 @@ VALUE_BET_MIN_VALUE   = 0.15  # Mindest-Edge (15%) damit Signal gesendet wird
 DISCORD_WEBHOOK_VALUE = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"  # #betlab-value-bets
 DISCORD_WEBHOOK_CS2   = "https://discord.com/api/webhooks/1504397240741924966/62oifCRnXt73yO2u4qucENYuVLAgJf7rIgRDhaTVVG8y1j_nuVc4eyyUFakqI-UGZ0tb"  # #betlab-cs2
 ANTHROPIC_API_KEY  = ""  # claude.ai → API Keys (leer = deaktiviert)
+CLAUDE_MAX_PRO_TAG = 3    # Maximal 3 Claude-Calls pro Tag
+
+# ── Claude Tages-Budget ──────────────────────────────────────
+_claude_calls_heute   = 0
+_claude_calls_datum   = ""
+
+TOP_LIGEN_CLAUDE = {
+    "Premier League", "Bundesliga", "La Liga", "Serie A",
+    "Ligue 1", "Champions League", "Europa League",
+    "Eredivisie", "Primeira Liga", "World Cup",
+    "European Championship", "DFB-Pokal", "FA Cup",
+    "Copa del Rey", "Coppa Italia",
+}
+
+def claude_budget_verfuegbar(liga: str = "") -> bool:
+    """
+    Gibt True zurück wenn:
+    - Noch nicht 3 Claude-Calls heute verbraucht
+    - Liga ist eine Top-Liga (falls angegeben)
+    """
+    global _claude_calls_heute, _claude_calls_datum
+    heute = de_now().strftime("%Y-%m-%d")
+    if _claude_calls_datum != heute:
+        _claude_calls_heute  = 0
+        _claude_calls_datum  = heute
+    if _claude_calls_heute >= CLAUDE_MAX_PRO_TAG:
+        print(f"  [Claude] Tages-Limit erreicht ({CLAUDE_MAX_PRO_TAG}/Tag) – Fallback")
+        return False
+    if liga and liga not in TOP_LIGEN_CLAUDE:
+        print(f"  [Claude] {liga} ist keine Top-Liga – Fallback")
+        return False
+    return True
+
+def claude_budget_erhoehen():
+    """Zählt einen Claude-Call."""
+    global _claude_calls_heute
+    _claude_calls_heute += 1
+    print(f"  [Claude] Call {_claude_calls_heute}/{CLAUDE_MAX_PRO_TAG} heute")
 EINSATZ            = 10.0
 
 # Pre-Match Bot
@@ -1107,12 +1145,15 @@ TYP_NAMEN = {
     "xg": "xG Signal", "value": "Value Bet",
 }
 
-def claude_tipp_review(home: str, away: str, typ: str, analyse: str) -> tuple:
+def claude_tipp_review(home: str, away: str, typ: str, analyse: str,
+                        liga: str = "") -> tuple:
     """
-    Fragt Claude ob der Tipp Sinn ergibt + schreibt 2-3 Sätze Begründung.
-    Gibt (empfohlen: bool, begruendung: str) zurück.
+    Fragt Claude ob der Tipp Sinn ergibt.
+    Nur bei Top-Ligen und max. 3x pro Tag.
     """
     if not ANTHROPIC_API_KEY or not ANTHROPIC_API_KEY.strip():
+        return True, ""
+    if not claude_budget_verfuegbar(liga):
         return True, ""
     try:
         typ_name = TYP_NAMEN.get(typ, typ)
@@ -1145,6 +1186,7 @@ def claude_tipp_review(home: str, away: str, typ: str, analyse: str) -> tuple:
         text        = resp.json().get("content", [{}])[0].get("text", "").strip()
         empfohlen   = text.startswith("EMPFOHLEN")
         begruendung = text.replace("EMPFOHLEN:", "").replace("SKEPTISCH:", "").strip()
+        claude_budget_erhoehen()
         return empfohlen, begruendung
     except Exception as e:
         print(f"  [Claude] Review Fehler: {e}")
@@ -1168,6 +1210,8 @@ def claude_live_begruendung(home: str, away: str, typ: str,
         "karten":   f"Bereits {stats.get('corners_home',0)} Karten in Minute {minute} – der Schiedsrichter greift früh ein.",
     }
     if not ANTHROPIC_API_KEY or not ANTHROPIC_API_KEY.strip():
+        return fallbacks.get(typ, "")
+    if not claude_budget_verfuegbar(home):  # home als Liga-Proxy ignoriert → immer Fallback für Live
         return fallbacks.get(typ, "")
     try:
         stat_text = (f"Schüsse: {stats.get('shots_on_target_home',0)}|{stats.get('shots_on_target_away',0)} | "
@@ -3725,6 +3769,24 @@ def bot_telegram_befehle():
                     requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                                   json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
 
+                elif text == "/claude":
+                    heute_str = de_now().strftime("%Y-%m-%d")
+                    if _claude_calls_datum != heute_str:
+                        calls = 0
+                    else:
+                        calls = _claude_calls_heute
+                    rest  = max(0, CLAUDE_MAX_PRO_TAG - calls)
+                    antwort = (f"🤖 <b>Claude API Budget</b>\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n"
+                               f"📊 Heute genutzt: <b>{calls}/{CLAUDE_MAX_PRO_TAG}</b>\n"
+                               f"✅ Noch verfügbar: <b>{rest} Calls</b>\n"
+                               f"🏆 Top-Ligen: {len(TOP_LIGEN_CLAUDE)}\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n"
+                               f"{'✅ Budget verfügbar' if rest > 0 else '❌ Limit erreicht – Fallback aktiv'}\n"
+                               f"🕐 {jetzt()} Uhr")
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
                 elif text == "/kalibrierung":
                     kal = kalibriere_konfidenz()
                     if kal:
@@ -3931,12 +3993,11 @@ def filtere_top_spiele(fixtures: list) -> list:
 def claude_prematch_analyse(home: str, away: str, liga: str, anstoß: str,
                              bereits_tipps: list = None) -> dict | None:
     """
-    Fragt Claude nach Pre-Match Analyse mit echter Abwechslung.
-    Gibt {"tipp": str, "analyse": str, "konfidenz": int} zurück.
+    Pre-Match Analyse via Claude – max. 3x pro Tag, nur Top-Ligen.
     """
     bereits = ", ".join(bereits_tipps) if bereits_tipps else "keine"
-    if not ANTHROPIC_API_KEY or ANTHROPIC_API_KEY.startswith("ANTHROPIC"):
-        # Fallback ohne API: abwechselnde Tipps
+    if not ANTHROPIC_API_KEY or not ANTHROPIC_API_KEY.strip() or        not claude_budget_verfuegbar(liga):
+        # Fallback ohne API oder Budget: abwechselnde Tipps
         import random
         fallbacks = [
             {"tipp": "Über 2.5 Tore",    "analyse": "Beide Teams sind offensivstark und spielen aktiv nach vorne.", "konfidenz": 6},
@@ -5595,9 +5656,11 @@ def sentiment_emoji(s):
 #  MULTI-MODELL VOTING
 # ============================================================
 
-def multi_modell_vote(home, away, typ, analyse, score, minute):
+def multi_modell_vote(home, away, typ, analyse, score, minute, liga: str = ""):
     if not ANTHROPIC_API_KEY or not ANTHROPIC_API_KEY.strip():
         return {"empfohlen": True, "votes": 2, "begruendung": ""}
+    # Multi-Modell nie für Live-Signale – zu viele Calls
+    return {"empfohlen": True, "votes": 2, "begruendung": ""}
     typ_name    = TYP_NAMEN.get(typ, typ)
     perspektiven = [
         ("Statistik-Analyst", f"Nur Zahlen: Daten: {analyse}. Ist '{typ_name}' bei {home} vs {away} (Stand {score}, Min.{minute}) statistisch ok?"),
@@ -8320,7 +8383,7 @@ def bot_watchdog():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v47")
+    print("  ⚽ FUSSBALL BOTS v48")
     print("  Value Bets · CS2 · Telegram Befehle · Bankroll · Multi-Signal · Persistenz")
     print("=" * 50 + "\n")
 
