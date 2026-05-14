@@ -1,4 +1,4 @@
-# v35 - Value Bets · CS2 PreMatch Filter · Auswertungs-Fix · Tagesbericht Embed
+# v40 - EarlyGoal + RotkarteEcken + PDF + Chart + Whitelist + /tipp + OddsTracker
 import requests
 import re
 import time
@@ -157,6 +157,7 @@ notified_hz1tore    = set()
 notified_vztore     = set()
 beobachtete_spiele  = {}
 auswertung_done     = set()
+NOTIFIED_DATEI      = "notified_sets.json"
 
 # ── Doppel-Tipp Schutz ──────────────────────────────────────
 bereits_getippt  = {}   # match_id → bot_name (verhindert doppelte Tipps)
@@ -272,6 +273,58 @@ def signal_log_speichern():
             json.dump(signal_log[-500:], f, indent=2)  # max. 500 Einträge
     except Exception as e:
         print(f"  [Signal-Log] Speicherfehler: {e}")
+
+def notified_sets_speichern():
+    """Speichert alle notified Sets – verhindert Doppel-Signale nach Neustart."""
+    import json
+    try:
+        data = {
+            "ecken": list(notified_ecken), "ecken_over": list(notified_ecken_over),
+            "karten": list(notified_karten), "torwart": list(notified_torwart),
+            "druck": list(notified_druck), "comeback": list(notified_comeback),
+            "torflut": list(notified_torflut), "rotkarte": list(notified_rotkarte),
+            "hz1tore": list(notified_hz1tore), "vztore": list(notified_vztore),
+            "auswertung_done": list(auswertung_done),
+            "gespeichert": de_now().strftime("%Y-%m-%d %H:%M"),
+        }
+        with open(NOTIFIED_DATEI, "w") as f:
+            json.dump(data, f)
+    except Exception as e:
+        print(f"  [Notified] Speicherfehler: {e}")
+
+def notified_sets_laden():
+    """Lädt notified Sets beim Start – kein Doppel-Signal nach Neustart."""
+    import json, os
+    global notified_ecken, notified_ecken_over, notified_karten, notified_torwart
+    global notified_druck, notified_comeback, notified_torflut, notified_rotkarte
+    global notified_hz1tore, notified_vztore, auswertung_done
+    if not os.path.exists(NOTIFIED_DATEI):
+        return
+    try:
+        with open(NOTIFIED_DATEI) as f:
+            data = json.load(f)
+        # Nur heutige Sets laden
+        if data.get("gespeichert", "")[:10] != de_now().strftime("%Y-%m-%d"):
+            print(f"  [Notified] Sets von gestern – nicht geladen")
+            return
+        notified_ecken      = set(data.get("ecken", []))
+        notified_ecken_over = set(data.get("ecken_over", []))
+        notified_karten     = set(data.get("karten", []))
+        notified_torwart    = set(data.get("torwart", []))
+        notified_druck      = set(data.get("druck", []))
+        notified_comeback   = set(data.get("comeback", []))
+        notified_torflut    = set(data.get("torflut", []))
+        notified_rotkarte   = set(data.get("rotkarte", []))
+        notified_hz1tore    = set(data.get("hz1tore", []))
+        notified_vztore     = set(data.get("vztore", []))
+        auswertung_done     = set(data.get("auswertung_done", []))
+        total = sum(len(s) for s in [notified_ecken, notified_ecken_over, notified_karten,
+            notified_torwart, notified_druck, notified_comeback, notified_torflut,
+            notified_rotkarte, notified_hz1tore, notified_vztore])
+        print(f"  [Notified] {total} Match-IDs geladen – kein Doppel-Signal nach Neustart ✅")
+    except Exception as e:
+        print(f"  [Notified] Ladefehler: {e}")
+
 # ============================================================
 #  HILFSFUNKTIONEN
 # ============================================================
@@ -290,7 +343,7 @@ def parse_score(score_str):
     try:
         parts = score_str.replace(" ", "").split("-")
         return int(parts[0]), int(parts[1])
-    except:
+    except Exception:
         return 0, 0
 
 def html_zu_discord(text):
@@ -533,7 +586,7 @@ def get_quote(home, away, typ):
                                 if q > 1.0 and (beste_quote is None or q > beste_quote):
                                     beste_quote = q
         return beste_quote
-    except:
+    except Exception:
         return None
 
 def kelly_einsatz(quote: float, typ: str) -> float:
@@ -566,13 +619,108 @@ def get_wetter(country: str) -> dict:
         _wetter_cache[country] = result
         print(f"  [Wetter] {country}: {wind} km/h Wind, {regen} mm Regen")
         return result
-    except:
+    except Exception:
         return {"wind": 0, "regen": 0, "ts": now}
 
 def schlechtes_wetter(country: str) -> bool:
     """Gibt True zurück wenn das Wetter die Spielbedingungen beeinflusst."""
     w = get_wetter(country)
     return w["wind"] >= WETTER_WIND_GRENZE or w["regen"] >= WETTER_REGEN_GRENZE
+
+def wetter_analyse(country: str) -> dict:
+    """
+    Analysiert Wetter und gibt Tipp-Empfehlungen zurück.
+    Starkregen → weniger Ecken, weniger Tore, mehr Zweikämpfe
+    Sturm      → Flanken schwieriger, weniger Ecken
+    Hitze      → Tempo sinkt in 2. HZ, weniger Tore ab Min 60
+    """
+    w = get_wetter(country)
+    wind  = w.get("wind", 0)
+    regen = w.get("regen", 0)
+    tipps = []
+    info  = []
+    if regen >= 5:
+        tipps.extend(["unter_ecken", "unter_tore"])
+        info.append(f"🌧️ Starkregen ({regen}mm) → schwieriger Ball, weniger Ecken/Tore")
+    elif regen >= 2:
+        tipps.append("unter_ecken")
+        info.append(f"🌦️ Regen ({regen}mm) → leicht reduzierte Ecken-Anzahl")
+    if wind >= 40:
+        tipps.extend(["unter_ecken", "mehr_karten"])
+        info.append(f"💨 Sturm ({wind}km/h) → Flanken kaum möglich, Zweikämpfe härter")
+    elif wind >= 30:
+        tipps.append("unter_ecken")
+        info.append(f"🌬️ Wind ({wind}km/h) → Flankenspiel erschwert")
+    return {"tipps": tipps, "info": info, "wind": wind, "regen": regen,
+            "schlecht": len(tipps) > 0}
+
+def bot_wetter_tipp():
+    """
+    Sendet Wetter-basierte Wett-Tipps vor Top-Liga Spielen.
+    Z.B. bei Sturm in England → Unter Ecken Premier League heute
+    """
+    print("[Wetter-Bot] Gestartet | Wetterbasierte Tipps")
+    gesendet_wetter = set()
+    while True:
+        try:
+            now   = de_now()
+            datum = now.strftime("%Y-%m-%d")
+            fixtures = ls_get_fixtures(datum)
+            top = filtere_top_spiele(fixtures)
+            laender = {}
+            for f in top:
+                land = (f.get("country") or {}).get("name", "")
+                liga = f.get("competition", {}).get("name", "?")
+                if land and land not in laender:
+                    laender[land] = liga
+            for land, liga in laender.items():
+                key = f"{datum}_{land}"
+                if key in gesendet_wetter:
+                    continue
+                analyse = wetter_analyse(land)
+                if not analyse["schlecht"]:
+                    continue
+                gesendet_wetter.add(key)
+                tipps_text = []
+                for tipp in analyse["tipps"]:
+                    if tipp == "unter_ecken":
+                        tipps_text.append("📐 Unter Ecken")
+                    elif tipp == "unter_tore":
+                        tipps_text.append("⚽ Unter Tore")
+                    elif tipp == "mehr_karten":
+                        tipps_text.append("🃏 Über Karten")
+                if not tipps_text:
+                    continue
+                info_text = "\n".join(analyse["info"])
+                msg = (f"🌦️ <b>Wetter-Tipp!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                       f"🌍 Land: <b>{land}</b>\n"
+                       f"🏆 Liga: {liga}\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n"
+                       f"{info_text}\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n"
+                       f"🎯 Wetter-Tipps für heute:\n"
+                       f"{'  '.join(tipps_text)}\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
+                send_telegram(msg)
+                embed = {
+                    "title": f"🌦️ Wetter-Tipp – {land}",
+                    "color": 0x3498DB,
+                    "fields": [
+                        {"name": "🌍 Land",       "value": land,                    "inline": True},
+                        {"name": "🏆 Liga",       "value": liga,                    "inline": True},
+                        {"name": "💨 Wind",       "value": f"{analyse['wind']} km/h","inline": True},
+                        {"name": "🌧️ Regen",     "value": f"{analyse['regen']} mm", "inline": True},
+                        {"name": "ℹ️ Analyse",    "value": info_text,               "inline": False},
+                        {"name": "🎯 Tipps",      "value": "  ".join(tipps_text),   "inline": False},
+                    ],
+                    "footer": {"text": f"Wetter-Bot • {heute()} {jetzt()}"},
+                }
+                send_discord_embed(DISCORD_WEBHOOK_DRUCK, embed)
+                print(f"  [Wetter-Bot] ✅ {land}: {', '.join(tipps_text)}")
+            bot_fehler_reset("Wetter-Bot")
+        except Exception as e:
+            bot_fehler_melden("Wetter-Bot", e)
+        time.sleep(30 * 60)  # Alle 30 Minuten
 
 # ── Liga-Filter ──────────────────────────────────────────────
 def liga_erlaubt(liga: str) -> bool:
@@ -611,7 +759,7 @@ def get_team_ecken_avg(team_id: str) -> float | None:
                 ecken  = stats["corners_home"] + stats["corners_away"]
                 if ecken > 0:
                     ecken_liste.append(ecken)
-            except:
+            except Exception:
                 continue
         if len(ecken_liste) >= 3:
             avg = round(sum(ecken_liste) / len(ecken_liste), 1)
@@ -761,7 +909,7 @@ def get_quote_details(home, away):
             "avg_quote":        round(sum(alle_quotes) / len(alle_quotes), 2),
             "bookmaker_anzahl": len(alle_quotes),
         }
-    except:
+    except Exception:
         return {"quote": None, "avg_quote": None, "bookmaker_anzahl": 0}
 
 
@@ -804,7 +952,7 @@ def get_odds_vergleich(home: str, away: str) -> str:
         top4   = sorted(beste.items(), key=lambda x: x[1], reverse=True)[:4]
         zeilen = " | ".join([f"{bm}: <b>{q}</b>" for bm, q in top4])
         return f"\n📊 Quotes: {zeilen}"
-    except:
+    except Exception:
         return ""
 
 # ── Gegentipp-Schutz ────────────────────────────────────────
@@ -832,7 +980,7 @@ def get_team_saisonform(team_id):
             if h + a > 0 or score:
                 tore.append(h + a)
         return round(sum(tore) / len(tore), 2) if len(tore) >= 3 else None
-    except:
+    except Exception:
         return None
 
 def form_stimmt_ueberein(home_id, away_id, h2h_avg, richtung):
@@ -867,7 +1015,7 @@ def clv_auswerten(spiel):
         elif diff < -CLV_WARNSCHWELLE:
             return f"\n📊 CLV: Quote gesunken: {einstieg} -> Schluss {schluss} ({round(diff*100,1)}%)"
         return f"\n📊 CLV: Quote stabil: {einstieg} -> Schluss {schluss}"
-    except:
+    except Exception:
         return ""
 
 # ── Standings-Analyse ────────────────────────────────────────
@@ -883,7 +1031,7 @@ def get_standings(league_id: str) -> list:
         standings = resp.json().get("data", {}).get("standings", []) or []
         _standings_cache[lid] = {"data": standings, "ts": now}
         return standings
-    except:
+    except Exception:
         return []
 
 def get_team_standing(league_id: str, team_id: str) -> dict | None:
@@ -935,31 +1083,33 @@ def baue_analyse_text(home: str, away: str, home_id: str, away_id: str,
     return "\n".join(zeilen)
 
 # ── Claude Tipp-Reviewer ─────────────────────────────────────
+TYP_NAMEN = {
+    "ecken": "Ecken Unter", "ecken_over": "Ecken Über",
+    "karten": "Karten Über 5", "torwart": "Mind. 1 Tor",
+    "druck": "Druck/Ecken Dominanz", "comeback": "Beide Teams treffen",
+    "torflut": "Torreich", "rotkarte": "Überzahl Tor",
+    "hz1tore": "HZ1 Tore", "vztore": "Vollzeit Tore",
+    "xg": "xG Signal", "value": "Value Bet",
+}
+
 def claude_tipp_review(home: str, away: str, typ: str, analyse: str) -> tuple:
     """
-    Fragt Claude ob der Tipp Sinn ergibt.
+    Fragt Claude ob der Tipp Sinn ergibt + schreibt 2-3 Sätze Begründung.
     Gibt (empfohlen: bool, begruendung: str) zurück.
     """
-    if not ANTHROPIC_API_KEY or ANTHROPIC_API_KEY.startswith("ANTHROPIC"):
+    if not ANTHROPIC_API_KEY or not ANTHROPIC_API_KEY.strip():
         return True, ""
     try:
-        typ_namen = {
-            "ecken": "Ecken Unter", "ecken_over": "Ecken Über",
-            "karten": "Karten Über 5", "torwart": "Mind. 1 Tor",
-            "druck": "Druck/Ecken Dominanz", "comeback": "Beide Teams treffen",
-            "torflut": "Torreich", "rotkarte": "Überzahl Tor",
-            "hz1tore": "HZ1 Tore", "vztore": "Vollzeit Tore",
-        }.get(typ, typ)
+        typ_name = TYP_NAMEN.get(typ, typ)
         prompt = (
-            f"Du bist ein erfahrener Sportwetten-Analyst. "
-            f"Bewerte diesen Tipp in max. 1 Satz auf Deutsch:\n\n"
+            f"Du bist ein erfahrener Sportwetten-Analyst. Analysiere auf Deutsch:\n\n"
             f"Spiel: {home} vs {away}\n"
-            f"Tipp: {typ_namen}\n"
-            f"Daten:\n{analyse}\n\n"
-            f"Antworte NUR so:\n"
-            f"EMPFOHLEN: [1 Satz Begründung]\n"
+            f"Tipp: {typ_name}\n"
+            f"Live-Daten:\n{analyse}\n\n"
+            f"Antworte NUR in diesem Format:\n"
+            f"EMPFOHLEN: [2-3 präzise Sätze warum dieser Tipp Sinn ergibt – spezifisch auf die Daten bezogen]\n"
             f"oder\n"
-            f"SKEPTISCH: [1 Satz Begründung]"
+            f"SKEPTISCH: [2-3 Sätze warum du skeptisch bist]"
         )
         resp = requests.post(
             "https://api.anthropic.com/v1/messages",
@@ -970,20 +1120,60 @@ def claude_tipp_review(home: str, away: str, typ: str, analyse: str) -> tuple:
             },
             json={
                 "model": "claude-sonnet-4-20250514",
-                "max_tokens": 120,
+                "max_tokens": 200,
                 "messages": [{"role": "user", "content": prompt}]
             },
             timeout=15
         )
         if resp.status_code != 200:
             return True, ""
-        text       = resp.json().get("content", [{}])[0].get("text", "").strip()
-        empfohlen  = text.startswith("EMPFOHLEN")
+        text        = resp.json().get("content", [{}])[0].get("text", "").strip()
+        empfohlen   = text.startswith("EMPFOHLEN")
         begruendung = text.replace("EMPFOHLEN:", "").replace("SKEPTISCH:", "").strip()
         return empfohlen, begruendung
     except Exception as e:
         print(f"  [Claude] Review Fehler: {e}")
         return True, ""
+
+def claude_live_begruendung(home: str, away: str, typ: str,
+                             stats: dict, score: str, minute: int) -> str:
+    """
+    Schreibt für JEDEN Bot-Typ eine spezifische Begründung basierend auf Live-Daten.
+    Wird auch ohne ANTHROPIC_API_KEY mit Fallback-Texten verwendet.
+    """
+    typ_name = TYP_NAMEN.get(typ, typ)
+    # Fallback ohne API – spezifische Texte je nach Typ
+    fallbacks = {
+        "druck":    f"{home} dominiert mit {stats.get('corners_home',0)} Ecken klar und erzeugt konstanten Druck auf das Tor.",
+        "comeback": f"Trotz Rückstand dominiert das Team die Statistiken – Ausgleich ist wahrscheinlich.",
+        "torwart":  f"Trotz {stats.get('shots_on_target_home',0)+stats.get('shots_on_target_away',0)} Schüssen aufs Tor ist das Spiel noch torlos – das erste Tor ist überfällig.",
+        "torflut":  f"Bereits {score} nach der Halbzeit – beide Teams spielen offensiv und ein weiteres Tor ist sehr wahrscheinlich.",
+        "rotkarte": f"Die numerische Überzahl verschafft dem Team einen klaren Vorteil für die verbleibenden Minuten.",
+        "ecken":    f"Nur {stats.get('corners_home',0)+stats.get('corners_away',0)} Ecken in der ersten Hälfte – ein ruhiges Spiel deutet auf wenige weitere Ecken hin.",
+        "karten":   f"Bereits {stats.get('corners_home',0)} Karten in Minute {minute} – der Schiedsrichter greift früh ein.",
+    }
+    if not ANTHROPIC_API_KEY or not ANTHROPIC_API_KEY.strip():
+        return fallbacks.get(typ, "")
+    try:
+        stat_text = (f"Schüsse: {stats.get('shots_on_target_home',0)}|{stats.get('shots_on_target_away',0)} | "
+                     f"Ecken: {stats.get('corners_home',0)}|{stats.get('corners_away',0)} | "
+                     f"Ballbesitz: {stats.get('possession_home','?')}%|{stats.get('possession_away','?')}%")
+        prompt = (f"Sportwetten-Analyst. 2 präzise Sätze auf Deutsch warum '{typ_name}' bei {home} vs {away} "
+                  f"(Stand {score}, Min. {minute}) Sinn ergibt. Daten: {stat_text}. Nur die Begründung, keine Einleitung.")
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"Content-Type": "application/json",
+                     "x-api-key": ANTHROPIC_API_KEY,
+                     "anthropic-version": "2023-06-01"},
+            json={"model": "claude-sonnet-4-20250514", "max_tokens": 150,
+                  "messages": [{"role": "user", "content": prompt}]},
+            timeout=10
+        )
+        if resp.status_code == 200:
+            return resp.json().get("content", [{}])[0].get("text", "").strip()
+        return fallbacks.get(typ, "")
+    except Exception:
+        return fallbacks.get(typ, "")
 
 # ── Dynamisches Intervall ────────────────────────────────────
 def dynamischer_sleep(matches: list = None):
@@ -997,7 +1187,7 @@ def dynamischer_sleep(matches: list = None):
             if 43 <= minute <= 47 or 87 <= minute <= 93:
                 time.sleep(60)
                 return
-    except:
+    except Exception:
         pass
     time.sleep(FUSSBALL_INTERVAL * 60)
 
@@ -1055,7 +1245,7 @@ def bankroll_laden() -> float:
     try:
         with open(BANKROLL_DATEI, "r") as f:
             return json.load(f).get("bankroll", BANKROLL)
-    except:
+    except Exception:
         return BANKROLL
 
 def bankroll_speichern(betrag: float):
@@ -1158,6 +1348,8 @@ def beobachtung_hinzufuegen(match_id: str, spiel: dict):
     beobachtete_spiele_speichern()
     # Im Signal-Tracker registrieren für robuste Auswertung
     tracker_signal_hinzufuegen(match_id, spiel)
+    # Notified Sets persistieren
+    notified_sets_speichern()
     # Kombi-Signal prüfen
     kombi_signal_check(match_id)
 
@@ -1233,7 +1425,7 @@ def get_team_lineup(match_id: str) -> dict:
         data   = resp.json().get("data", {}) or {}
         _lineup_cache[match_id] = {"data": data, "ts": now}
         return data
-    except:
+    except Exception:
         return {}
 
 def verletzungs_check(match_id: str, home: str, away: str) -> str:
@@ -1255,7 +1447,7 @@ def verletzungs_check(match_id: str, home: str, away: str) -> str:
         if away_count > 0 and away_count < 11:
             warnungen.append(f"⚠️ {away}: Nur {away_count}/11 Spieler gelistet")
         return "\n".join(warnungen)
-    except:
+    except Exception:
         return ""
 
 # ── GitHub Backup ─────────────────────────────────────────────
@@ -1574,6 +1766,13 @@ def update_statistik(typ, gewonnen, quote, liga=None, match_id=None):
         streak_aktuell = min(-1, streak_aktuell - 1) if streak_aktuell <= 0 else -1
         if streak_aktuell <= -3:
             send_telegram(f"⚠️ <b>{abs(streak_aktuell)} Tipps in Folge verloren.</b> Einsätze prüfen!")
+    # ROI Tracking
+    if quote and quote > 1.0:
+        einsatz_wert = EINSATZ
+        roi_gewinn   = round((quote - 1) * einsatz_wert, 2) if gewonnen else -einsatz_wert
+        if "roi" not in statistik[typ]:
+            statistik[typ]["roi"] = 0.0
+        statistik[typ]["roi"] = round(statistik[typ].get("roi", 0.0) + roi_gewinn, 2)
     # Bankroll aktualisieren
     einsatz_wert = EINSATZ
     bankroll_aktualisieren(gewonnen, einsatz_wert, quote)
@@ -1829,14 +2028,54 @@ def send_wochenbericht():
            f"🏆 {statistik_zeile('VZ-Tore',        wochen_statistik['vztore'])}\n"
            f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
     send_telegram(msg)
-    send_discord(DISCORD_WEBHOOK_BILANZ, msg)
+    # Discord Embed für Wochenbericht
+    farbe_w = 0x2ECC71 if gn >= 0 else 0xE74C3C
+    rang_w  = bot_rangliste()
+    woche_embed = {
+        "title": f"📅 Wochenbericht – KW {de_now().isocalendar()[1]}",
+        "color": farbe_w,
+        "fields": [
+            {"name": "✅ Gewonnen",      "value": f"**{gw}**",  "inline": True},
+            {"name": "❌ Verloren",      "value": f"**{vl}**",  "inline": True},
+            {"name": "🎯 Trefferquote", "value": f"**{pct}%**", "inline": True},
+            {"name": "🏆 Bot-Rangliste (Woche)", "value": rang_w or "Keine Daten", "inline": False},
+        ],
+        "footer": {"text": f"BetlabLIVE • KW {de_now().isocalendar()[1]} • {heute()}"},
+    }
+    send_discord_embed(DISCORD_WEBHOOK_BILANZ, woche_embed)
     for t in wochen_statistik:
         wochen_statistik[t] = {"gewonnen": 0, "verloren": 0, "gewinn": 0.0}
+    # Weekly Performance Chart
+    chart_pfad = erstelle_performance_chart()
+    if chart_pfad:
+        sende_chart_telegram(chart_pfad)
     print(f"  [Bericht] Wochenbericht gesendet")
 
 # ============================================================
 #  AUSWERTUNG
 # ============================================================
+
+
+def _hole_tore_via_events(match_id: str) -> tuple:
+    """Holt Tore via Events-Endpoint als Fallback wenn API 0-0 zurückgibt."""
+    try:
+        events = ls_get_events(match_id)
+        h = len([e for e in events if e.get("event") in ("Goal","goal","GOAL") and e.get("home_away") == "home"])
+        a = len([e for e in events if e.get("event") in ("Goal","goal","GOAL") and e.get("home_away") == "away"])
+        return h, a
+    except Exception:
+        return 0, 0
+
+def _hole_hz1_tore_via_events(match_id: str) -> int:
+    """Holt HZ1-Tore via Events (Tore in Minute <= 45)."""
+    try:
+        events = ls_get_events(match_id)
+        hz1 = [e for e in events
+                if e.get("event") in ("Goal","goal","GOAL")
+                and _safe_int(e.get("time", 99)) <= 45]
+        return len(hz1)
+    except Exception:
+        return -1
 
 def auswertung_ecken(spiel):
     match_id  = spiel["match_id"]
@@ -1846,6 +2085,10 @@ def auswertung_ecken(spiel):
     try:
         stats       = get_statistiken(match_id)
         total_ecken = stats["corners_home"] + stats["corners_away"]
+        # Wenn 0 Ecken → API-Fehler, verwende HZ1-Ecken als Minimum
+        if total_ecken == 0 and hz1_ecken > 0:
+            print(f"  [Auswertung] Ecken: API gibt 0, HZ1 waren {hz1_ecken} → verwende Minimum")
+            total_ecken = hz1_ecken  # mindestens so viele wie in HZ1
         gewonnen    = total_ecken < grenze
         update_statistik("ecken", gewonnen, quote)
         emoji = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
@@ -1867,6 +2110,10 @@ def auswertung_ecken_over(spiel):
     try:
         stats       = get_statistiken(match_id)
         total_ecken = stats["corners_home"] + stats["corners_away"]
+        # Wenn 0 Ecken → API-Fehler, verwende HZ1-Ecken als Basis
+        if total_ecken == 0 and hz1_ecken >= 7:
+            print(f"  [Auswertung] Ecken-Über: API gibt 0, HZ1 waren {hz1_ecken}")
+            total_ecken = hz1_ecken
         gewonnen    = total_ecken > GRENZE
         update_statistik("ecken_over", gewonnen, quote)
         emoji = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
@@ -1904,8 +2151,18 @@ def auswertung_torwart(spiel):
     home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
     try:
         match    = ls_get_single_match(match_id)
-        score    = match.get("scores", {}).get("score", "0 - 0")
-        h, a     = parse_score(score)
+        score    = match.get("scores", {}).get("score", "")
+        h, a     = parse_score(score) if score else (0, 0)
+        # Fallback via Events wenn API 0-0 zurückgibt
+        if h == 0 and a == 0:
+            try:
+                events = ls_get_events(match_id)
+                tore_e = len([e for e in events if e.get("event") in ("Goal", "goal")])
+                if tore_e > 0:
+                    h, a = 1, 0  # Mind. 1 Tor gefallen
+                    score = f"mind. {tore_e} Tor(e)"
+            except Exception:
+                pass
         tore     = h + a
         gewonnen = tore >= 1
         update_statistik("torwart", gewonnen, quote)
@@ -1920,23 +2177,44 @@ def auswertung_torwart(spiel):
         return None
 
 def auswertung_druck(spiel):
-    match_id   = spiel["match_id"]
-    druck_team = spiel["druck_team"]
+    match_id     = spiel["match_id"]
+    druck_team   = spiel["druck_team"]
+    score_signal = spiel.get("score_signal", "")
     home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
+    h_sig, a_sig = parse_score(score_signal) if score_signal else (0, 0)
     try:
         match = ls_get_single_match(match_id)
-        score = match.get("scores", {}).get("score", "0 - 0")
-        h, a  = parse_score(score)
-        # Druck-Team hat gewonnen wenn es mehr Tore als Gegner hat
+        score = match.get("scores", {}).get("score", "")
+        h, a  = parse_score(score) if score else (0, 0)
+
+        # Fallback via Events wenn API 0-0 zurückgibt
+        if h == 0 and a == 0 and (h_sig > 0 or a_sig > 0):
+            try:
+                events = ls_get_events(match_id)
+                h = len([e for e in events if e.get("event") in ("Goal","goal") and e.get("home_away") == "home"])
+                a = len([e for e in events if e.get("event") in ("Goal","goal") and e.get("home_away") == "away"])
+                score = f"{h} - {a}" if h + a > 0 else score_signal
+            except Exception:
+                h, a = h_sig, a_sig
+                score = score_signal
+
+        # Gewonnen wenn Druck-Team NACH dem Signal noch getroffen hat
+        # Vergleich: Endstand vs Stand beim Signal
         if druck_team == home:
-            gewonnen = h > a
+            gewonnen = h > h_sig  # Hat Heim nach Signal getroffen?
         else:
-            gewonnen = a > h
+            gewonnen = a > a_sig  # Hat Gast nach Signal getroffen?
+
+        # Fallback: Wenn kein Signal-Score vorhanden, check ob Druck-Team führt
+        if not score_signal:
+            gewonnen = (h > a) if druck_team == home else (a > h)
+
         update_statistik("druck", gewonnen, quote)
         emoji = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
         ql = f"💶 Quote: <b>{quote}</b> → Gewinn: <b>+{round((quote-1)*EINSATZ,2)}€</b>\n" if quote and gewonnen else ""
         return (f"📊 <b>Auswertung – Druck</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                 f"📌 {home} vs {away}\n🔥 Druck-Team: <b>{druck_team}</b>\n"
+                f"📊 Stand bei Signal: <b>{score_signal}</b>\n"
                 f"📈 Endstand: <b>{score}</b>\n{ql}"
                 f"━━━━━━━━━━━━━━━━━━━━\n{emoji}\n🕐 {jetzt()} Uhr")
     except Exception as e:
@@ -1947,18 +2225,46 @@ def auswertung_comeback(spiel):
     match_id     = spiel["match_id"]
     rueckliegend = spiel["rueckliegend"]
     home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
+    # Score beim Signal speichern für Fallback
+    score_signal = spiel.get("score_signal", "")
+    h_sig, a_sig = parse_score(score_signal) if score_signal else (0, 0)
     try:
         match = ls_get_single_match(match_id)
-        score = match.get("scores", {}).get("score", "0 - 0")
-        h, a  = parse_score(score)
-        # Gewonnen wenn beide Teams getroffen haben (mind. 1 Tor jedes Team)
-        gewonnen = h >= 1 and a >= 1
+        score = match.get("scores", {}).get("score", "")
+        h, a  = parse_score(score) if score else (0, 0)
+
+        # Wenn API 0-0 zurückgibt aber zum Signalzeitpunkt schon Tore gefallen:
+        # → API-Fehler, verwende Score vom Signal als Basis
+        if h == 0 and a == 0 and (h_sig > 0 or a_sig > 0):
+            print(f"  [Auswertung] Comeback: API gibt 0-0, aber Signal-Score war {score_signal} → verwende Events")
+            # Via Events prüfen
+            try:
+                events = ls_get_events(match_id)
+                tore_home = len([e for e in events if e.get("event") in ("Goal", "goal") and e.get("home_away") == "home"])
+                tore_away = len([e for e in events if e.get("event") in ("Goal", "goal") and e.get("home_away") == "away"])
+                if tore_home > 0 or tore_away > 0:
+                    h, a = tore_home, tore_away
+                    score = f"{h} - {a}"
+                else:
+                    # Fallback: Signal-Score nehmen
+                    h, a = h_sig, a_sig
+                    score = score_signal
+            except Exception:
+                h, a = h_sig, a_sig
+                score = score_signal
+
+        # Beide Teams treffen: h >= 1 UND a >= 1
+        # Wichtig: Wenn zum Signalzeitpunkt SCHON beide Teams getroffen hatten → direkt gewonnen
+        bereits_beide_getroffen = h_sig >= 1 and a_sig >= 1
+        gewonnen = (h >= 1 and a >= 1) or bereits_beide_getroffen
         update_statistik("comeback", gewonnen, quote)
         emoji = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
         ql = f"💶 Quote: <b>{quote}</b> → Gewinn: <b>+{round((quote-1)*EINSATZ,2)}€</b>\n" if quote and gewonnen else ""
+        hinweis = " (zum Signalzeitpunkt bereits erfüllt)" if bereits_beide_getroffen else ""
         return (f"📊 <b>Auswertung – Comeback</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                 f"📌 {home} vs {away}\n🔄 Rückliegend: <b>{rueckliegend}</b>\n"
-                f"🎯 Tipp: Beide Teams treffen\n"
+                f"📊 Stand bei Signal: <b>{score_signal}</b>\n"
+                f"🎯 Tipp: Beide Teams treffen{hinweis}\n"
                 f"📈 Endstand: <b>{score}</b>\n{ql}"
                 f"━━━━━━━━━━━━━━━━━━━━\n{emoji}\n🕐 {jetzt()} Uhr")
     except Exception as e:
@@ -1972,9 +2278,20 @@ def auswertung_torflut(spiel):
     home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
     try:
         match = ls_get_single_match(match_id)
-        score = match.get("scores", {}).get("score", "0 - 0")
-        h, a  = parse_score(score)
+        score = match.get("scores", {}).get("score", "")
+        h, a  = parse_score(score) if score else (0, 0)
         tore  = h + a
+        # Fallback via Events wenn API 0-0 aber HZ1 schon Tore hatte
+        if tore == 0 and hz1_tore > 0:
+            h_e, a_e = _hole_tore_via_events(match_id)
+            if h_e + a_e > 0:
+                h, a  = h_e, a_e
+                tore  = h + a
+                score = f"{h} - {a}"
+            else:
+                # Mindestens HZ1-Tore sind sicher gefallen
+                tore  = hz1_tore
+                score = f"mind. {hz1_tore} (HZ1)"
         gewonnen = tore > grenze
         update_statistik("torflut", gewonnen, quote)
         emoji = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
@@ -1995,9 +2312,18 @@ def auswertung_rotkarte(spiel):
     home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
     try:
         match = ls_get_single_match(match_id)
-        score = match.get("scores", {}).get("score", "0 - 0")
-        h_end, a_end = parse_score(score)
-        h_sig, a_sig = parse_score(score_signal)
+        score = match.get("scores", {}).get("score", "")
+        h_end, a_end = parse_score(score) if score else (0, 0)
+        h_sig, a_sig = parse_score(score_signal) if score_signal else (0, 0)
+        # Fallback via Events wenn API 0-0 zurückgibt
+        if h_end == 0 and a_end == 0 and (h_sig > 0 or a_sig > 0):
+            try:
+                events = ls_get_events(match_id)
+                h_end = len([e for e in events if e.get("event") in ("Goal","goal") and e.get("home_away") == "home"])
+                a_end = len([e for e in events if e.get("event") in ("Goal","goal") and e.get("home_away") == "away"])
+                score = f"{h_end} - {a_end}" if h_end + a_end > 0 else score_signal
+            except Exception:
+                h_end, a_end = h_sig, a_sig
         # Gewonnen wenn Überzahl-Team nach Signal noch getroffen hat
         if ueberzahl_team == home:
             gewonnen = h_end > h_sig
@@ -2029,9 +2355,14 @@ def auswertung_hz1tore(spiel):
             match = ls_get_single_match(match_id)
             ht    = (match.get("scores") or {}).get("ht_score", "")
         if not ht:
-            score = match.get("scores", {}).get("score", "0 - 0")
-            print(f"  [Auswertung] Hz1Tore: kein HZ1-Score für {home} vs {away} – übersprungen")
-            return None  # Wird später nochmal versucht
+            # Fallback: Tore via Events zählen (nur Minute <= 45)
+            hz1_tore_events = _hole_hz1_tore_via_events(match_id)
+            if hz1_tore_events >= 0:
+                ht = f"{hz1_tore_events} - 0 (Events)"
+                print(f"  [Auswertung] Hz1Tore: Events-Fallback → {hz1_tore_events} Tore in HZ1")
+            else:
+                print(f"  [Auswertung] Hz1Tore: kein HZ1-Score für {home} vs {away} – übersprungen")
+                return None
         hh, ha   = parse_score(ht)
         hz1_tore = hh + ha
         if richtung == "über":
@@ -2058,9 +2389,17 @@ def auswertung_vztore(spiel):
     home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
     try:
         match    = ls_get_single_match(match_id)
-        score    = match.get("scores", {}).get("score", "0 - 0")
-        h, a     = parse_score(score)
+        score    = match.get("scores", {}).get("score", "")
+        h, a     = parse_score(score) if score else (0, 0)
         vz_tore  = h + a
+        # Fallback via Events wenn API 0-0
+        if vz_tore == 0:
+            h_e, a_e = _hole_tore_via_events(match_id)
+            if h_e + a_e > 0:
+                h, a    = h_e, a_e
+                vz_tore = h + a
+                score   = f"{h} - {a}"
+                print(f"  [Auswertung] VZ-Tore: Events-Fallback → {score}")
         if richtung == "über":
             gewonnen = vz_tore > linie
         else:
@@ -2103,7 +2442,9 @@ def bot_auswertung_und_berichte():
         "hz1tore":    auswertung_hz1tore,
         "vztore":     auswertung_vztore,
     }
-    FT_STATI        = {"FT", "Finished", "FINISHED", "AET", "PEN", "finished", "aet", "pen"}
+    FT_STATI        = {"FT", "Finished", "FINISHED", "AET", "PEN", "finished",
+                       "aet", "pen", "Full Time", "full time", "FULL TIME",
+                       "After Extra Time", "Penalties", "ft", "FT.", "ended"}
     leerer_status   = {}  # match_id → Anzahl leerer Status-Antworten
     ft_bestaetigung = {}  # match_id → Zeitstempel erste FT-Erkennung (Bestätigung nach 2 Min)
 
@@ -2125,6 +2466,16 @@ def bot_auswertung_und_berichte():
                 if not hasattr(bot_auswertung_und_berichte, "_letzter_monat") or                    bot_auswertung_und_berichte._letzter_monat != monatsbericht_key:
                     bot_auswertung_und_berichte._letzter_monat = monatsbericht_key
                     send_monatsbericht()
+                    # PDF Monatsbericht
+                    import calendar
+                    lm_name = (de_now().replace(day=1) - timedelta(days=1)).strftime("%B %Y")
+                    pdf_pfad = erstelle_monatsbericht_pdf()
+                    if pdf_pfad:
+                        sende_pdf_telegram(pdf_pfad, lm_name)
+                    # Performance Chart
+                    chart_pfad = erstelle_performance_chart()
+                    if chart_pfad:
+                        sende_chart_telegram(chart_pfad)
 
             # Fallback: zu alte Beobachtungen entfernen
             auswertung_fallback_check()
@@ -2305,8 +2656,10 @@ def bot_ecken():
                 if corners <= MAX_CORNERS:
                     if not tipp_erlaubt(match_id, "Ecken-Bot"):
                         continue
-                    # Liga-Filter
+                    # Liga-Filter + Whitelist
                     if not liga_erlaubt(comp):
+                        continue
+                    if not whitelist_check(comp, home, away):
                         continue
                     # Quoten-Details (beste Quote + Bookmaker-Anzahl)
                     qd      = get_quote_details(home, away)
@@ -2383,7 +2736,7 @@ def bot_ecken():
             bot_fehler_melden("Ecken-Bot", e)
         try:
             dynamischer_sleep(get_live_matches())
-        except:
+        except Exception:
             time.sleep(FUSSBALL_INTERVAL * 60)
 
 def bot_ecken_over():
@@ -2443,7 +2796,7 @@ def bot_ecken_over():
             bot_fehler_melden("Ecken-Über-Bot", e)
         try:
             dynamischer_sleep(get_live_matches())
-        except:
+        except Exception:
             time.sleep(FUSSBALL_INTERVAL * 60)
 
 def bot_karten():
@@ -2507,7 +2860,7 @@ def bot_karten():
             bot_fehler_melden("Karten-Bot", e)
         try:
             dynamischer_sleep(get_live_matches())
-        except:
+        except Exception:
             time.sleep(FUSSBALL_INTERVAL * 60)
 
 def bot_torwart():
@@ -2578,7 +2931,7 @@ def bot_torwart():
             bot_fehler_melden("Torwart-Bot", e)
         try:
             dynamischer_sleep(get_live_matches())
-        except:
+        except Exception:
             time.sleep(FUSSBALL_INTERVAL * 60)
 
 # ============================================================
@@ -2655,6 +3008,7 @@ def bot_druck():
                 beobachtung_hinzufuegen(match_id, {
                     "typ": "druck", "match_id": match_id,
                     "home": home, "away": away, "druck_team": druck_team,
+                    "score_signal": score,
                     "quote": quote, "webhook": DISCORD_WEBHOOK_DRUCK, "signal_zeit": time.time(), "bot": "Druck-Bot"
                     })
                 print(f"  [Druck-Bot] OK: {home} vs {away} | {druck_team} dominiert ({ecken_stark}:{ecken_schwach} Ecken)")
@@ -2664,7 +3018,7 @@ def bot_druck():
             bot_fehler_melden("Druck-Bot", e)
         try:
             dynamischer_sleep(get_live_matches())
-        except:
+        except Exception:
             time.sleep(FUSSBALL_INTERVAL * 60)
 
 def bot_comeback():
@@ -2736,6 +3090,7 @@ def bot_comeback():
                 beobachtung_hinzufuegen(match_id, {
                     "typ": "comeback", "match_id": match_id,
                     "home": home, "away": away, "rueckliegend": rueckliegend,
+                    "score_signal": score_str,
                     "quote": quote, "webhook": DISCORD_WEBHOOK_COMEBACK, "signal_zeit": time.time(), "bot": "Comeback-Bot"
                     })
                 print(f"  [Comeback-Bot] OK: {home} vs {away} | {rueckliegend} liegt zurück aber dominiert")
@@ -2745,7 +3100,7 @@ def bot_comeback():
             bot_fehler_melden("Comeback-Bot", e)
         try:
             dynamischer_sleep(get_live_matches())
-        except:
+        except Exception:
             time.sleep(FUSSBALL_INTERVAL * 60)
 
 def bot_torflut():
@@ -2825,7 +3180,7 @@ def bot_torflut():
             bot_fehler_melden("Torflut-Bot", e)
         try:
             dynamischer_sleep(get_live_matches())
-        except:
+        except Exception:
             time.sleep(FUSSBALL_INTERVAL * 60)
 
 def bot_rotkarte():
@@ -2895,7 +3250,7 @@ def bot_rotkarte():
             bot_fehler_melden("Rotkarte-Bot", e)
         try:
             dynamischer_sleep(get_live_matches())
-        except:
+        except Exception:
             time.sleep(FUSSBALL_INTERVAL * 60)
 
 def bot_tore_analyse():
@@ -2937,12 +3292,14 @@ def bot_tore_analyse():
                 if quote and quote < MIN_QUOTE:
                     continue
 
+                # Form einmal berechnen – für beide Tipp-Typen
+                form_home_avg = get_team_saisonform(home_id)
+                form_away_avg = get_team_saisonform(away_id)
+                form_avg_val  = round((form_home_avg + form_away_avg) / 2, 2) if form_home_avg and form_away_avg else None
+
                 # ── HZ1-Tore Tipp ──────────────────────────────
                 if match_id not in notified_hz1tore and ana.get("avg_hz1") is not None:
                     # Dynamische Grenzen berechnen
-                    form_home_avg = get_team_saisonform(home_id)
-                    form_away_avg = get_team_saisonform(away_id)
-                    form_avg_val  = round((form_home_avg + form_away_avg) / 2, 2) if form_home_avg and form_away_avg else None
                     dyn_ueber_hz1, dyn_unter_hz1 = berechne_dynamische_grenzen(ana["avg_hz1"], form_avg_val, "hz1")
                     tipp_hz1 = tipp_aus_avg(ana["avg_hz1"], dyn_ueber_hz1, dyn_unter_hz1)
                     if tipp_hz1 and gegentipp_check(match_id, "hz1tore", tipp_hz1[0], "Tore-Bot"):
@@ -3026,7 +3383,7 @@ def bot_tore_analyse():
             bot_fehler_melden("Tore-Bot", e)
         try:
             dynamischer_sleep(get_live_matches())
-        except:
+        except Exception:
             time.sleep(FUSSBALL_INTERVAL * 60)
 
 # ============================================================
@@ -3102,13 +3459,24 @@ def bot_telegram_befehle():
                     pct = round(gw / ges * 100) if ges else 0
                     gn  = round(sum(statistik[t]["gewinn"] for t in statistik), 2)
                     streak_sym = "🔥" if streak_aktuell > 0 else "❄️"
+                    # ROI berechnen
+                    roi_ges = sum(statistik[t].get("roi", 0.0) for t in statistik)
+                    roi_emoji = "📈" if roi_ges >= 0 else "📉"
+                    # Beste Spielzeit heute
+                    beste_h = sorted(
+                        [(h, s) for h, s in stunden_statistik.items() if s["gewonnen"]+s["verloren"] > 0],
+                        key=lambda x: x[1]["gewonnen"] / max(x[1]["gewonnen"]+x[1]["verloren"], 1),
+                        reverse=True
+                    )
+                    beste_h_text = f"{beste_h[0][0]}:00 Uhr" if beste_h else "–"
                     antwort = (f"📊 <b>Statistik heute</b>\n"
                                f"━━━━━━━━━━━━━━━━━━━━\n"
                                f"✅ Gewonnen: <b>{gw}</b>\n"
                                f"❌ Verloren: <b>{vl}</b>\n"
                                f"🎯 Trefferquote: <b>{pct}%</b>\n"
-                               f"{'📈' if gn >= 0 else '📉'} Simulation: <b>{'+' if gn >= 0 else ''}{gn}€</b>\n"
+                               f"{roi_emoji} ROI: <b>{'+' if roi_ges >= 0 else ''}{round(roi_ges, 2)}€</b>\n"
                                f"{streak_sym} Streak: <b>{abs(streak_aktuell)}x {'Gewinn' if streak_aktuell > 0 else 'Verlust'}</b>\n"
+                               f"⏰ Beste Zeit: <b>{beste_h_text}</b>\n"
                                f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                     requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                                   json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
@@ -3156,8 +3524,113 @@ def bot_telegram_befehle():
                     requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                                   json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
 
+                elif text.startswith("/whitelist"):
+                    teile_wl = text.split(" ", 2)
+                    if len(teile_wl) == 1:
+                        ligen_wl = ", ".join(_whitelist.get("ligen", [])) or "–"
+                        teams_wl = ", ".join(_whitelist.get("teams", [])) or "–"
+                        aktiv_wl = "✅ Aktiv" if _whitelist.get("aktiv") else "❌ Inaktiv"
+                        antwort  = (f"📋 <b>Whitelist Status: {aktiv_wl}</b>\n"
+                                    f"🏆 Ligen: {ligen_wl}\n👥 Teams: {teams_wl}\n"
+                                    f"Befehle:\n/whitelist on – aktivieren\n/whitelist off – deaktivieren\n"
+                                    f"/whitelist liga [Name] – Liga hinzufügen\n/whitelist team [Name] – Team hinzufügen\n/whitelist reset – leeren")
+                    elif teile_wl[1] == "on":
+                        _whitelist["aktiv"] = True
+                        whitelist_speichern()
+                        antwort = "✅ Whitelist aktiviert"
+                    elif teile_wl[1] == "off":
+                        _whitelist["aktiv"] = False
+                        whitelist_speichern()
+                        antwort = "❌ Whitelist deaktiviert"
+                    elif teile_wl[1] == "reset":
+                        _whitelist["ligen"] = []
+                        _whitelist["teams"] = []
+                        whitelist_speichern()
+                        antwort = "🗑️ Whitelist geleert"
+                    elif teile_wl[1] == "liga" and len(teile_wl) > 2:
+                        _whitelist.setdefault("ligen", []).append(teile_wl[2])
+                        whitelist_speichern()
+                        antwort = f"✅ Liga hinzugefügt: {teile_wl[2]}"
+                    elif teile_wl[1] == "team" and len(teile_wl) > 2:
+                        _whitelist.setdefault("teams", []).append(teile_wl[2])
+                        whitelist_speichern()
+                        antwort = f"✅ Team hinzugefügt: {teile_wl[2]}"
+                    else:
+                        antwort = "Benutzung: /whitelist [on|off|liga|team|reset]"
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text.startswith("/tipp "):
+                    teile_t = msg_obj.get("text","").strip().split(" ", 3)
+                    if len(teile_t) >= 4:
+                        spiel_t = teile_t[1]
+                        bet_t   = teile_t[2]
+                        quote_t = teile_t[3] if len(teile_t) > 3 else None
+                        tipp_obj = {
+                            "typ": "manuell", "home": spiel_t, "away": "",
+                            "tipp": bet_t, "quote": float(quote_t) if quote_t else None,
+                            "status": "offen", "signal_zeit": time.time(),
+                            "versuche": 0, "letzter_versuch": 0,
+                        }
+                        _manuell_tipps.append(tipp_obj)
+                        manuell_tipps_speichern()
+                        antwort = (f"✅ <b>Manueller Tipp gespeichert!</b>\n"
+                                   f"⚽ Spiel: <b>{spiel_t}</b>\n"
+                                   f"🎯 Tipp: <b>{bet_t}</b>\n"
+                                   f"💶 Quote: <b>{quote_t or 'keine'}</b>\n"
+                                   f"Ergebnis mit: /gewonnen oder /verloren")
+                    else:
+                        antwort = "Benutzung: /tipp [Spiel] [Bet] [Quote]\nBeispiel: /tipp ManCity Über2.5 1.85"
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text in ("/gewonnen", "/verloren"):
+                    if _manuell_tipps:
+                        letzter = _manuell_tipps[-1]
+                        letzter["status"]   = "ausgewertet"
+                        letzter["gewonnen"] = text == "/gewonnen"
+                        manuell_tipps_speichern()
+                        typ_m = "torwart"  # Default für Statistik
+                        update_statistik(typ_m, letzter["gewonnen"], letzter.get("quote"))
+                        antwort = f"{'✅ GEWONNEN' if letzter['gewonnen'] else '❌ VERLOREN'} – {letzter['tipp']} ({letzter['home']})"
+                    else:
+                        antwort = "Kein offener Tipp gefunden"
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text == "/chart":
+                    pfad = erstelle_performance_chart()
+                    if pfad:
+                        sende_chart_telegram(pfad)
+                    else:
+                        requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                      json={"chat_id": chat_id, "text": "⚠️ Noch zu wenig Daten für Chart", "parse_mode": "HTML"}, timeout=10)
+
                 elif text == "/api":
                     antwort = f"📡 <b>API Monitor</b>\n━━━━━━━━━━━━━━━━━━━━\n{api_monitor_bericht()}\n━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr"
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text == "/auswertung":
+                    offene     = tracker_get_offene()
+                    alle       = list(_signal_tracker.values())
+                    ausgewertet = [s for s in alle if s.get("status") == "ausgewertet"]
+                    gewonnen_t  = [s for s in ausgewertet if s.get("gewonnen")]
+                    verloren_t  = [s for s in ausgewertet if not s.get("gewonnen")]
+                    pct = round(len(gewonnen_t) / len(ausgewertet) * 100) if ausgewertet else 0
+                    offen_liste = "\n".join([
+                        f"  • {s.get('home','?')} vs {s.get('away','?')} ({s.get('typ','')})"
+                        for _, s in offene[:5]
+                    ]) or "  Keine offenen Signale"
+                    antwort = (f"📋 <b>Signal-Tracker Status</b>\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n"
+                               f"📨 Gesamt Signale: <b>{len(alle)}</b>\n"
+                               f"✅ Ausgewertet: <b>{len(ausgewertet)}</b>\n"
+                               f"⏳ Noch offen: <b>{len(offene)}</b>\n"
+                               f"🎯 Trefferquote: <b>{pct}%</b> ({len(gewonnen_t)}W/{len(verloren_t)}L)\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n"
+                               f"⏳ <b>Offene Signale:</b>\n{offen_liste}\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                     requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                                   json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
 
@@ -3295,7 +3768,7 @@ def claude_prematch_analyse(home: str, away: str, liga: str, anstoß: str,
             elif line.startswith("KONFIDENZ:"):
                 try:
                     konfidenz = int(line.replace("KONFIDENZ:", "").strip())
-                except:
+                except Exception:
                     konfidenz = 6
         if not tipp:
             return None
@@ -3326,7 +3799,7 @@ def bot_prematch():
                 def anstoß_stunde(spiel):
                     try:
                         return int(spiel.get("time", "0:0").split(":")[0])
-                    except:
+                    except Exception:
                         return 0
 
                 if now.hour == 10:
@@ -3455,7 +3928,7 @@ def bot_prematch_erinnerung():
                             send_telegram_gruppe(msg)
                             erinnert.add(match_id)
                             print(f"  [Erinnerung] {home} vs {away} in ~{diff:.0f} Min")
-                except:
+                except Exception:
                     continue
         except Exception as e:
             print(f"  [Erinnerungs-Bot] Fehler: {e}")
@@ -4066,6 +4539,1343 @@ def bot_cs2():
         time.sleep(5 * 60)  # CS2 alle 5 Minuten
 
 
+
+
+
+
+# ============================================================
+#  WEB-DASHBOARD – Live Statistiken im Browser
+# ============================================================
+
+def bot_web_dashboard():
+    """Startet einen einfachen Webserver auf Port 8080 mit Live-Statistiken."""
+    try:
+        from http.server import HTTPServer, BaseHTTPRequestHandler
+        import json
+
+        class DashboardHandler(BaseHTTPRequestHandler):
+            def log_message(self, format, *args):
+                pass  # Keine Server-Logs
+
+            def do_GET(self):
+                if self.path == "/api/stats":
+                    # JSON API für Stats
+                    gw  = sum(statistik[t]["gewonnen"] for t in statistik)
+                    vl  = sum(statistik[t]["verloren"] for t in statistik)
+                    ges = gw + vl
+                    pct = round(gw/ges*100) if ges else 0
+                    br  = bankroll_laden()
+                    offene = len(tracker_get_offene())
+                    data = {
+                        "gewonnen": gw, "verloren": vl, "trefferquote": pct,
+                        "bankroll": br, "offene_signale": offene,
+                        "streak": streak_aktuell, "streak_beste": streak_beste,
+                        "nach_typ": {t: statistik[t] for t in statistik},
+                        "api_calls": _api_monitor.get("heute", 0),
+                        "zeit": jetzt(),
+                    }
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps(data).encode())
+
+                elif self.path in ("/", "/index.html"):
+                    html = """<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BetlabLIVE Dashboard</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0d1117; color: #e6edf3; font-family: system-ui; padding: 20px; }
+  h1 { color: #58a6ff; margin-bottom: 20px; font-size: 24px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 20px; text-align: center; }
+  .card .val { font-size: 36px; font-weight: 700; margin: 8px 0; }
+  .card .lbl { font-size: 13px; color: #8b949e; }
+  .green { color: #3fb950; } .red { color: #f85149; } .blue { color: #58a6ff; } .yellow { color: #d29922; }
+  table { width: 100%; border-collapse: collapse; background: #161b22; border-radius: 12px; overflow: hidden; }
+  th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #21262d; }
+  th { background: #21262d; font-size: 12px; color: #8b949e; text-transform: uppercase; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 12px; }
+  .badge-green { background: #1f3a2a; color: #3fb950; }
+  .badge-red { background: #3a1f1f; color: #f85149; }
+  .footer { margin-top: 20px; color: #8b949e; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>⚽ BetlabLIVE Dashboard</h1>
+<div class="grid" id="cards"></div>
+<table><thead><tr><th>Bot</th><th>Gewonnen</th><th>Verloren</th><th>Quote</th><th>Status</th></tr></thead>
+<tbody id="bots"></tbody></table>
+<div class="footer" id="footer"></div>
+<script>
+async function update() {
+  const r = await fetch('/api/stats');
+  const d = await r.json();
+  const pct = d.trefferquote;
+  document.getElementById('cards').innerHTML = `
+    <div class="card"><div class="val green">${d.gewonnen}</div><div class="lbl">✅ Gewonnen</div></div>
+    <div class="card"><div class="val red">${d.verloren}</div><div class="lbl">❌ Verloren</div></div>
+    <div class="card"><div class="val ${pct>=55?'green':pct>=45?'yellow':'red'}">${pct}%</div><div class="lbl">🎯 Trefferquote</div></div>
+    <div class="card"><div class="val blue">${d.bankroll}€</div><div class="lbl">💰 Bankroll</div></div>
+    <div class="card"><div class="val yellow">${d.offene_signale}</div><div class="lbl">⏳ Offene Signale</div></div>
+    <div class="card"><div class="val ${d.streak>=0?'green':'red'}">${d.streak > 0 ? '+' : ''}${d.streak}</div><div class="lbl">🔥 Streak</div></div>
+  `;
+  const namen = {ecken:'📐 Ecken U',ecken_over:'📐 Ecken Ü',karten:'🃏 Karten',
+    torwart:'🧤 Torwart',druck:'🔥 Druck',comeback:'🔄 Comeback',
+    torflut:'🌊 Torflut',rotkarte:'🟥 Rotkarte',hz1tore:'🥅 HZ1-Tore',vztore:'🏆 VZ-Tore'};
+  let rows = '';
+  for (const [k, v] of Object.entries(d.nach_typ)) {
+    const ges = v.gewonnen + v.verloren;
+    const q = ges > 0 ? Math.round(v.gewonnen/ges*100) : 0;
+    const badge = ges === 0 ? '' : q >= 55 ? `<span class="badge badge-green">${q}%</span>` : `<span class="badge badge-red">${q}%</span>`;
+    rows += `<tr><td>${namen[k]||k}</td><td class="green">${v.gewonnen}</td><td class="red">${v.verloren}</td><td>${badge}</td><td>${ges===0?'–':'Aktiv'}</td></tr>`;
+  }
+  document.getElementById('bots').innerHTML = rows;
+  document.getElementById('footer').textContent = `Letzte Aktualisierung: ${d.zeit} Uhr | API heute: ${d.api_calls.toLocaleString()} Calls`;
+}
+update();
+setInterval(update, 30000);
+</script>
+</body></html>"""
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.end_headers()
+                    self.wfile.write(html.encode())
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+
+        server = HTTPServer(("0.0.0.0", 8080), DashboardHandler)
+        print("[Dashboard] Gestartet auf Port 8080")
+        server.serve_forever()
+    except Exception as e:
+        print(f"[Dashboard] Fehler: {e}")
+
+# ============================================================
+#  TELEGRAM GRUPPEN-BOT – Community Tipp-Tracking
+# ============================================================
+
+community_tipps  = {}  # user_id → [{"tipp": str, "spiel": str, "zeit": str, "ergebnis": None}]
+COMMUNITY_DATEI  = "community_tipps.json"
+
+def community_laden():
+    import json, os
+    global community_tipps
+    if not os.path.exists(COMMUNITY_DATEI):
+        return
+    try:
+        with open(COMMUNITY_DATEI) as f:
+            community_tipps = json.load(f)
+        print(f"  [Community] {sum(len(v) for v in community_tipps.values())} Tipps geladen")
+    except Exception as e:
+        print(f"  [Community] Ladefehler: {e}")
+
+def community_speichern():
+    import json
+    try:
+        with open(COMMUNITY_DATEI, "w") as f:
+            json.dump(community_tipps, f, indent=2)
+    except Exception as e:
+        print(f"  [Community] Speicherfehler: {e}")
+
+def bot_telegram_gruppe():
+    """
+    Gruppen-Bot: Mitglieder können in der Telegram-Gruppe tippen.
+    Befehle:
+    /tipp [Spiel] [Bet] – z.B. /tipp ManCity Unter2.5
+    /meine              – zeigt eigene Tipps und Bilanz
+    /topliste           – zeigt Community-Rangliste
+    /ergebnis [ID] [W/L] – markiert Tipp als gewonnen/verloren
+    """
+    print("[Gruppen-Bot] Gestartet | Community Tipp-Tracking")
+    letzter_update = 0
+
+    while True:
+        try:
+            url  = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+            resp = requests.get(url, params={"offset": letzter_update + 1, "timeout": 20}, timeout=25)
+            if resp.status_code != 200:
+                time.sleep(5)
+                continue
+
+            for update in resp.json().get("result", []):
+                letzter_update = update["update_id"]
+                msg_obj  = update.get("message", {})
+                chat_id  = str(msg_obj.get("chat", {}).get("id", ""))
+                user_id  = str(msg_obj.get("from", {}).get("id", ""))
+                username = msg_obj.get("from", {}).get("first_name", "Anonym")
+                text     = msg_obj.get("text", "").strip()
+
+                # Nur in der Gruppe oder privatem Chat
+                if not text.startswith("/"):
+                    continue
+
+                teile = text.split(" ", 2)
+                cmd   = teile[0].lower().split("@")[0]
+
+                if cmd == "/tipp" and len(teile) >= 3:
+                    spiel = teile[1]
+                    bet   = teile[2]
+                    tipp_id = len(community_tipps.get(user_id, [])) + 1
+                    if user_id not in community_tipps:
+                        community_tipps[user_id] = []
+                    community_tipps[user_id].append({
+                        "id": tipp_id,
+                        "username": username,
+                        "spiel": spiel,
+                        "tipp": bet,
+                        "zeit": de_now().strftime("%d.%m %H:%M"),
+                        "ergebnis": None
+                    })
+                    community_speichern()
+                    antwort = (f"✅ <b>Tipp registriert!</b>\n"
+                               f"👤 {username}\n"
+                               f"⚽ Spiel: <b>{spiel}</b>\n"
+                               f"🎯 Tipp: <b>{bet}</b>\n"
+                               f"🆔 ID: <b>#{tipp_id}</b>\n"
+                               f"🕐 {de_now().strftime('%d.%m %H:%M')} Uhr\n\n"
+                               f"Ergebnis mit: /ergebnis {tipp_id} W oder /ergebnis {tipp_id} L")
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif cmd == "/meine":
+                    tipps = community_tipps.get(user_id, [])
+                    if not tipps:
+                        antwort = "Du hast noch keine Tipps abgegeben. Nutze /tipp [Spiel] [Bet]"
+                    else:
+                        gw = sum(1 for t in tipps if t.get("ergebnis") == "W")
+                        vl = sum(1 for t in tipps if t.get("ergebnis") == "L")
+                        pct = round(gw / (gw+vl) * 100) if gw+vl > 0 else 0
+                        letzte = tipps[-5:]
+                        zeilen = [f"#{t['id']} {t['spiel']} | {t['tipp']} | "
+                                  f"{'✅' if t['ergebnis']=='W' else '❌' if t['ergebnis']=='L' else '⏳'}"
+                                  for t in reversed(letzte)]
+                        antwort = (f"📊 <b>Deine Tipps, {username}</b>\n"
+                                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                                   f"✅ {gw} | ❌ {vl} | 🎯 {pct}%\n"
+                                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                                   + "\n".join(zeilen))
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif cmd == "/topliste":
+                    rangliste = []
+                    for uid, tipps in community_tipps.items():
+                        gw = sum(1 for t in tipps if t.get("ergebnis") == "W")
+                        vl = sum(1 for t in tipps if t.get("ergebnis") == "L")
+                        if gw + vl < 3:
+                            continue
+                        pct  = round(gw / (gw+vl) * 100)
+                        name = tipps[-1].get("username", "Anonym") if tipps else "?"
+                        rangliste.append((name, gw, vl, pct))
+                    rangliste.sort(key=lambda x: x[3], reverse=True)
+                    if not rangliste:
+                        antwort = "Noch keine Daten (mind. 3 Tipps nötig)"
+                    else:
+                        medals = ["🥇","🥈","🥉"]
+                        zeilen = [f"{medals[i] if i<3 else f'{i+1}.'} {n}: {g}W/{v}L ({p}%)"
+                                  for i, (n,g,v,p) in enumerate(rangliste[:10])]
+                        antwort = (f"🏆 <b>Community Topliste</b>\n"
+                                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                                   + "\n".join(zeilen))
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif cmd == "/ergebnis" and len(teile) >= 3:
+                    try:
+                        tipp_id = int(teile[1])
+                        ergebnis = teile[2].upper()
+                        if ergebnis not in ("W", "L"):
+                            raise ValueError
+                        tipps = community_tipps.get(user_id, [])
+                        gefunden = False
+                        for t in tipps:
+                            if t["id"] == tipp_id:
+                                t["ergebnis"] = ergebnis
+                                gefunden = True
+                                break
+                        if gefunden:
+                            community_speichern()
+                            emoji = "✅ GEWONNEN" if ergebnis == "W" else "❌ VERLOREN"
+                            antwort = f"{emoji} – Tipp #{tipp_id} wurde markiert!"
+                        else:
+                            antwort = f"Tipp #{tipp_id} nicht gefunden."
+                    except Exception:
+                        antwort = "Benutzung: /ergebnis [ID] W oder /ergebnis [ID] L"
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+        except Exception as e:
+            print(f"  [Gruppen-Bot] Fehler: {e}")
+        time.sleep(2)
+
+# ============================================================
+#  SELBSTLERNENDER BOT – Passt Filter automatisch an
+# ============================================================
+
+# Dynamische Schwellenwerte (werden vom Selbstlern-Bot angepasst)
+DYNAMISCHE_FILTER = {
+    "comeback":   {"COMEBACK_AB_MINUTE": 30, "poss_min": 45},
+    "druck":      {"MIN_DRUCK_ECKEN": 6,     "DRUCK_RATIO": 2.5},
+    "torwart":    {"MIN_SHOTS_ON_TARGET": 3},
+    "ecken":      {"MAX_CORNERS": 5},
+    "karten":     {"MIN_KARTEN": 2,          "KARTEN_BIS_MINUTE": 40},
+    "torflut":    {"TORFLUT_MIN_TORE": 3},
+}
+DYNAMISCHE_FILTER_DATEI = "dynamische_filter.json"
+
+def dynamische_filter_laden():
+    """Lädt angepasste Filter beim Start."""
+    import json, os
+    global DYNAMISCHE_FILTER
+    if not os.path.exists(DYNAMISCHE_FILTER_DATEI):
+        return
+    try:
+        with open(DYNAMISCHE_FILTER_DATEI) as f:
+            DYNAMISCHE_FILTER = json.load(f)
+        print(f"  [Selbstlern] Dynamische Filter geladen")
+    except Exception as e:
+        print(f"  [Selbstlern] Ladefehler: {e}")
+
+def dynamische_filter_speichern():
+    import json
+    try:
+        with open(DYNAMISCHE_FILTER_DATEI, "w") as f:
+            json.dump(DYNAMISCHE_FILTER, f, indent=2)
+    except Exception as e:
+        print(f"  [Selbstlern] Speicherfehler: {e}")
+
+def analysiere_bot_performance(typ: str, min_tipps: int = 15) -> dict:
+    """Analysiert Trefferquote eines Bots aus dem Signal-Tracker."""
+    with _tracker_lock:
+        signale = [s for s in _signal_tracker.values()
+                   if s.get("typ") == typ and s.get("status") == "ausgewertet"]
+    if len(signale) < min_tipps:
+        return {"tipps": len(signale), "quote": None, "ausreichend": False}
+    gewonnen = sum(1 for s in signale if s.get("gewonnen"))
+    quote    = round(gewonnen / len(signale), 3)
+    return {"tipps": len(signale), "quote": quote, "ausreichend": True,
+            "gewonnen": gewonnen, "verloren": len(signale) - gewonnen}
+
+def bot_selbstlernend():
+    """
+    Analysiert alle Bots täglich und passt Filter an:
+    - Trefferquote < 40% → Filter verschärfen (weniger Signale aber bessere)
+    - Trefferquote > 65% → Filter lockern (mehr Signale)
+    """
+    print("[Selbstlern-Bot] Gestartet | Tägliche Filter-Optimierung")
+    letzter_check = None
+
+    while True:
+        try:
+            now = de_now()
+            # Täglich um 06:00 Uhr analysieren
+            if now.hour == 6 and letzter_check != now.date():
+                letzter_check = now.date()
+                print("  [Selbstlern] Starte tägliche Analyse...")
+                aenderungen = []
+
+                for typ, filter_dict in DYNAMISCHE_FILTER.items():
+                    perf = analysiere_bot_performance(typ)
+                    if not perf["ausreichend"]:
+                        print(f"  [Selbstlern] {typ}: Zu wenig Daten ({perf['tipps']} Tipps)")
+                        continue
+
+                    quote = perf["quote"]
+                    print(f"  [Selbstlern] {typ}: {round(quote*100)}% ({perf['gewonnen']}/{perf['tipps']})")
+
+                    # Filter anpassen
+                    if quote < 0.40:
+                        # Zu schlecht → Filter verschärfen
+                        if typ == "comeback" and filter_dict.get("COMEBACK_AB_MINUTE", 30) < 45:
+                            DYNAMISCHE_FILTER[typ]["COMEBACK_AB_MINUTE"] = min(45, filter_dict["COMEBACK_AB_MINUTE"] + 5)
+                            aenderungen.append(f"🔴 Comeback-Bot: Minute erhöht auf {DYNAMISCHE_FILTER[typ]['COMEBACK_AB_MINUTE']}")
+                        elif typ == "druck" and filter_dict.get("DRUCK_RATIO", 2.5) < 3.5:
+                            DYNAMISCHE_FILTER[typ]["DRUCK_RATIO"] = round(filter_dict["DRUCK_RATIO"] + 0.25, 2)
+                            aenderungen.append(f"🔴 Druck-Bot: Ratio erhöht auf {DYNAMISCHE_FILTER[typ]['DRUCK_RATIO']}")
+                        elif typ == "torwart" and filter_dict.get("MIN_SHOTS_ON_TARGET", 3) < 6:
+                            DYNAMISCHE_FILTER[typ]["MIN_SHOTS_ON_TARGET"] = filter_dict["MIN_SHOTS_ON_TARGET"] + 1
+                            aenderungen.append(f"🔴 Torwart-Bot: Min. Schüsse erhöht auf {DYNAMISCHE_FILTER[typ]['MIN_SHOTS_ON_TARGET']}")
+                        elif typ == "karten" and filter_dict.get("KARTEN_BIS_MINUTE", 40) > 30:
+                            DYNAMISCHE_FILTER[typ]["KARTEN_BIS_MINUTE"] = filter_dict["KARTEN_BIS_MINUTE"] - 5
+                            aenderungen.append(f"🔴 Karten-Bot: Max. Minute reduziert auf {DYNAMISCHE_FILTER[typ]['KARTEN_BIS_MINUTE']}")
+
+                    elif quote > 0.65:
+                        # Sehr gut → Filter etwas lockern
+                        if typ == "comeback" and filter_dict.get("COMEBACK_AB_MINUTE", 30) > 25:
+                            DYNAMISCHE_FILTER[typ]["COMEBACK_AB_MINUTE"] = max(25, filter_dict["COMEBACK_AB_MINUTE"] - 3)
+                            aenderungen.append(f"🟢 Comeback-Bot: Minute reduziert auf {DYNAMISCHE_FILTER[typ]['COMEBACK_AB_MINUTE']}")
+                        elif typ == "torwart" and filter_dict.get("MIN_SHOTS_ON_TARGET", 3) > 2:
+                            DYNAMISCHE_FILTER[typ]["MIN_SHOTS_ON_TARGET"] = filter_dict["MIN_SHOTS_ON_TARGET"] - 1
+                            aenderungen.append(f"🟢 Torwart-Bot: Min. Schüsse reduziert auf {DYNAMISCHE_FILTER[typ]['MIN_SHOTS_ON_TARGET']}")
+
+                dynamische_filter_speichern()
+
+                if aenderungen:
+                    msg = (f"🧠 <b>Selbstlern-Update!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                           f"Der Bot hat seine Filter angepasst:\n\n"
+                           + "\n".join(aenderungen) +
+                           f"\n━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
+                    send_telegram(msg)
+                    print(f"  [Selbstlern] {len(aenderungen)} Filter angepasst")
+                else:
+                    print(f"  [Selbstlern] Keine Anpassungen nötig")
+
+        except Exception as e:
+            print(f"  [Selbstlern] Fehler: {e}")
+        time.sleep(60)
+
+# ============================================================
+#  API FALLBACK
+# ============================================================
+
+def get_live_matches_fallback() -> list:
+    """Fallback API wenn livescore-api nicht antwortet."""
+    try:
+        # Versuche TheSportsDB als Fallback (kostenlos)
+        resp = requests.get(
+            "https://www.thesportsdb.com/api/v1/json/3/liveevents.php",
+            timeout=8
+        )
+        if resp.status_code != 200:
+            return []
+        events = resp.json().get("events") or []
+        result = []
+        for e in events:
+            if e.get("strSport", "").lower() != "soccer":
+                continue
+            score = e.get("intHomeScore", ""), e.get("intAwayScore", "")
+            result.append({
+                "id":     str(e.get("idEvent", "")),
+                "home":   {"name": e.get("strHomeTeam", "?")},
+                "away":   {"name": e.get("strAwayTeam", "?")},
+                "competition": {"name": e.get("strLeague", "?")},
+                "scores": {"score": f"{score[0]} - {score[1]}"},
+                "status": "IN PLAY",
+                "time":   e.get("strProgress", "?"),
+            })
+        print(f"  [Fallback API] {len(result)} Spiele geladen")
+        return result
+    except Exception as e:
+        print(f"  [Fallback API] Fehler: {e}")
+        return []
+
+_api_fehler_count = 0
+
+def get_live_matches_robust() -> list:
+    """Primäre API mit automatischem Fallback."""
+    global _api_fehler_count
+    try:
+        matches = ls_get_live_matches()
+        _api_fehler_count = 0
+        return matches
+    except Exception as e:
+        _api_fehler_count += 1
+        print(f"  [API] Primär-API Fehler #{_api_fehler_count}: {e}")
+        if _api_fehler_count >= 3:
+            print(f"  [API] Wechsel zu Fallback-API")
+            send_telegram(f"⚠️ <b>API Fallback aktiv!</b>\nlivescore-api antwortet nicht ({_api_fehler_count}x)\nVerwende TheSportsDB als Backup\n🕐 {jetzt()} Uhr")
+            return get_live_matches_fallback()
+        return []
+
+# ============================================================
+#  xG BOT (Expected Goals)
+# ============================================================
+
+notified_xg = set()
+
+def bot_xg():
+    """
+    xG Bot: Vergleicht Expected Goals mit tatsächlichen Toren.
+    Signal wenn xG deutlich höher als Tore → mehr Tore wahrscheinlich.
+    """
+    print("[xG-Bot] Gestartet | Expected Goals Analyse")
+    while True:
+        try:
+            matches = get_live_matches()
+            laufend = [m for m in matches if m.get("status") in
+                       ("IN PLAY", "ADDED TIME") and
+                       _safe_int(m.get("time", 0)) >= 30]
+            print(f"[{jetzt()}] [xG-Bot] {len(laufend)} Spiele geprüft")
+            for game in laufend:
+                match_id = str(game.get("id"))
+                if match_id in notified_xg:
+                    continue
+                home    = game.get("home", {}).get("name", "?")
+                away    = game.get("away", {}).get("name", "?")
+                comp    = game.get("competition", {}).get("name", "?")
+                country = (game.get("country") or {}).get("name", "?")
+                score   = game.get("scores", {}).get("score", "?")
+                minute  = _safe_int(game.get("time", 0))
+                h_tore, a_tore = parse_score(score)
+                tore_ges = h_tore + a_tore
+                # Stats holen für xG-Schätzung
+                stats    = get_statistiken(match_id)
+                shots_h  = stats["shots_on_target_home"]
+                shots_a  = stats["shots_on_target_away"]
+                da_h     = stats["dangerous_attacks_home"]
+                da_a     = stats["dangerous_attacks_away"]
+                if shots_h + shots_a == 0:
+                    continue
+                # xG Schätzung: Schüsse aufs Tor × 0.33 + gef. Angriffe × 0.05
+                xg_h = round(shots_h * 0.33 + da_h * 0.05, 2)
+                xg_a = round(shots_a * 0.33 + da_a * 0.05, 2)
+                xg_ges = round(xg_h + xg_a, 2)
+                # Signal wenn xG deutlich > tatsächliche Tore
+                xg_diff = round(xg_ges - tore_ges, 2)
+                if xg_diff < 1.5:  # Mind. 1.5 xG mehr als Tore
+                    continue
+                notified_xg.add(match_id)
+                notified_sets_speichern()
+                msg = (f"📊 <b>xG Signal!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                       f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
+                       f"📊 Stand: <b>{score}</b> | Min. <b>{minute}'</b>\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n"
+                       f"📈 xG Gesamt: <b>{xg_ges}</b> | Tore: <b>{tore_ges}</b>\n"
+                       f"🎯 xG Differenz: <b>+{xg_diff}</b> ungenutzte Chancen\n"
+                       f"🔵 {home}: xG {xg_h} | 🔴 {away}: xG {xg_a}\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n"
+                       f"💡 Tipp: Noch mehr Tore wahrscheinlich\n"
+                       f"🕐 {jetzt()} Uhr")
+                send_telegram(msg)
+                embed = {
+                    "title": "📊 xG Signal – Mehr Tore erwartet!",
+                    "color": 0x1ABC9C,
+                    "fields": [
+                        {"name": "🏆 Liga",       "value": comp,                    "inline": True},
+                        {"name": "🌍 Land",       "value": country,                 "inline": True},
+                        {"name": "⏱️ Minute",     "value": f"**{minute}'**",        "inline": True},
+                        {"name": "⚽ Spiel",      "value": f"{home} vs {away}",     "inline": False},
+                        {"name": "📊 Stand",      "value": f"**{score}**",          "inline": True},
+                        {"name": "📈 xG gesamt",  "value": f"**{xg_ges}**",         "inline": True},
+                        {"name": "⚽ Echte Tore", "value": f"**{tore_ges}**",       "inline": True},
+                        {"name": "💎 xG Diff",    "value": f"**+{xg_diff}**",       "inline": True},
+                        {"name": f"🔵 {home} xG", "value": f"**{xg_h}**",           "inline": True},
+                        {"name": f"🔴 {away} xG", "value": f"**{xg_a}**",           "inline": True},
+                        {"name": "💡 Tipp",       "value": "Mehr Tore wahrscheinlich – Über Tore prüfen", "inline": False},
+                    ],
+                    "footer": {"text": f"xG-Bot • {heute()} {jetzt()}"},
+                }
+                send_discord_embed(DISCORD_WEBHOOK_TORWART, embed)
+                print(f"  [xG-Bot] ✅ {home} vs {away} | xG {xg_ges} vs {tore_ges} Tore | Diff +{xg_diff}")
+                time.sleep(0.5)
+            bot_fehler_reset("xG-Bot")
+        except Exception as e:
+            bot_fehler_melden("xG-Bot", e)
+        time.sleep(FUSSBALL_INTERVAL * 60)
+
+# ============================================================
+#  ARBITRAGE FINDER
+# ============================================================
+
+notified_arbitrage = set()
+
+def finde_arbitrage() -> list:
+    """
+    Findet Arbitrage-Möglichkeiten: wenn Over + Under Quote > 1 ergeben.
+    Beispiel: Over 2.5 bei Bookie A zu 2.10, Under 2.5 bei Bookie B zu 2.20
+    → Arbitrage wenn 1/2.10 + 1/2.20 < 1.0
+    """
+    if not ODDS_API_KEY:
+        return []
+    try:
+        url    = "https://api.the-odds-api.com/v4/sports/soccer/odds/"
+        params = {"apiKey": ODDS_API_KEY, "regions": "eu",
+                  "markets": "totals", "oddsFormat": "decimal"}
+        resp   = requests.get(url, params=params, timeout=8)
+        if resp.status_code != 200:
+            return []
+        arbs = []
+        for game in resp.json():
+            home_t = game.get("home_team", "?")
+            away_t = game.get("away_team", "?")
+            # Beste Over + beste Under Quote finden
+            beste_over  = {}  # linie → {quote, bm}
+            beste_under = {}  # linie → {quote, bm}
+            for bm in game.get("bookmakers", []):
+                for market in bm.get("markets", []):
+                    if market.get("key") != "totals":
+                        continue
+                    for outcome in market.get("outcomes", []):
+                        linie = str(outcome.get("point", ""))
+                        q     = outcome.get("price", 0)
+                        name  = outcome.get("name", "")
+                        if "Over" in name:
+                            if linie not in beste_over or q > beste_over[linie]["q"]:
+                                beste_over[linie] = {"q": q, "bm": bm.get("title", "?")}
+                        elif "Under" in name:
+                            if linie not in beste_under or q > beste_under[linie]["q"]:
+                                beste_under[linie] = {"q": q, "bm": bm.get("title", "?")}
+            # Arbitrage prüfen
+            for linie in beste_over:
+                if linie not in beste_under:
+                    continue
+                q_over  = beste_over[linie]["q"]
+                q_under = beste_under[linie]["q"]
+                margin  = round(1/q_over + 1/q_under, 4)
+                if margin < 0.98:  # Unter 98% = Arbitrage!
+                    profit_pct = round((1 - margin) * 100, 2)
+                    arbs.append({
+                        "home": home_t, "away": away_t,
+                        "linie": linie,
+                        "q_over": q_over, "bm_over": beste_over[linie]["bm"],
+                        "q_under": q_under, "bm_under": beste_under[linie]["bm"],
+                        "margin": margin, "profit_pct": profit_pct,
+                    })
+        return sorted(arbs, key=lambda x: x["profit_pct"], reverse=True)
+    except Exception as e:
+        print(f"  [Arbitrage] Fehler: {e}")
+        return []
+
+def bot_arbitrage():
+    """Arbitrage Finder – sucht risikolose Gewinnmöglichkeiten."""
+    print("[Arbitrage-Bot] Gestartet | Suche Arbitrage-Möglichkeiten")
+    while True:
+        try:
+            arbs = finde_arbitrage()
+            print(f"[{jetzt()}] [Arbitrage-Bot] {len(arbs)} Arbitragen gefunden")
+            for arb in arbs[:5]:  # Max 5 pro Durchlauf
+                key = f"{arb['home']}_{arb['away']}_{arb['linie']}"
+                if key in notified_arbitrage:
+                    continue
+                notified_arbitrage.add(key)
+                # Optimale Einsatzaufteilung berechnen
+                einsatz_total = 100  # Beispiel 100€
+                einsatz_over  = round(einsatz_total / arb["q_over"] / (1/arb["q_over"] + 1/arb["q_under"]), 2)
+                einsatz_under = round(einsatz_total - einsatz_over, 2)
+                gewinn_sicher = round(einsatz_over * arb["q_over"] - einsatz_total, 2)
+                msg = (f"💰 <b>ARBITRAGE GEFUNDEN!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                       f"📌 {arb['home']} vs {arb['away']}\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n"
+                       f"📈 Over {arb['linie']}: <b>{arb['q_over']}</b> @ {arb['bm_over']}\n"
+                       f"📉 Under {arb['linie']}: <b>{arb['q_under']}</b> @ {arb['bm_under']}\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n"
+                       f"💎 Risikoloser Gewinn: <b>+{arb['profit_pct']}%</b>\n"
+                       f"💡 Bei 100€: Over {einsatz_over}€ + Under {einsatz_under}€\n"
+                       f"✅ Garantierter Gewinn: <b>+{gewinn_sicher}€</b>\n"
+                       f"🕐 {jetzt()} Uhr")
+                send_telegram(msg)
+                embed = {
+                    "title": "💰 Arbitrage – Risikoloser Gewinn!",
+                    "color": 0xF1C40F,
+                    "fields": [
+                        {"name": "⚽ Spiel",       "value": f"**{arb['home']}** vs **{arb['away']}**", "inline": False},
+                        {"name": "📈 Over Linie",  "value": f"Über {arb['linie']}", "inline": True},
+                        {"name": "📈 Over Quote",  "value": f"**{arb['q_over']}** @ {arb['bm_over']}", "inline": True},
+                        {"name": "📉 Under Quote", "value": f"**{arb['q_under']}** @ {arb['bm_under']}", "inline": True},
+                        {"name": "💎 Profit",      "value": f"**+{arb['profit_pct']}%** garantiert", "inline": True},
+                        {"name": "💡 Einsatz",     "value": f"Over: **{einsatz_over}€** | Under: **{einsatz_under}€**", "inline": False},
+                        {"name": "✅ Garantierter Gewinn", "value": f"**+{gewinn_sicher}€** bei 100€ Einsatz", "inline": False},
+                    ],
+                    "footer": {"text": f"Arbitrage-Bot • {heute()} {jetzt()}"},
+                }
+                send_discord_embed(DISCORD_WEBHOOK_VALUE, embed)
+                print(f"  [Arbitrage] ✅ {arb['home']} vs {arb['away']} | +{arb['profit_pct']}%")
+            bot_fehler_reset("Arbitrage-Bot")
+        except Exception as e:
+            bot_fehler_melden("Arbitrage-Bot", e)
+        time.sleep(10 * 60)  # Alle 10 Minuten
+
+# ============================================================
+#  CLOSING LINE VALUE TRACKER
+# ============================================================
+
+def clv_tracker_nach_spiel(spiel: dict) -> str:
+    """
+    Vergleicht Einstiegsquote mit aktueller Marktquote nach Spielende.
+    Gibt formatierten CLV-Text zurück.
+    """
+    einstieg = spiel.get("quote")
+    if not einstieg or not ODDS_API_KEY:
+        return ""
+    try:
+        details = get_quote_details(spiel.get("home", ""), spiel.get("away", ""))
+        schluss = details.get("avg_quote")
+        if not schluss or schluss <= 1.0:
+            return ""
+        diff_pct = round((einstieg - schluss) / schluss * 100, 1)
+        if diff_pct > 5:
+            return f"\n📊 CLV: ✅ Guter Einstieg! {einstieg} → Schluss {schluss} (+{diff_pct}%)"
+        elif diff_pct < -5:
+            return f"\n📊 CLV: ⚠️ Quote gesunken: {einstieg} → Schluss {schluss} ({diff_pct}%)"
+        return f"\n📊 CLV: Quote stabil: {einstieg} → {schluss}"
+    except Exception:
+        return ""
+
+
+# ============================================================
+#  PATTERN RECOGNITION
+# ============================================================
+
+_pattern_cache = {}
+PATTERN_TTL    = 7200
+
+def analysiere_team_muster(team_id, team_name):
+    now = time.time()
+    if team_id in _pattern_cache and now - _pattern_cache[team_id]["ts"] < PATTERN_TTL:
+        return _pattern_cache[team_id]["data"]
+    try:
+        params  = {**LS_AUTH, "team_id": team_id, "number": 10}
+        resp    = api_get_with_retry(f"{LS_BASE}/matches/history.json", params)
+        matches = resp.json().get("data", {}).get("match", []) or []
+        if len(matches) < 5:
+            return {}
+        hz1_tore, hz2_tore, comebacks, rueckstaende = [], [], 0, 0
+        for m in matches:
+            svz = (m.get("scores") or {}).get("score", "")
+            shz = (m.get("scores") or {}).get("ht_score", "")
+            if not svz or not shz:
+                continue
+            h_vz, a_vz = parse_score(svz)
+            h_hz, a_hz = parse_score(shz)
+            hz1_tore.append(h_hz + a_hz)
+            hz2_tore.append((h_vz - h_hz) + (a_vz - a_hz))
+            hid = str((m.get("home") or {}).get("id", ""))
+            if hid == team_id:
+                if h_hz < a_hz:
+                    rueckstaende += 1
+                    if h_vz > a_vz:
+                        comebacks += 1
+            else:
+                if a_hz < h_hz:
+                    rueckstaende += 1
+                    if a_vz > h_vz:
+                        comebacks += 1
+        avg1 = round(sum(hz1_tore)/len(hz1_tore), 2) if hz1_tore else 0
+        avg2 = round(sum(hz2_tore)/len(hz2_tore), 2) if hz2_tore else 0
+        cr   = round(comebacks / max(rueckstaende, 1) * 100)
+        result = {"team": team_name, "avg_hz1_tore": avg1, "avg_hz2_tore": avg2,
+                  "hz2_staerker": avg2 > avg1 * 1.3, "comeback_rate": cr, "spiele": len(matches)}
+        _pattern_cache[team_id] = {"data": result, "ts": now}
+        return result
+    except Exception as e:
+        print(f"  [Pattern] Fehler: {e}")
+        return {}
+
+def pattern_signal_text(p1, p2):
+    zeilen = []
+    if p1.get("hz2_staerker"):
+        zeilen.append(f"\U0001f525 {p1['team']}: Staerker in 2. HZ (\u00d8 {p1['avg_hz2_tore']} Tore/HZ2)")
+    if p2.get("hz2_staerker"):
+        zeilen.append(f"\U0001f525 {p2['team']}: Staerker in 2. HZ (\u00d8 {p2['avg_hz2_tore']} Tore/HZ2)")
+    if p1.get("comeback_rate", 0) >= 60:
+        zeilen.append(f"\U0001f504 {p1['team']}: Hohe Comeback-Rate ({p1['comeback_rate']}%)")
+    if p2.get("comeback_rate", 0) >= 60:
+        zeilen.append(f"\U0001f504 {p2['team']}: Hohe Comeback-Rate ({p2['comeback_rate']}%)")
+    return "\n".join(zeilen)
+
+# ============================================================
+#  SENTIMENT-ANALYSE
+# ============================================================
+
+def hole_team_sentiment(home, away):
+    if not ANTHROPIC_API_KEY or not ANTHROPIC_API_KEY.strip():
+        return {}
+    try:
+        query    = f"{home} {away} injury lineup news today"
+        news_url = f"https://html.duckduckgo.com/html/?q={query.replace(' ', '+')}"
+        resp     = requests.get(news_url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
+        import re as _re
+        text_raw = _re.sub(r"<[^>]+>", " ", resp.text)
+        text_raw = " ".join(text_raw.split())[:1500]
+        if not text_raw:
+            return {}
+        prompt = (f"Analysiere News zu {home} vs {away}:\n{text_raw}\n\n"
+                  f"Antworte so:\nSENTIMENT_HOME: positiv/negativ/neutral\n"
+                  f"SENTIMENT_AWAY: positiv/negativ/neutral\nHINWEIS: [1 Satz wichtigste Info]")
+        r2 = requests.post("https://api.anthropic.com/v1/messages",
+            headers={"Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY,
+                     "anthropic-version": "2023-06-01"},
+            json={"model": "claude-sonnet-4-20250514", "max_tokens": 120,
+                  "messages": [{"role": "user", "content": prompt}]}, timeout=15)
+        if r2.status_code != 200:
+            return {}
+        txt    = r2.json().get("content", [{}])[0].get("text", "")
+        result = {"home_sentiment": "neutral", "away_sentiment": "neutral", "hinweis": ""}
+        for line in txt.split("\n"):
+            if line.startswith("SENTIMENT_HOME:"):
+                result["home_sentiment"] = line.replace("SENTIMENT_HOME:", "").strip().lower()
+            elif line.startswith("SENTIMENT_AWAY:"):
+                result["away_sentiment"] = line.replace("SENTIMENT_AWAY:", "").strip().lower()
+            elif line.startswith("HINWEIS:"):
+                result["hinweis"] = line.replace("HINWEIS:", "").strip()
+        return result
+    except Exception as e:
+        print(f"  [Sentiment] Fehler: {e}")
+        return {}
+
+def sentiment_emoji(s):
+    return {"positiv": "\U0001f7e2", "negativ": "\U0001f534", "neutral": "\U0001f7e1"}.get(s, "\u26aa")
+
+# ============================================================
+#  MULTI-MODELL VOTING
+# ============================================================
+
+def multi_modell_vote(home, away, typ, analyse, score, minute):
+    if not ANTHROPIC_API_KEY or not ANTHROPIC_API_KEY.strip():
+        return {"empfohlen": True, "votes": 2, "begruendung": ""}
+    typ_name    = TYP_NAMEN.get(typ, typ)
+    perspektiven = [
+        ("Statistik-Analyst", f"Nur Zahlen: Daten: {analyse}. Ist '{typ_name}' bei {home} vs {away} (Stand {score}, Min.{minute}) statistisch ok?"),
+        ("Erfahrener Wetter",  f"10 Jahre Live-Wetten. {home} vs {away}, Stand {score}, Min.{minute}. '{typ_name}' setzen?"),
+        ("Skeptiker",          f"Sei kritisch. Was spricht gegen '{typ_name}' bei {home} vs {away} (Stand {score}, Min.{minute})?"),
+    ]
+    votes_ja = 0
+    beg = []
+    for rolle, pt in perspektiven:
+        try:
+            r = requests.post("https://api.anthropic.com/v1/messages",
+                headers={"Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY,
+                         "anthropic-version": "2023-06-01"},
+                json={"model": "claude-sonnet-4-20250514", "max_tokens": 60,
+                      "messages": [{"role": "user", "content": f"Du bist {rolle}. NUR JA oder NEIN dann 1 Satz:\n{pt}"}]},
+                timeout=10)
+            if r.status_code != 200:
+                votes_ja += 1
+                continue
+            antwort = r.json().get("content", [{}])[0].get("text", "").strip()
+            ja = antwort.upper().startswith("JA")
+            if ja:
+                votes_ja += 1
+            teile = antwort.split(" ", 1)
+            if len(teile) > 1:
+                beg.append(f"{'\u2705' if ja else '\u274c'} {rolle}: {teile[1][:70]}")
+        except Exception:
+            votes_ja += 1
+    return {"empfohlen": votes_ja >= 2, "votes": votes_ja,
+            "begruendung": "\n".join(beg[:2])}
+
+
+# ============================================================
+#  WHITELIST & MANUELLE TIPPS (Konfiguration)
+# ============================================================
+
+WHITELIST_DATEI   = "whitelist.json"
+MANUELL_DATEI     = "manuell_tipps.json"
+_whitelist        = {"ligen": [], "teams": [], "aktiv": False}
+_manuell_tipps    = []
+
+def whitelist_laden():
+    import json, os
+    global _whitelist
+    if not os.path.exists(WHITELIST_DATEI):
+        return
+    try:
+        with open(WHITELIST_DATEI) as f:
+            _whitelist = json.load(f)
+        if _whitelist.get("aktiv"):
+            print(f"  [Whitelist] Aktiv: {len(_whitelist.get('ligen',[]))} Ligen, {len(_whitelist.get('teams',[]))} Teams")
+    except Exception as e:
+        print(f"  [Whitelist] Fehler: {e}")
+
+def whitelist_speichern():
+    import json
+    try:
+        with open(WHITELIST_DATEI, "w") as f:
+            json.dump(_whitelist, f, indent=2)
+    except Exception as e:
+        print(f"  [Whitelist] Speicherfehler: {e}")
+
+def whitelist_check(liga: str, home: str = "", away: str = "") -> bool:
+    """Gibt False zurück wenn Whitelist aktiv und Spiel nicht auf der Liste."""
+    if not _whitelist.get("aktiv"):
+        return True
+    ligen  = [l.lower() for l in _whitelist.get("ligen", [])]
+    teams  = [t.lower() for t in _whitelist.get("teams", [])]
+    if ligen and liga.lower() not in ligen:
+        return False
+    if teams and home.lower() not in teams and away.lower() not in teams:
+        return False
+    return True
+
+def manuell_tipps_laden():
+    import json, os
+    global _manuell_tipps
+    if not os.path.exists(MANUELL_DATEI):
+        return
+    try:
+        with open(MANUELL_DATEI) as f:
+            _manuell_tipps = json.load(f)
+    except Exception as e:
+        print(f"  [Manuell] Fehler: {e}")
+
+def manuell_tipps_speichern():
+    import json
+    try:
+        with open(MANUELL_DATEI, "w") as f:
+            json.dump(_manuell_tipps, f, indent=2)
+    except Exception as e:
+        print(f"  [Manuell] Fehler: {e}")
+
+# ============================================================
+#  LIVE-ODDS TRACKER
+# ============================================================
+
+_odds_history  = {}  # "home_away_linie" → [{quote, ts}]
+ODDS_TRACKER_INTERVALL = 5 * 60  # alle 5 Min
+notified_odds_drop = set()
+
+def bot_odds_tracker():
+    """
+    Verfolgt Quoten-Bewegungen in Echtzeit.
+    Wenn eine Quote in 15 Min um >12% fällt → Insider-Signal.
+    """
+    print("[Odds-Tracker] Gestartet | Quoten-Bewegungen überwachen")
+    while True:
+        try:
+            if not ODDS_API_KEY:
+                time.sleep(ODDS_TRACKER_INTERVALL)
+                continue
+            url    = "https://api.the-odds-api.com/v4/sports/soccer/odds/"
+            params = {"apiKey": ODDS_API_KEY, "regions": "eu",
+                      "markets": "totals,h2h", "oddsFormat": "decimal"}
+            resp   = requests.get(url, params=params, timeout=10)
+            if resp.status_code != 200:
+                time.sleep(ODDS_TRACKER_INTERVALL)
+                continue
+            now = time.time()
+            for game in resp.json():
+                home_t = game.get("home_team", "?")
+                away_t = game.get("away_team", "?")
+                for bm in game.get("bookmakers", [])[:3]:
+                    for market in bm.get("markets", []):
+                        for outcome in market.get("outcomes", []):
+                            q    = outcome.get("price", 0)
+                            name = outcome.get("name", "")
+                            pt   = outcome.get("point", "")
+                            key  = f"{home_t}_{away_t}_{name}_{pt}"
+                            if key not in _odds_history:
+                                _odds_history[key] = []
+                            _odds_history[key].append({"q": q, "ts": now})
+                            # Nur letzte 15 Min behalten
+                            _odds_history[key] = [
+                                e for e in _odds_history[key]
+                                if now - e["ts"] <= 15 * 60
+                            ]
+                            hist = _odds_history[key]
+                            if len(hist) < 2:
+                                continue
+                            q_alt = hist[0]["q"]
+                            q_neu = hist[-1]["q"]
+                            if q_alt <= 1.1 or q_neu <= 1.1:
+                                continue
+                            drop = round((q_alt - q_neu) / q_alt * 100, 1)
+                            if drop >= 12 and key not in notified_odds_drop:
+                                notified_odds_drop.add(key)
+                                msg = (f"📉 <b>Quote stark gefallen!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                                       f"📌 {home_t} vs {away_t}\n"
+                                       f"🎯 Markt: <b>{name} {pt}</b>\n"
+                                       f"📉 {q_alt} → <b>{q_neu}</b> ({bm.get('title','?')})\n"
+                                       f"🔻 Rückgang: <b>-{drop}%</b> in 15 Min\n"
+                                       f"💡 Mögliches Insider-Signal!\n"
+                                       f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
+                                send_telegram(msg)
+                                embed = {
+                                    "title": "📉 Quote stark gefallen – Insider-Signal?",
+                                    "color": 0xE74C3C,
+                                    "fields": [
+                                        {"name": "⚽ Spiel",    "value": f"{home_t} vs {away_t}", "inline": False},
+                                        {"name": "🎯 Markt",    "value": f"**{name} {pt}**",       "inline": True},
+                                        {"name": "📉 Vorher",   "value": f"**{q_alt}**",           "inline": True},
+                                        {"name": "📉 Jetzt",    "value": f"**{q_neu}**",           "inline": True},
+                                        {"name": "🔻 Rückgang", "value": f"**-{drop}%**",          "inline": True},
+                                        {"name": "📊 Quelle",   "value": bm.get("title","?"),      "inline": True},
+                                    ],
+                                    "footer": {"text": f"Odds-Tracker • {heute()} {jetzt()}"},
+                                }
+                                send_discord_embed(DISCORD_WEBHOOK_VALUE, embed)
+                                print(f"  [Odds-Tracker] 📉 {home_t} vs {away_t} | {name} {pt}: {q_alt}→{q_neu} (-{drop}%)")
+            bot_fehler_reset("Odds-Tracker")
+        except Exception as e:
+            bot_fehler_melden("Odds-Tracker", e)
+        time.sleep(ODDS_TRACKER_INTERVALL)
+
+# ============================================================
+#  EARLY GOAL BOT
+# ============================================================
+
+notified_early_goal = set()
+
+def bot_early_goal():
+    """
+    Signal wenn in Minute 1-10 ein Tor fällt.
+    Statistisch: Spiele mit Frühtor enden häufig mit 3+ Toren gesamt.
+    """
+    print("[EarlyGoal-Bot] Gestartet | Frühtore Min. 1-10")
+    while True:
+        try:
+            matches = get_live_matches()
+            frueh   = [m for m in matches if m.get("status") == "IN PLAY"
+                       and 1 <= _safe_int(m.get("time", 0)) <= 15]
+            for game in frueh:
+                match_id = str(game.get("id"))
+                if match_id in notified_early_goal:
+                    continue
+                score_str = game.get("scores", {}).get("score", "")
+                h, a = parse_score(score_str)
+                if h + a == 0:
+                    continue
+                # Tor gefallen – via Events Minute prüfen
+                try:
+                    events = ls_get_events(match_id)
+                    tore   = [e for e in events
+                              if e.get("event") in ("Goal", "goal", "GOAL")
+                              and _safe_int(e.get("time", 99)) <= 10]
+                    if not tore:
+                        continue
+                except Exception:
+                    if h + a == 0:
+                        continue
+                    tore = [{"time": "?"}]
+                home    = game.get("home", {}).get("name", "?")
+                away    = game.get("away", {}).get("name", "?")
+                comp    = game.get("competition", {}).get("name", "?")
+                country = (game.get("country") or {}).get("name", "?")
+                minute  = game.get("time", "?")
+                if not whitelist_check(comp, home, away):
+                    continue
+                notified_early_goal.add(match_id)
+                notified_sets_speichern()
+                tor_min = tore[0].get("time", "?") if tore else "?"
+                quote   = get_quote(home, away, "tore")
+                ql      = f"\n💶 Quote: <b>{quote}</b>" if quote else ""
+                msg = (f"⚡ <b>Early Goal!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                       f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
+                       f"📊 Stand: <b>{score_str}</b> | Min. <b>{minute}'</b>\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n"
+                       f"⚡ Tor in Minute <b>{tor_min}'</b>!\n"
+                       f"📈 Statistik: Frühtore → 70%+ Chance auf 3+ Tore gesamt\n"
+                       f"🎯 Tipp: <b>Über 2.5 Tore</b>{ql}\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
+                send_telegram(msg)
+                embed = {
+                    "title": "⚡ Early Goal – Mehr Tore erwartet!",
+                    "color": 0xF39C12,
+                    "fields": [
+                        {"name": "🏆 Liga",    "value": comp,                    "inline": True},
+                        {"name": "🌍 Land",    "value": country,                 "inline": True},
+                        {"name": "⏱️ Minute",  "value": f"**{minute}'**",        "inline": True},
+                        {"name": "⚽ Spiel",   "value": f"{home} vs {away}",     "inline": False},
+                        {"name": "📊 Stand",   "value": f"**{score_str}**",      "inline": True},
+                        {"name": "⚡ Tor in",  "value": f"Min. **{tor_min}'**",  "inline": True},
+                        {"name": "📈 Statistik","value": "Frühtore → 70%+ für Über 2.5 Tore", "inline": False},
+                        {"name": "🎯 Tipp",    "value": "**Über 2.5 Tore**",    "inline": False},
+                    ],
+                    "footer": {"text": f"EarlyGoal-Bot • {heute()} {jetzt()}"},
+                }
+                send_discord_embed(DISCORD_WEBHOOK_TORFLUT, embed)
+                print(f"  [EarlyGoal-Bot] ✅ {home} vs {away} | Tor in Min. {tor_min}")
+                time.sleep(0.5)
+            bot_fehler_reset("EarlyGoal-Bot")
+        except Exception as e:
+            bot_fehler_melden("EarlyGoal-Bot", e)
+        time.sleep(60)  # Jede Minute prüfen – sehr zeitkritisch
+
+# ============================================================
+#  ROTE KARTE ECKEN-BOT
+# ============================================================
+
+notified_rk_ecken = set()
+
+def bot_rotkarte_ecken():
+    """
+    Nach Roter Karte: das geschwächte Team kann kaum noch Ecken erzwingen.
+    → Unter Ecken für das geschwächte Team sehr wahrscheinlich.
+    """
+    print("[RotkarteEcken-Bot] Gestartet | Ecken nach Roter Karte")
+    while True:
+        try:
+            matches = get_live_matches()
+            laufend = [m for m in matches if m.get("status") in
+                       ("IN PLAY", "ADDED TIME") and
+                       _safe_int(m.get("time", 0)) <= 75]
+            for game in laufend:
+                match_id = str(game.get("id"))
+                if match_id in notified_rk_ecken:
+                    continue
+                try:
+                    events = ls_get_events(match_id)
+                    rote   = [e for e in events if e.get("event") in ROTKARTE_TYPEN]
+                except Exception:
+                    continue
+                if not rote:
+                    continue
+                minute = _safe_int(game.get("time", 0))
+                letzte = rote[-1]
+                karte_min = _safe_int(letzte.get("time", 99))
+                if minute - karte_min > 8:
+                    continue
+                home    = game.get("home", {}).get("name", "?")
+                away    = game.get("away", {}).get("name", "?")
+                comp    = game.get("competition", {}).get("name", "?")
+                country = (game.get("country") or {}).get("name", "?")
+                score   = game.get("scores", {}).get("score", "?")
+                if not whitelist_check(comp, home, away):
+                    continue
+                karte_fuer    = letzte.get("home_away", "")
+                geschwaeches  = home if karte_fuer == "home" else away
+                staerkeres    = away if karte_fuer == "home" else home
+                stats = get_statistiken(match_id)
+                ecken_schwach = stats["corners_home"] if karte_fuer == "home" else stats["corners_away"]
+                ecken_stark   = stats["corners_away"] if karte_fuer == "home" else stats["corners_home"]
+                restminuten   = 90 - minute
+                # Grenze: bisherige Ecken des schwachen Teams + max. 2 weitere
+                grenze_ecken  = ecken_schwach + 2
+                notified_rk_ecken.add(match_id)
+                notified_sets_speichern()
+                spieler = (letzte.get("player") or {}).get("name", "?")
+                msg = (f"📐 <b>Rotkarte Ecken-Signal!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                       f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
+                       f"📊 Stand: <b>{score}</b> | Min. <b>{minute}'</b>\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n"
+                       f"🟥 {spieler} ({geschwaeches}) Rote Karte Min. {karte_min}'\n"
+                       f"📐 Ecken bisher: {staerkeres}: <b>{ecken_stark}</b> | {geschwaeches}: <b>{ecken_schwach}</b>\n"
+                       f"⏱️ Noch <b>{restminuten} Min</b> – {geschwaeches} in Unterzahl\n"
+                       f"🎯 Tipp: <b>{geschwaeches} unter {grenze_ecken} Ecken gesamt</b>\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
+                send_telegram(msg)
+                embed = {
+                    "title": "📐 Rotkarte → Unter Ecken!",
+                    "color": 0xC0392B,
+                    "fields": [
+                        {"name": "🏆 Liga",         "value": comp,                              "inline": True},
+                        {"name": "🌍 Land",         "value": country,                           "inline": True},
+                        {"name": "📊 Stand",        "value": f"**{score}** | Min. {minute}'",   "inline": True},
+                        {"name": "⚽ Spiel",        "value": f"{home} vs {away}",               "inline": False},
+                        {"name": "🟥 Rote Karte",   "value": f"**{spieler}** ({geschwaeches})", "inline": False},
+                        {"name": "📐 Ecken stark",  "value": f"**{ecken_stark}** ({staerkeres})","inline": True},
+                        {"name": "📐 Ecken schwach","value": f"**{ecken_schwach}** ({geschwaeches})","inline": True},
+                        {"name": "⏱️ Rest",         "value": f"**{restminuten} Min**",          "inline": True},
+                        {"name": "🎯 Tipp",         "value": f"**{geschwaeches} unter {grenze_ecken} Ecken**", "inline": False},
+                    ],
+                    "footer": {"text": f"RotkarteEcken-Bot • {heute()} {jetzt()}"},
+                }
+                send_discord_embed(DISCORD_WEBHOOK_ECKEN, embed)
+                print(f"  [RotkarteEcken] ✅ {geschwaeches} in Unterzahl – Unter Ecken")
+                time.sleep(0.5)
+            bot_fehler_reset("RotkarteEcken-Bot")
+        except Exception as e:
+            bot_fehler_melden("RotkarteEcken-Bot", e)
+        time.sleep(FUSSBALL_INTERVAL * 60)
+
+# ============================================================
+#  TABELLEN-KONTEXT für PreMatch
+# ============================================================
+
+def hole_tabellen_kontext(home: str, away: str,
+                           home_id: str, away_id: str, league_id: str) -> str:
+    """Gibt kurzen Tabellen-Kontext zurück z.B. Abstiegskampf vs Meisterschaft."""
+    try:
+        h_stand = get_team_standing(league_id, home_id)
+        a_stand = get_team_standing(league_id, away_id)
+        if not h_stand or not a_stand:
+            return ""
+        gesamt  = max(h_stand["position"], a_stand["position"]) + 2
+        zeilen  = []
+        # Meisterschaftskandidat?
+        if h_stand["position"] <= 3:
+            zeilen.append(f"🏆 {home} kämpft um die Meisterschaft (Platz {h_stand['position']})")
+        if a_stand["position"] <= 3:
+            zeilen.append(f"🏆 {away} kämpft um die Meisterschaft (Platz {a_stand['position']})")
+        # Abstiegskampf?
+        if h_stand["position"] >= gesamt - 3:
+            zeilen.append(f"🔴 {home} im Abstiegskampf (Platz {h_stand['position']})")
+        if a_stand["position"] >= gesamt - 3:
+            zeilen.append(f"🔴 {away} im Abstiegskampf (Platz {a_stand['position']})")
+        # Direktes Duell (nahe beieinander)?
+        if abs(h_stand["position"] - a_stand["position"]) <= 2:
+            zeilen.append(f"⚔️ Direktes Duell: Platz {h_stand['position']} vs Platz {a_stand['position']}")
+        return "\n".join(zeilen)
+    except Exception:
+        return ""
+
+# ============================================================
+#  CHART GENERATOR – Performance Bild
+# ============================================================
+
+def erstelle_performance_chart() -> str | None:
+    """
+    Erstellt ein Performance-Liniendiagramm als PNG.
+    Gibt Dateipfad zurück oder None bei Fehler.
+    """
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        import numpy as np
+
+        # Daten aus Signal-Tracker
+        with _tracker_lock:
+            alle = list(_signal_tracker.values())
+
+        if len(alle) < 5:
+            return None
+
+        # Chronologisch sortieren
+        alle_sort = sorted(alle, key=lambda x: x.get("signal_zeit", 0))
+        labels, quoten_kum = [], []
+        gw_ges = 0
+        for i, sig in enumerate(alle_sort):
+            if sig.get("status") != "ausgewertet":
+                continue
+            gw_ges += 1 if sig.get("gewonnen") else 0
+            ges     = i + 1
+            quoten_kum.append(round(gw_ges / ges * 100, 1))
+            labels.append(sig.get("typ", "?")[:3].upper())
+
+        if len(quoten_kum) < 3:
+            return None
+
+        fig, ax = plt.subplots(figsize=(10, 4), facecolor="#0d1117")
+        ax.set_facecolor("#161b22")
+        x = range(len(quoten_kum))
+        ax.plot(x, quoten_kum, color="#58a6ff", linewidth=2.5, marker="o", markersize=4)
+        ax.axhline(y=50, color="#f85149", linestyle="--", linewidth=1, alpha=0.7, label="50%")
+        ax.axhline(y=55, color="#3fb950", linestyle="--", linewidth=1, alpha=0.5, label="55% Ziel")
+        ax.fill_between(x, quoten_kum, 50,
+                         where=[q >= 50 for q in quoten_kum],
+                         alpha=0.15, color="#3fb950")
+        ax.fill_between(x, quoten_kum, 50,
+                         where=[q < 50 for q in quoten_kum],
+                         alpha=0.15, color="#f85149")
+        ax.set_title("BetlabLIVE – Trefferquote Verlauf", color="#e6edf3",
+                      fontsize=14, pad=15)
+        ax.set_ylabel("Trefferquote %", color="#8b949e")
+        ax.set_xlabel("Tipps", color="#8b949e")
+        ax.tick_params(colors="#8b949e")
+        ax.spines[:].set_color("#30363d")
+        ax.set_ylim(0, 100)
+        ax.legend(facecolor="#21262d", labelcolor="#e6edf3", fontsize=9)
+        # Aktuellen Wert annotieren
+        if quoten_kum:
+            ax.annotate(f"{quoten_kum[-1]}%",
+                        xy=(len(quoten_kum)-1, quoten_kum[-1]),
+                        xytext=(10, 10), textcoords="offset points",
+                        color="#58a6ff", fontsize=11, fontweight="bold")
+        plt.tight_layout()
+        pfad = "/tmp/betlab_chart.png"
+        plt.savefig(pfad, dpi=120, bbox_inches="tight", facecolor="#0d1117")
+        plt.close()
+        return pfad
+    except ImportError:
+        print("  [Chart] matplotlib nicht installiert")
+        return None
+    except Exception as e:
+        print(f"  [Chart] Fehler: {e}")
+        return None
+
+def sende_chart_telegram(pfad: str):
+    """Sendet ein Bild via Telegram."""
+    try:
+        with open(pfad, "rb") as f:
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+            requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID,
+                                      "caption": f"📊 BetlabLIVE Performance Chart – {heute()}"},
+                          files={"photo": f}, timeout=20)
+        print("  [Chart] Bild gesendet")
+    except Exception as e:
+        print(f"  [Chart] Senden-Fehler: {e}")
+
+# ============================================================
+#  PDF MONATSBERICHT
+# ============================================================
+
+def erstelle_monatsbericht_pdf() -> str | None:
+    """Erstellt einen PDF-Monatsbericht."""
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.colors import HexColor
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.lib.units import cm
+        import calendar
+        lm = de_now().replace(day=1) - timedelta(days=1)
+        monat_name = lm.strftime("%B %Y")
+        pfad = f"/tmp/betlab_{lm.strftime('%Y_%m')}.pdf"
+        doc  = SimpleDocTemplate(pfad, pagesize=A4,
+                                  topMargin=2*cm, bottomMargin=2*cm,
+                                  leftMargin=2*cm, rightMargin=2*cm)
+        styles = getSampleStyleSheet()
+        elems  = []
+        bg     = HexColor("#0d1117")
+        blue   = HexColor("#58a6ff")
+        green  = HexColor("#3fb950")
+        red    = HexColor("#f85149")
+        grey   = HexColor("#8b949e")
+
+        # Titel
+        title_style = styles["Title"]
+        title_style.textColor = blue
+        elems.append(Paragraph(f"BetlabLIVE – Monatsbericht {monat_name}", title_style))
+        elems.append(Spacer(1, 0.5*cm))
+
+        # Zusammenfassung
+        gw  = sum(statistik[t]["gewonnen"] for t in statistik)
+        vl  = sum(statistik[t]["verloren"] for t in statistik)
+        ges = gw + vl
+        pct = round(gw / ges * 100) if ges else 0
+        br  = bankroll_laden()
+        diff = round(br - BANKROLL, 2)
+
+        body = styles["Normal"]
+        elems.append(Paragraph(f"<b>Gewonnen:</b> {gw} | <b>Verloren:</b> {vl} | <b>Quote:</b> {pct}%", body))
+        elems.append(Paragraph(f"<b>Bankroll:</b> {br}€ ({'+' if diff>=0 else ''}{diff}€ seit Start)", body))
+        elems.append(Spacer(1, 0.5*cm))
+
+        # Tabelle nach Bot
+        table_data = [["Bot", "Gewonnen", "Verloren", "Quote", "ROI"]]
+        bot_namen  = {
+            "ecken": "Ecken Unter", "ecken_over": "Ecken Über",
+            "karten": "Karten", "torwart": "Torwart", "druck": "Druck",
+            "comeback": "Comeback", "torflut": "Torflut",
+            "rotkarte": "Rotkarte", "hz1tore": "HZ1 Tore", "vztore": "VZ Tore",
+        }
+        for typ, s in statistik.items():
+            g = s["gewonnen"]; v = s["verloren"]; ges_t = g + v
+            q_t = f"{round(g/ges_t*100)}%" if ges_t > 0 else "–"
+            roi = f"{'+' if s.get('roi',0)>=0 else ''}{round(s.get('roi',0),2)}€"
+            table_data.append([bot_namen.get(typ, typ), str(g), str(v), q_t, roi])
+
+        t = Table(table_data, colWidths=[4.5*cm, 2.5*cm, 2.5*cm, 2.5*cm, 2.5*cm])
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), blue),
+            ("TEXTCOLOR",  (0,0), (-1,0), HexColor("#ffffff")),
+            ("FONTNAME",   (0,0), (-1,0), "Helvetica-Bold"),
+            ("GRID",       (0,0), (-1,-1), 0.5, grey),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [HexColor("#161b22"), HexColor("#21262d")]),
+            ("TEXTCOLOR",  (0,1), (-1,-1), HexColor("#e6edf3")),
+            ("ALIGN",      (1,0), (-1,-1), "CENTER"),
+        ]))
+        elems.append(t)
+        elems.append(Spacer(1, 0.5*cm))
+        elems.append(Paragraph(f"Erstellt: {de_now().strftime('%d.%m.%Y %H:%M')} Uhr", styles["Normal"]))
+
+        doc.build(elems)
+        return pfad
+    except ImportError:
+        print("  [PDF] reportlab nicht installiert – sende Text-Version")
+        return None
+    except Exception as e:
+        print(f"  [PDF] Fehler: {e}")
+        return None
+
+def sende_pdf_telegram(pfad: str, monat: str):
+    """Sendet PDF via Telegram."""
+    try:
+        with open(pfad, "rb") as f:
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
+            requests.post(url,
+                data={"chat_id": TELEGRAM_CHAT_ID,
+                      "caption": f"📄 Monatsbericht {monat} – BetlabLIVE"},
+                files={"document": f}, timeout=30)
+        print(f"  [PDF] Monatsbericht gesendet")
+    except Exception as e:
+        print(f"  [PDF] Senden-Fehler: {e}")
+
 # ============================================================
 #  SIGNAL TRACKER – Robustes Auswertungs-System
 # ============================================================
@@ -4327,13 +6137,18 @@ def bot_watchdog():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v36")
+    print("  ⚽ FUSSBALL BOTS v40")
     print("  Value Bets · CS2 · Telegram Befehle · Bankroll · Multi-Signal · Persistenz")
     print("=" * 50 + "\n")
 
     statistik_laden()
     beobachtete_spiele_laden()
     tracker_laden()
+    notified_sets_laden()
+    whitelist_laden()
+    manuell_tipps_laden()
+    community_laden()
+    dynamische_filter_laden()
 
     bot_definitionen = [
         ("Ecken-Bot",        bot_ecken),
@@ -4352,6 +6167,14 @@ if __name__ == "__main__":
         ("Auswertung-Bot",   bot_auswertung_und_berichte),
         ("Nachschau-Bot",    bot_nachschau),
         ("Value-Bot",        bot_value_bet),
+        ("xG-Bot",           bot_xg),
+        ("Arbitrage-Bot",    bot_arbitrage),
+        ("EarlyGoal-Bot",    bot_early_goal),
+        ("RotkarteEcken-Bot",bot_rotkarte_ecken),
+        ("Odds-Tracker",     bot_odds_tracker),
+        ("Selbstlern-Bot",   bot_selbstlernend),
+        ("Wetter-Bot",       bot_wetter_tipp),
+        ("Gruppen-Bot",      bot_telegram_gruppe),
         ("CS2-Bot",          bot_cs2),
     ]
 
@@ -4365,6 +6188,10 @@ if __name__ == "__main__":
         threads.append(t)
         t.start()
         time.sleep(2)
+
+    # Dashboard starten (Port 8080)
+    dashboard = threading.Thread(target=bot_web_dashboard, daemon=True, name="Dashboard")
+    dashboard.start()
 
     # Watchdog starten
     watchdog = threading.Thread(target=bot_watchdog, daemon=True, name="Watchdog")
