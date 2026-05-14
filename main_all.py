@@ -1,4 +1,4 @@
-# v48 - Claude Budget + Polling-Fix + Telegram Signal-Filter (/filter)
+# v49 - Top-Ligen PreMatch + Ecken-Verfügbarkeit + Command Hilfen + Filter UI
 import os
 import requests
 import re
@@ -35,7 +35,7 @@ FOOTBALLDATA_KEY   = os.environ.get("FOOTBALLDATA_KEY", "e17f09662062462b850a73f
 VALUE_BET_MIN_QUOTE   = 1.6   # Mindestquote damit ein Value Bet interessant ist
 VALUE_BET_MIN_VALUE   = 0.15  # Mindest-Edge (15%) damit Signal gesendet wird
 DISCORD_WEBHOOK_VALUE = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"  # #betlab-value-bets
-DISCORD_WEBHOOK_CS2   = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"  # #betlab-cs2
+DISCORD_WEBHOOK_CS2   = "https://discord.com/api/webhooks/1504397240741924966/62oifCRnXt73yO2u4qucENYuVLAgJf7rIgRDhaTVVG8y1j_nuVc4eyyUFakqI-UGZ0tb"  # #betlab-cs2
 ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_KEY", "")
 CLAUDE_MAX_PRO_TAG = 3    # Maximal 3 Claude-Calls pro Tag
 
@@ -2914,6 +2914,10 @@ def bot_ecken():
                     notified_ecken.add(match_id)
                     multi_bonus = multi_signal_check(match_id, "Ecken-Bot")
                     konfidenz   = min(10, konfidenz + multi_bonus)
+                    # Ecken-Markt bei Bookmarkern verfügbar?
+                    if not prüfe_ecken_verfuegbar(home, away):
+                        notified_ecken.add(match_id)
+                        continue
                     beobachtung_hinzufuegen(match_id, {
                         "typ": "ecken", "match_id": match_id,
                         "home": home, "away": away, "hz1_ecken": corners,
@@ -3584,6 +3588,133 @@ def bot_tore_analyse():
 #  TELEGRAM BEFEHLE (/status /pause /statistik /bankroll)
 # ============================================================
 
+
+# ── Command Help Texte ──────────────────────────────────────
+CMD_HILFE = {
+    "/statistik": (
+        "📊 <b>Statistik</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+        "Zeigt deine aktuelle Tages-Bilanz:\n\n"
+        "✅ Gewonnene Tipps\n❌ Verlorene Tipps\n"
+        "🎯 Trefferquote in %\n💰 ROI (Return on Investment)\n"
+        "⏰ Beste Tageszeit für Signale\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "Einfach schreiben: <code>/statistik</code>"
+    ),
+    "/live": (
+        "🔴 <b>Live Signale</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+        "Zeigt alle Signale die gerade aktiv sind\n"
+        "und noch ausgewertet werden.\n\n"
+        "Du siehst welche Spiele der Bot gerade\n"
+        "beobachtet und auf ein Ergebnis wartet.\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "Einfach schreiben: <code>/live</code>"
+    ),
+    "/chart": (
+        "📈 <b>Performance Chart</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+        "Sendet dir ein Liniendiagramm das zeigt\n"
+        "wie sich deine Trefferquote entwickelt hat.\n\n"
+        "🟢 Über 50% = grün\n🔴 Unter 50% = rot\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "Einfach schreiben: <code>/chart</code>"
+    ),
+    "/bankroll": (
+        "💰 <b>Bankroll</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+        "Zeigt deine aktuelle Bankroll\n"
+        "und die Veränderung seit dem Start.\n\n"
+        "💡 Tipp: Mit <code>/compound</code> kannst du\n"
+        "simulieren wie deine Bankroll wächst.\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "Einfach schreiben: <code>/bankroll</code>"
+    ),
+    "/tipp": (
+        "🎯 <b>Manueller Tipp</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+        "Tipp manuell eingeben und tracken lassen.\n\n"
+        "📝 Format:\n"
+        "<code>/tipp [Spiel] [Bet] [Quote]</code>\n\n"
+        "📌 Beispiele:\n"
+        "<code>/tipp ManCity Über2.5 1.85</code>\n"
+        "<code>/tipp BVBvsBayern HeimsiegX 3.20</code>\n\n"
+        "Nach dem Spiel:\n"
+        "<code>/gewonnen</code> oder <code>/verloren</code>"
+    ),
+    "/erklaer": (
+        "🔍 <b>Bot Erklärung</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+        "Erklärt dir wie ein bestimmter Bot funktioniert.\n\n"
+        "📝 Format: <code>/erklaer [botname]</code>\n\n"
+        "📌 Verfügbare Bots:\n"
+        "<code>ecken</code> | <code>karten</code> | <code>druck</code>\n"
+        "<code>comeback</code> | <code>torwart</code> | <code>value</code> | <code>xg</code>\n\n"
+        "Beispiel: <code>/erklaer ecken</code>"
+    ),
+    "/whitelist": (
+        "📋 <b>Whitelist – Liga & Team Filter</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+        "Schränke den Bot auf bestimmte Ligen ein.\n\n"
+        "📝 Befehle:\n"
+        "<code>/whitelist on</code> – aktivieren\n"
+        "<code>/whitelist off</code> – deaktivieren\n"
+        "<code>/whitelist liga [Name]</code> – Liga hinzufügen\n"
+        "<code>/whitelist team [Name]</code> – Team hinzufügen\n"
+        "<code>/whitelist reset</code> – alles leeren\n\n"
+        "Beispiel: <code>/whitelist liga Bundesliga</code>"
+    ),
+    "/suche": (
+        "🔎 <b>Signal Archiv Suche</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+        "Durchsucht alle vergangenen Signale.\n\n"
+        "📝 Format: <code>/suche [Begriff]</code>\n\n"
+        "📌 Beispiele:\n"
+        "<code>/suche Manchester</code>\n"
+        "<code>/suche Bundesliga</code>\n"
+        "<code>/suche Bayern</code>\n\n"
+        "Zeigt die letzten 10 Treffer."
+    ),
+    "/export": (
+        "📤 <b>Daten Export</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+        "Erstellt eine Excel-Datei mit allen\n"
+        "Signalen der letzten 30 Tage.\n\n"
+        "📊 Enthält: Datum, Spiel, Tipp, Quote,\n"
+        "EV-Score, Ergebnis und mehr.\n\n"
+        "⚠️ Benötigt: <code>pip install openpyxl</code>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "Einfach schreiben: <code>/export</code>"
+    ),
+    "/compound": (
+        "📈 <b>Bankroll Simulation</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+        "Simuliert wie deine Bankroll über 20 Wochen\n"
+        "wächst wenn du Gewinne reinvestierst.\n\n"
+        "Nutzt das Kelly-Kriterium und deine\n"
+        "echte Trefferquote für die Berechnung.\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "Einfach schreiben: <code>/compound</code>"
+    ),
+    "/pause": (
+        "⏸️ <b>Bot pausieren</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+        "Pausiert alle Signal-Bots oder\n"
+        "setzt sie wieder fort.\n\n"
+        "⚠️ Im pausierten Zustand:\n"
+        "Keine Signale, keine PreMatch-Tipps.\n"
+        "Auswertungen laufen weiter.\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "Einfach schreiben: <code>/pause</code>"
+    ),
+    "/addadmin": (
+        "👤 <b>Admin hinzufügen</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+        "Gibt einer anderen Person Zugriff\n"
+        "auf alle Bot-Befehle.\n\n"
+        "📝 Format: <code>/addadmin [Telegram-ID]</code>\n\n"
+        "💡 Tipp: Telegram-ID herausfinden\n"
+        "via @userinfobot"
+    ),
+}
+
+def sende_cmd_hilfe(chat_id: str, cmd: str):
+    """Sendet Hilfe-Text für einen Command."""
+    text = CMD_HILFE.get(cmd)
+    if text:
+        requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                      json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"}, timeout=10)
+        return True
+    return False
+
 def bot_telegram_befehle():
     """
     Lauscht auf Telegram-Befehle und reagiert darauf.
@@ -3738,6 +3869,9 @@ def bot_telegram_befehle():
                     requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                                   json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
 
+                elif text == "/erklaer":
+                    sende_cmd_hilfe(chat_id, "/erklaer")
+
                 elif text.startswith("/erklaer "):
                     bot_name = text.replace("/erklaer ", "").strip().lower()
                     erkl = SIGNAL_ERKLAERUNGEN.get(bot_name)
@@ -3808,6 +3942,9 @@ def bot_telegram_befehle():
                         requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                                       json={"chat_id": chat_id, "text": "⚠️ openpyxl nicht installiert: pip install openpyxl"}, timeout=10)
 
+                elif text == "/suche":
+                    sende_cmd_hilfe(chat_id, "/suche")
+
                 elif text.startswith("/suche "):
                     suchbegriff = text.replace("/suche ", "").strip()
                     antwort     = suche_signale(suchbegriff)
@@ -3824,28 +3961,24 @@ def bot_telegram_befehle():
                     requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                                   json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
 
-                elif text in ("/filter", "/signale"):
-                    aktiv_list   = []
-                    deakt_list   = []
-                    for key, name in TELEGRAM_BOT_NAMEN.items():
-                        if key in _telegram_deaktiviert:
-                            deakt_list.append(f"❌ {name}")
-                        else:
-                            aktiv_list.append(f"✅ {name}")
-                    antwort = (f"📱 <b>Telegram Signal-Filter</b>\n"
-                               f"━━━━━━━━━━━━━━━━━━━━\n"
-                               f"Discord erhält ALLE Signale weiterhin.\n"
-                               f"━━━━━━━━━━━━━━━━━━━━\n"
-                               f"<b>Aktiv für Telegram:</b>\n" + "\n".join(aktiv_list) +
-                               (f"\n\n<b>Deaktiviert:</b>\n" + "\n".join(deakt_list) if deakt_list else "") +
-                               f"\n━━━━━━━━━━━━━━━━━━━━\n"
-                               f"Ein/Aus: /filter_on [key] oder /filter_off [key]\n"
-                               f"Beispiele:\n"
-                               f"/filter_off cs2 → CS2 nur Discord\n"
-                               f"/filter_off prematch → PreMatch nur Discord\n"
-                               f"/filter_on cs2 → CS2 wieder Telegram\n"
-                               f"/filter_off alle → Alles nur Discord\n"
-                               f"/filter_on alle → Alles wieder Telegram")
+                elif text in ("/filter", "/signale", "/filter_off", "/filter_on"):
+                    an   = [f"✅ <b>{n}</b>  →  <code>/filter_off {k}</code>"
+                            for k, n in TELEGRAM_BOT_NAMEN.items() if k not in _telegram_deaktiviert]
+                    aus  = [f"❌ <b>{n}</b>  →  <code>/filter_on {k}</code>"
+                            for k, n in TELEGRAM_BOT_NAMEN.items() if k in _telegram_deaktiviert]
+                    antwort = (
+                        f"📱 <b>Signal-Filter</b>\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n"
+                        f"Hier kannst du einzelne Signale\n"
+                        f"für Telegram an- oder ausschalten.\n"
+                        f"Discord bekommt immer alle Signale.\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n"
+                        f"🟢 <b>Aktiv ({len(an)}):</b>\n" + "\n".join(an) +
+                        (f"\n\n🔴 <b>Deaktiviert ({len(aus)}):</b>\n" + "\n".join(aus) if aus else "") +
+                        f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                        f"Alles aus: <code>/filter_off alle</code>\n"
+                        f"Alles an:  <code>/filter_on alle</code>"
+                    )
                     requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                                   json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
 
@@ -3854,14 +3987,24 @@ def bot_telegram_befehle():
                     if key == "alle":
                         _telegram_deaktiviert.update(TELEGRAM_BOT_NAMEN.keys())
                         telegram_filter_speichern()
-                        antwort = "❌ Alle Signale für Telegram deaktiviert\n(Discord läuft weiter)"
+                        antwort = (f"❌ <b>Alle Signale für Telegram deaktiviert</b>\n"
+                                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                                   f"📱 Telegram: Keine Signale mehr\n"
+                                   f"🖥️ Discord: Läuft weiter wie gewohnt\n"
+                                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                                   f"Wieder aktivieren: <code>/filter_on alle</code>")
                     elif key in TELEGRAM_BOT_NAMEN:
                         _telegram_deaktiviert.add(key)
                         telegram_filter_speichern()
-                        antwort = f"❌ {TELEGRAM_BOT_NAMEN[key]} für Telegram deaktiviert\n✅ Discord läuft weiter"
+                        antwort = (f"❌ <b>{TELEGRAM_BOT_NAMEN[key]} deaktiviert</b>\n"
+                                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                                   f"📱 Telegram: Keine {TELEGRAM_BOT_NAMEN[key]} Signale\n"
+                                   f"🖥️ Discord: Läuft weiter wie gewohnt\n"
+                                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                                   f"Wieder aktivieren: <code>/filter_on {key}</code>")
                     else:
-                        verfuegbar = ", ".join(TELEGRAM_BOT_NAMEN.keys())
-                        antwort = f"❓ Unbekannt. Verfügbar: {verfuegbar}"
+                        antwort = (f"❓ <b>Key nicht gefunden: {key}</b>\n"
+                                   f"Schreib <code>/filter</code> um alle Keys zu sehen")
                     requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                                   json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
 
@@ -3870,14 +4013,16 @@ def bot_telegram_befehle():
                     if key == "alle":
                         _telegram_deaktiviert.clear()
                         telegram_filter_speichern()
-                        antwort = "✅ Alle Signale für Telegram aktiviert"
+                        antwort = (f"✅ <b>Alle Signale für Telegram aktiviert</b>\n"
+                                   f"📱 Telegram + 🖥️ Discord erhalten wieder alle Signale")
                     elif key in TELEGRAM_BOT_NAMEN:
                         _telegram_deaktiviert.discard(key)
                         telegram_filter_speichern()
-                        antwort = f"✅ {TELEGRAM_BOT_NAMEN[key]} für Telegram wieder aktiviert"
+                        antwort = (f"✅ <b>{TELEGRAM_BOT_NAMEN[key]} aktiviert</b>\n"
+                                   f"📱 Telegram + 🖥️ Discord erhalten wieder {TELEGRAM_BOT_NAMEN[key]} Signale")
                     else:
-                        verfuegbar = ", ".join(TELEGRAM_BOT_NAMEN.keys())
-                        antwort = f"❓ Unbekannt. Verfügbar: {verfuegbar}"
+                        antwort = (f"❓ <b>Key nicht gefunden: {key}</b>\n"
+                                   f"Schreib <code>/filter</code> um alle Keys zu sehen")
                     requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                                   json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
 
@@ -3910,7 +4055,11 @@ def bot_telegram_befehle():
                     requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                                   json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
 
-                elif text.startswith("/whitelist"):
+                elif text == "/whitelist":
+                    sende_cmd_hilfe(chat_id, "/whitelist")
+                    continue
+
+                elif text.startswith("/whitelist "):
                     teile_wl = text.split(" ", 2)
                     if len(teile_wl) == 1:
                         ligen_wl = ", ".join(_whitelist.get("ligen", [])) or "–"
@@ -3945,6 +4094,9 @@ def bot_telegram_befehle():
                         antwort = "Benutzung: /whitelist [on|off|liga|team|reset]"
                     requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                                   json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text == "/tipp":
+                    sende_cmd_hilfe(chat_id, "/tipp")
 
                 elif text.startswith("/tipp "):
                     teile_t = msg_obj.get("text","").strip().split(" ", 3)
@@ -3996,6 +4148,10 @@ def bot_telegram_befehle():
                     antwort = f"📡 <b>API Monitor</b>\n━━━━━━━━━━━━━━━━━━━━\n{api_monitor_bericht()}\n━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr"
                     requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                                   json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text == "/addadmin":
+                    if ist_admin(chat_id):
+                        sende_cmd_hilfe(chat_id, "/addadmin")
 
                 elif text.startswith("/addadmin ") and ist_admin(chat_id):
                     neuer_id = text.replace("/addadmin ", "").strip()
@@ -4092,6 +4248,17 @@ def ls_get_fixtures(date_str: str) -> list:
     except Exception as e:
         print(f"  [PreMatch] Fixtures Fehler: {e}")
         return []
+
+PREMATCH_TOP_LIGEN = {
+    "Premier League", "Bundesliga", "La Liga", "Serie A", "Ligue 1",
+    "Champions League", "Europa League", "Conference League",
+    "Eredivisie", "Primeira Liga", "Super Lig", "Russian Premier League",
+    "Belgian Pro League", "Scottish Premiership", "Championship",
+    "Bundesliga 2", "Serie B", "2. Bundesliga", "Ligue 2",
+    "DFB-Pokal", "FA Cup", "Copa del Rey", "Coppa Italia",
+    "World Cup", "European Championship", "Nations League",
+    "MLS", "Brasileirão", "Argentine Primera Division",
+}
 
 def filtere_top_spiele(fixtures: list) -> list:
     """Filtert nur Spiele aus Top-Ligen."""
@@ -4468,6 +4635,44 @@ def get_live_odds_fuer_spiel(home: str, away: str) -> dict:
 def berechne_value(prob: float, quote: float) -> float:
     """Berechnet den Value Edge: (prob * quote) - 1"""
     return round(prob * quote - 1, 3)
+
+def prüfe_ecken_verfuegbar(home: str, away: str) -> bool:
+    """
+    Prüft ob Ecken-Wetten bei mindestens 2 Bookmarkern angeboten werden.
+    Verhindert Signale bei Ligen wo keine Ecken-Märkte existieren.
+    """
+    if not ODDS_API_KEY:
+        return True  # Ohne API → immer erlauben
+    try:
+        url    = "https://api.the-odds-api.com/v4/sports/soccer/odds/"
+        params = {"apiKey": ODDS_API_KEY, "regions": "eu",
+                  "markets": "alternate_totals", "oddsFormat": "decimal"}
+        resp   = requests.get(url, params=params, timeout=6)
+        if resp.status_code != 200:
+            return True  # API-Fehler → Signal trotzdem senden
+        home_s = home[:6].lower()
+        away_s = away[:6].lower()
+        for game in resp.json():
+            h = game.get("home_team", "").lower()
+            a = game.get("away_team", "").lower()
+            if home_s not in h and away_s not in a:
+                continue
+            # Prüfe ob corners Markt vorhanden
+            bm_mit_ecken = 0
+            for bm in game.get("bookmakers", []):
+                for market in bm.get("markets", []):
+                    if "corner" in market.get("key", "").lower():
+                        bm_mit_ecken += 1
+                        break
+            if bm_mit_ecken >= 2:
+                return True
+            elif bm_mit_ecken == 0:
+                print(f"  [Ecken] Kein Ecken-Markt bei Bookmarkern für {home} vs {away} – Signal unterdrückt")
+                return False
+        return True  # Spiel nicht gefunden → Signal trotzdem senden
+    except Exception as e:
+        print(f"  [Ecken] Verfügbarkeits-Check Fehler: {e}")
+        return True
 
 def vergleiche_quoten_bookmaker(home: str, away: str) -> list:
     """Vergleicht Quoten zwischen Bookmarkern und findet Ausreißer."""
@@ -8283,7 +8488,7 @@ def bot_watchdog():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v48")
+    print("  ⚽ FUSSBALL BOTS v49")
     print("  Value Bets · CS2 · Telegram Befehle · Bankroll · Multi-Signal · Persistenz")
     print("=" * 50 + "\n")
 
