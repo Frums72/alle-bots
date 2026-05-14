@@ -1,4 +1,4 @@
-# v48 - Claude Budget: Max 3x/Tag, nur Top-Ligen, Multi-Modell deaktiviert
+# v48 - Claude Budget + Gruppen-Bot Polling-Fix (kein Token-Konflikt)
 import requests
 import re
 import time
@@ -34,7 +34,7 @@ FOOTBALLDATA_KEY   = "e17f09662062462b850a73f857e1f974"  # football-data.org
 VALUE_BET_MIN_QUOTE   = 1.6   # Mindestquote damit ein Value Bet interessant ist
 VALUE_BET_MIN_VALUE   = 0.15  # Mindest-Edge (15%) damit Signal gesendet wird
 DISCORD_WEBHOOK_VALUE = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"  # #betlab-value-bets
-DISCORD_WEBHOOK_CS2   = "https://discord.com/api/webhooks/1504397240741924966/62oifCRnXt73yO2u4qucENYuVLAgJf7rIgRDhaTVVG8y1j_nuVc4eyyUFakqI-UGZ0tb"  # #betlab-cs2
+DISCORD_WEBHOOK_CS2   = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"  # #betlab-cs2
 ANTHROPIC_API_KEY  = ""  # claude.ai → API Keys (leer = deaktiviert)
 CLAUDE_MAX_PRO_TAG = 3    # Maximal 3 Claude-Calls pro Tag
 
@@ -4979,226 +4979,13 @@ def community_speichern():
 
 def bot_telegram_gruppe():
     """
-    Gruppen-Bot: Mitglieder können in der Telegram-Gruppe tippen.
-    Befehle:
-    /tipp [Spiel] [Bet] – z.B. /tipp ManCity Unter2.5
-    /meine              – zeigt eigene Tipps und Bilanz
-    /topliste           – zeigt Community-Rangliste
-    /ergebnis [ID] [W/L] – markiert Tipp als gewonnen/verloren
+    Gruppen-Bot: Kein eigener getUpdates – läuft jetzt über bot_telegram_befehle.
+    Verhindert Token-Konflikt der Befehle verschluckt.
     """
-    print("[Gruppen-Bot] Gestartet | Community Tipp-Tracking")
-    letzter_update = 0
-
+    print("[Gruppen-Bot] Gestartet | Integriert in Haupt-Bot (kein eigenes Polling)")
     while True:
-        try:
-            url  = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
-            resp = requests.get(url, params={"offset": letzter_update + 1, "timeout": 20}, timeout=25)
-            if resp.status_code != 200:
-                time.sleep(5)
-                continue
+        time.sleep(3600)
 
-            for update in resp.json().get("result", []):
-                letzter_update = update["update_id"]
-                # Callback Query (Inline-Buttons + Menu)
-                if "callback_query" in update:
-                    cq     = update["callback_query"]
-                    data   = cq.get("data", "")
-                    cq_id  = cq.get("id", "")
-                    cq_chat = str(cq.get("message", {}).get("chat", {}).get("id", ""))
-                    if data.startswith("menu_"):
-                        cmd = MENU_ANTWORTEN.get(data, "")
-                        if cmd.startswith("/"):
-                            # Führe Command aus (als ob User es getippt hätte)
-                            requests.post(
-                                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery",
-                                json={"callback_query_id": cq_id, "text": f"Ausführe {cmd}..."}, timeout=5
-                            )
-                            # Simuliere Command-Nachricht
-                            msg_obj = {"chat": {"id": int(cq_chat)}, "from": {"id": int(cq_chat), "first_name": "Menu"}, "text": cmd}
-                        else:
-                            requests.post(
-                                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-                                json={"chat_id": cq_chat, "text": cmd, "parse_mode": "HTML"}, timeout=10
-                            )
-                            requests.post(
-                                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery",
-                                json={"callback_query_id": cq_id}, timeout=5
-                            )
-                    else:
-                        verarbeite_callback_query(data, cq_id)
-                    continue
-                msg_obj  = update.get("message", {})
-                chat_id  = str(msg_obj.get("chat", {}).get("id", ""))
-                user_id  = str(msg_obj.get("from", {}).get("id", ""))
-                username = msg_obj.get("from", {}).get("first_name", "Anonym")
-                text     = msg_obj.get("text", "").strip()
-
-                # Sprache erkennen + speichern
-                if text and len(text) > 5:
-                    _user_sprache[user_id] = erkenne_sprache(text)
-
-                # Menu Callback verarbeiten
-                if "callback_query" not in update and not text:
-                    continue
-
-                # Onboarding für neue User
-                if user_id and user_id not in BEKANNTE_USER:
-                    BEKANNTE_USER.add(user_id)
-                    bekannte_user_speichern()
-                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-                                  json={"chat_id": chat_id, "text": ONBOARDING_NACHRICHT,
-                                        "parse_mode": "HTML"}, timeout=10)
-
-                # Nur in der Gruppe oder privatem Chat
-                if not text.startswith("/"):
-                    continue
-
-                teile = text.split(" ", 2)
-                cmd   = teile[0].lower().split("@")[0]
-
-                if cmd == "/tipp" and len(teile) >= 3:
-                    spiel = teile[1]
-                    bet   = teile[2]
-                    tipp_id = len(community_tipps.get(user_id, [])) + 1
-                    if user_id not in community_tipps:
-                        community_tipps[user_id] = []
-                    community_tipps[user_id].append({
-                        "id": tipp_id,
-                        "username": username,
-                        "spiel": spiel,
-                        "tipp": bet,
-                        "zeit": de_now().strftime("%d.%m %H:%M"),
-                        "ergebnis": None
-                    })
-                    community_speichern()
-                    antwort = (f"✅ <b>Tipp registriert!</b>\n"
-                               f"👤 {username}\n"
-                               f"⚽ Spiel: <b>{spiel}</b>\n"
-                               f"🎯 Tipp: <b>{bet}</b>\n"
-                               f"🆔 ID: <b>#{tipp_id}</b>\n"
-                               f"🕐 {de_now().strftime('%d.%m %H:%M')} Uhr\n\n"
-                               f"Ergebnis mit: /ergebnis {tipp_id} W oder /ergebnis {tipp_id} L")
-                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
-
-                elif cmd == "/meine":
-                    tipps = community_tipps.get(user_id, [])
-                    if not tipps:
-                        antwort = "Du hast noch keine Tipps abgegeben. Nutze /tipp [Spiel] [Bet]"
-                    else:
-                        gw = sum(1 for t in tipps if t.get("ergebnis") == "W")
-                        vl = sum(1 for t in tipps if t.get("ergebnis") == "L")
-                        pct = round(gw / (gw+vl) * 100) if gw+vl > 0 else 0
-                        letzte = tipps[-5:]
-                        zeilen = [f"#{t['id']} {t['spiel']} | {t['tipp']} | "
-                                  f"{'✅' if t['ergebnis']=='W' else '❌' if t['ergebnis']=='L' else '⏳'}"
-                                  for t in reversed(letzte)]
-                        antwort = (f"📊 <b>Deine Tipps, {username}</b>\n"
-                                   f"━━━━━━━━━━━━━━━━━━━━\n"
-                                   f"✅ {gw} | ❌ {vl} | 🎯 {pct}%\n"
-                                   f"━━━━━━━━━━━━━━━━━━━━\n"
-                                   + "\n".join(zeilen))
-                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
-
-                elif cmd == "/topliste":
-                    rangliste = []
-                    for uid, tipps in community_tipps.items():
-                        gw = sum(1 for t in tipps if t.get("ergebnis") == "W")
-                        vl = sum(1 for t in tipps if t.get("ergebnis") == "L")
-                        if gw + vl < 3:
-                            continue
-                        pct  = round(gw / (gw+vl) * 100)
-                        name = tipps[-1].get("username", "Anonym") if tipps else "?"
-                        rangliste.append((name, gw, vl, pct))
-                    rangliste.sort(key=lambda x: x[3], reverse=True)
-                    if not rangliste:
-                        antwort = "Noch keine Daten (mind. 3 Tipps nötig)"
-                    else:
-                        medals = ["🥇","🥈","🥉"]
-                        zeilen = [f"{medals[i] if i<3 else f'{i+1}.'} {n}: {g}W/{v}L ({p}%)"
-                                  for i, (n,g,v,p) in enumerate(rangliste[:10])]
-                        antwort = (f"🏆 <b>Community Topliste</b>\n"
-                                   f"━━━━━━━━━━━━━━━━━━━━\n"
-                                   + "\n".join(zeilen))
-                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
-
-                elif cmd == "/ergebnis" and len(teile) >= 3:
-                    try:
-                        tipp_id = int(teile[1])
-                        ergebnis = teile[2].upper()
-                        if ergebnis not in ("W", "L"):
-                            raise ValueError
-                        tipps = community_tipps.get(user_id, [])
-                        gefunden = False
-                        for t in tipps:
-                            if t["id"] == tipp_id:
-                                t["ergebnis"] = ergebnis
-                                gefunden = True
-                                break
-                        if gefunden:
-                            community_speichern()
-                            emoji = "✅ GEWONNEN" if ergebnis == "W" else "❌ VERLOREN"
-                            antwort = f"{emoji} – Tipp #{tipp_id} wurde markiert!"
-                        else:
-                            antwort = f"Tipp #{tipp_id} nicht gefunden."
-                    except Exception:
-                        antwort = "Benutzung: /ergebnis [ID] W oder /ergebnis [ID] L"
-                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
-
-        except Exception as e:
-            print(f"  [Gruppen-Bot] Fehler: {e}")
-        time.sleep(2)
-
-# ============================================================
-#  SELBSTLERNENDER BOT – Passt Filter automatisch an
-# ============================================================
-
-# Dynamische Schwellenwerte (werden vom Selbstlern-Bot angepasst)
-DYNAMISCHE_FILTER = {
-    "comeback":   {"COMEBACK_AB_MINUTE": 30, "poss_min": 45},
-    "druck":      {"MIN_DRUCK_ECKEN": 6,     "DRUCK_RATIO": 2.5},
-    "torwart":    {"MIN_SHOTS_ON_TARGET": 3},
-    "ecken":      {"MAX_CORNERS": 5},
-    "karten":     {"MIN_KARTEN": 2,          "KARTEN_BIS_MINUTE": 40},
-    "torflut":    {"TORFLUT_MIN_TORE": 3},
-}
-DYNAMISCHE_FILTER_DATEI = "dynamische_filter.json"
-
-def dynamische_filter_laden():
-    """Lädt angepasste Filter beim Start."""
-    import json, os
-    global DYNAMISCHE_FILTER
-    if not os.path.exists(DYNAMISCHE_FILTER_DATEI):
-        return
-    try:
-        with open(DYNAMISCHE_FILTER_DATEI) as f:
-            DYNAMISCHE_FILTER = json.load(f)
-        print(f"  [Selbstlern] Dynamische Filter geladen")
-    except Exception as e:
-        print(f"  [Selbstlern] Ladefehler: {e}")
-
-def dynamische_filter_speichern():
-    import json
-    try:
-        with open(DYNAMISCHE_FILTER_DATEI, "w") as f:
-            json.dump(DYNAMISCHE_FILTER, f, indent=2)
-    except Exception as e:
-        print(f"  [Selbstlern] Speicherfehler: {e}")
-
-def analysiere_bot_performance(typ: str, min_tipps: int = 15) -> dict:
-    """Analysiert Trefferquote eines Bots aus dem Signal-Tracker."""
-    with _tracker_lock:
-        signale = [s for s in _signal_tracker.values()
-                   if s.get("typ") == typ and s.get("status") == "ausgewertet"]
-    if len(signale) < min_tipps:
-        return {"tipps": len(signale), "quote": None, "ausreichend": False}
-    gewonnen = sum(1 for s in signale if s.get("gewonnen"))
-    quote    = round(gewonnen / len(signale), 3)
-    return {"tipps": len(signale), "quote": quote, "ausreichend": True,
-            "gewonnen": gewonnen, "verloren": len(signale) - gewonnen}
 
 def bot_selbstlernend():
     """
