@@ -8186,10 +8186,14 @@ if __name__ == "__main__":
     admins_laden()
     bekannte_user_laden()
     ab_test_laden()
-    bot_startup_alarm()
     manuell_tipps_laden()
     community_laden()
-    dynamische_filter_laden()
+
+    # Dynamische Filter laden (Funktion weiter unten definiert)
+    try:
+        dynamische_filter_laden()
+    except Exception as e:
+        print(f"  [Startup] dynamische_filter_laden: {e}")
 
     bot_definitionen = [
         ("Ecken-Bot",        bot_ecken),
@@ -8227,6 +8231,12 @@ if __name__ == "__main__":
         ("Gruppen-Bot",      bot_telegram_gruppe),
         ("CS2-Bot",          bot_cs2),
     ]
+
+    # Startup Alarm NACH bot_definitionen
+    try:
+        bot_startup_alarm()
+    except Exception as e:
+        print(f"  [Startup] Alarm: {e}")
 
     # Targets für Watchdog merken
     for name, target in bot_definitionen:
