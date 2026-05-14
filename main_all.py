@@ -1,4 +1,4 @@
-# v48 - Claude Budget + Gruppen-Bot Polling-Fix (kein Token-Konflikt)
+# v48 - Claude Budget + Polling-Fix + Telegram Signal-Filter (/filter)
 import os
 import requests
 import re
@@ -38,6 +38,58 @@ DISCORD_WEBHOOK_VALUE = "https://discord.com/api/webhooks/1501252266630316163/aB
 DISCORD_WEBHOOK_CS2   = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"  # #betlab-cs2
 ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_KEY", "")
 CLAUDE_MAX_PRO_TAG = 3    # Maximal 3 Claude-Calls pro Tag
+
+# ── Telegram Signal-Filter ───────────────────────────────────
+# Bots die für Telegram deaktiviert sind (Discord läuft weiter)
+TELEGRAM_FILTER_DATEI = "telegram_filter.json"
+_telegram_deaktiviert = set()  # Bot-Namen die NICHT per Telegram gesendet werden
+
+TELEGRAM_BOT_NAMEN = {
+    "cs2":         "🎮 CS2-Bot",
+    "ecken":       "📐 Ecken-Unter",
+    "ecken_over":  "📐 Ecken-Über",
+    "karten":      "🃏 Karten-Bot",
+    "torwart":     "🧤 Torwart-Bot",
+    "druck":       "🔥 Druck-Bot",
+    "comeback":    "🔄 Comeback-Bot",
+    "torflut":     "🌊 Torflut-Bot",
+    "rotkarte":    "🟥 Rotkarte-Bot",
+    "value":       "💎 Value-Bot",
+    "arbitrage":   "💰 Arbitrage-Bot",
+    "xg":          "📊 xG-Bot",
+    "earlygoal":   "⚡ EarlyGoal-Bot",
+    "hz2tore":     "🥅 HZ2-Tore-Bot",
+    "cornerrush":  "📐 CornerRush-Bot",
+    "sharp":       "💼 Sharp-Money-Bot",
+    "anomalie":    "🚨 Anomalie-Bot",
+    "prematch":    "📅 PreMatch-Bot",
+    "tagesoverview": "🌅 Morgen-Übersicht",
+}
+
+def telegram_filter_laden():
+    import json, os
+    global _telegram_deaktiviert
+    if not os.path.exists(TELEGRAM_FILTER_DATEI):
+        return
+    try:
+        with open(TELEGRAM_FILTER_DATEI) as f:
+            _telegram_deaktiviert = set(json.load(f))
+        if _telegram_deaktiviert:
+            print(f"  [TG-Filter] Deaktiviert: {', '.join(_telegram_deaktiviert)}")
+    except Exception as e:
+        print(f"  [TG-Filter] Ladefehler: {e}")
+
+def telegram_filter_speichern():
+    import json
+    try:
+        with open(TELEGRAM_FILTER_DATEI, "w") as f:
+            json.dump(list(_telegram_deaktiviert), f)
+    except Exception as e:
+        print(f"  [TG-Filter] Speicherfehler: {e}")
+
+def telegram_signal_erlaubt(bot_key: str) -> bool:
+    """Gibt False zurück wenn dieser Bot-Typ für Telegram deaktiviert ist."""
+    return bot_key not in _telegram_deaktiviert
 
 # ── Claude Tages-Budget ──────────────────────────────────────
 _claude_calls_heute   = 0
@@ -3772,6 +3824,63 @@ def bot_telegram_befehle():
                     requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                                   json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
 
+                elif text in ("/filter", "/signale"):
+                    aktiv_list   = []
+                    deakt_list   = []
+                    for key, name in TELEGRAM_BOT_NAMEN.items():
+                        if key in _telegram_deaktiviert:
+                            deakt_list.append(f"❌ {name}")
+                        else:
+                            aktiv_list.append(f"✅ {name}")
+                    antwort = (f"📱 <b>Telegram Signal-Filter</b>\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n"
+                               f"Discord erhält ALLE Signale weiterhin.\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n"
+                               f"<b>Aktiv für Telegram:</b>\n" + "\n".join(aktiv_list) +
+                               (f"\n\n<b>Deaktiviert:</b>\n" + "\n".join(deakt_list) if deakt_list else "") +
+                               f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                               f"Ein/Aus: /filter_on [key] oder /filter_off [key]\n"
+                               f"Beispiele:\n"
+                               f"/filter_off cs2 → CS2 nur Discord\n"
+                               f"/filter_off prematch → PreMatch nur Discord\n"
+                               f"/filter_on cs2 → CS2 wieder Telegram\n"
+                               f"/filter_off alle → Alles nur Discord\n"
+                               f"/filter_on alle → Alles wieder Telegram")
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text.startswith("/filter_off "):
+                    key = text.replace("/filter_off ", "").strip().lower()
+                    if key == "alle":
+                        _telegram_deaktiviert.update(TELEGRAM_BOT_NAMEN.keys())
+                        telegram_filter_speichern()
+                        antwort = "❌ Alle Signale für Telegram deaktiviert\n(Discord läuft weiter)"
+                    elif key in TELEGRAM_BOT_NAMEN:
+                        _telegram_deaktiviert.add(key)
+                        telegram_filter_speichern()
+                        antwort = f"❌ {TELEGRAM_BOT_NAMEN[key]} für Telegram deaktiviert\n✅ Discord läuft weiter"
+                    else:
+                        verfuegbar = ", ".join(TELEGRAM_BOT_NAMEN.keys())
+                        antwort = f"❓ Unbekannt. Verfügbar: {verfuegbar}"
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text.startswith("/filter_on "):
+                    key = text.replace("/filter_on ", "").strip().lower()
+                    if key == "alle":
+                        _telegram_deaktiviert.clear()
+                        telegram_filter_speichern()
+                        antwort = "✅ Alle Signale für Telegram aktiviert"
+                    elif key in TELEGRAM_BOT_NAMEN:
+                        _telegram_deaktiviert.discard(key)
+                        telegram_filter_speichern()
+                        antwort = f"✅ {TELEGRAM_BOT_NAMEN[key]} für Telegram wieder aktiviert"
+                    else:
+                        verfuegbar = ", ".join(TELEGRAM_BOT_NAMEN.keys())
+                        antwort = f"❓ Unbekannt. Verfügbar: {verfuegbar}"
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
                 elif text == "/claude":
                     heute_str = de_now().strftime("%Y-%m-%d")
                     if _claude_calls_datum != heute_str:
@@ -4720,7 +4829,8 @@ def bot_cs2():
                        f"📊 {signal['extra']}\n"
                        f"🎯 Tipp: <b>{signal['tipp']}</b>{stream_text}\n"
                        f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
-                send_telegram(msg)
+                if telegram_signal_erlaubt("cs2"):
+                    send_telegram(msg)
                 embed = {
                     "title": f"{signal['titel']}: {team1} vs {team2}",
                     "color": signal["farbe"],
@@ -8191,6 +8301,7 @@ if __name__ == "__main__":
     ab_test_laden()
     manuell_tipps_laden()
     community_laden()
+    telegram_filter_laden()
 
     # Dynamische Filter laden (Funktion weiter unten definiert)
     try:
