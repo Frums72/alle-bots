@@ -1,4 +1,4 @@
-# v49 - Top-Ligen PreMatch + Ecken-Verfügbarkeit + Command Hilfen + Filter UI
+# v52 - KRITISCHE Auswertungs-Fixes + Discord Vote-Rang-System
 import os
 import requests
 import re
@@ -35,7 +35,7 @@ FOOTBALLDATA_KEY   = os.environ.get("FOOTBALLDATA_KEY", "e17f09662062462b850a73f
 VALUE_BET_MIN_QUOTE   = 1.6   # Mindestquote damit ein Value Bet interessant ist
 VALUE_BET_MIN_VALUE   = 0.15  # Mindest-Edge (15%) damit Signal gesendet wird
 DISCORD_WEBHOOK_VALUE = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"  # #betlab-value-bets
-DISCORD_WEBHOOK_CS2   = "https://discord.com/api/webhooks/1504397240741924966/62oifCRnXt73yO2u4qucENYuVLAgJf7rIgRDhaTVVG8y1j_nuVc4eyyUFakqI-UGZ0tb"  # #betlab-cs2
+DISCORD_WEBHOOK_CS2   = "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1"  # #betlab-cs2
 ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_KEY", "")
 CLAUDE_MAX_PRO_TAG = 3    # Maximal 3 Claude-Calls pro Tag
 
@@ -2211,6 +2211,8 @@ def send_wochenbericht():
     }
     send_discord_embed(DISCORD_WEBHOOK_BILANZ, woche_embed)
     ab_test_auswerten()
+    wöchentliche_xp_auswertung()
+    sende_discord_rangliste()
     for t in wochen_statistik:
         wochen_statistik[t] = {"gewonnen": 0, "verloren": 0, "gewinn": 0.0}
     # Weekly Performance Chart
@@ -2636,11 +2638,31 @@ def bot_auswertung_und_berichte():
         "hz1tore":    auswertung_hz1tore,
         "vztore":     auswertung_vztore,
     }
-    FT_STATI        = {"FT", "Finished", "FINISHED", "AET", "PEN", "finished",
-                       "aet", "pen", "Full Time", "full time", "FULL TIME",
-                       "After Extra Time", "Penalties", "ft", "FT.", "ended"}
-    leerer_status   = {}  # match_id → Anzahl leerer Status-Antworten
-    ft_bestaetigung = {}  # match_id → Zeitstempel erste FT-Erkennung (Bestätigung nach 2 Min)
+    # Alle FT-Stati werden mit .upper() verglichen – kein Case-Fehler möglich
+FT_STATI_SET    = {"FT", "FINISHED", "AET", "PEN", "FULL TIME",
+                   "AFTER EXTRA TIME", "PENALTIES", "ENDED", "FT.", "AET."}
+
+def ist_spiel_fertig(status: str, time_val: str = "") -> bool:
+    """Robuste FT-Erkennung mit .upper() Normalisierung."""
+    s = str(status or "").upper().strip()
+    t = str(time_val or "").upper().strip()
+    if s in FT_STATI_SET:
+        return True
+    if t in {"FT", "FULL TIME", "AET", "ENDED", "FINISHED"}:
+        return True
+    return False
+
+# Kompatibilität
+FT_STATI = FT_STATI_SET
+
+def bot_auswertung_und_berichte():
+    """Tagesbericht, Wochenbericht und direkte FT-Erkennung."""
+    print("[Auswertung-Bot] Gestartet | Direkte FT-Erkennung alle 2 Min.")
+    tagesbericht_gesendet  = None
+    wochenbericht_gesendet = None
+    monatsbericht_gesendet = None
+    leerer_status = {}
+    auswertung_done = set()
 
     while True:
         try:
@@ -2735,20 +2757,16 @@ def bot_auswertung_und_berichte():
                         continue
 
                 # FT erkennen wenn: Status FT, ODER (nicht live + 2x kein Status)
-                ist_fertig = status_ft or (nicht_live and leerer_status.get(match_id, 0) >= 2)
+                # Robuste FT-Erkennung
+                status_raw = str(spiel_live.get("status", "") if spiel_live else "")
+                time_raw   = str(spiel_live.get("time",   "") if spiel_live else "")
+                ist_fertig = (ist_spiel_fertig(status_raw, time_raw) or
+                              (nicht_live and leerer_status.get(match_id, 0) >= 2))
 
                 if not ist_fertig:
                     continue
 
-                # FT-Bestätigung: erst beim 2. FT-Signal auswerten
-                if match_id not in ft_bestaetigung:
-                    ft_bestaetigung[match_id] = time.time()
-                    print(f"  [Auswertung] {home_str} vs {away_str} | FT erkannt – warte 90s")
-                    continue
-                elif time.time() - ft_bestaetigung[match_id] < 90:
-                    continue
-
-                # Spiel beendet – jetzt auswerten!
+                # Spiel beendet – SOFORT auswerten (kein Timer)!
                 print(f"  [Auswertung] ✅ Werte aus: {home_str} vs {away_str}")
                 time.sleep(10)
 
@@ -3888,6 +3906,19 @@ def bot_telegram_befehle():
                     requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                                   json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
 
+                elif text.startswith("/start inv_"):
+                    einlader_id = text.replace("/start inv_", "").strip()
+                    if einlader_id != user_id:
+                        einlader_daten = _community_system["einladungen"].get(einlader_id, {})
+                        einlader_name  = einlader_daten.get("name", "Unbekannt")
+                        registriere_einladung(einlader_id, einlader_name, user_id, username)
+                        antwort = (f"👋 <b>Willkommen, {username}!</b>\n"
+                                   f"Du wurdest von <b>{einlader_name}</b> eingeladen.\n"
+                                   f"Schreib /start für das Hauptmenü!")
+                        requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                      json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+                    sende_hauptmenu(chat_id)
+
                 elif text in ("/start", "/menu"):
                     sende_hauptmenu(chat_id)
                     continue
@@ -4023,6 +4054,167 @@ def bot_telegram_befehle():
                     else:
                         antwort = (f"❓ <b>Key nicht gefunden: {key}</b>\n"
                                    f"Schreib <code>/filter</code> um alle Keys zu sehen")
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text in ("/checkin", "/check"):
+                    antwort = mache_daily_checkin(user_id, username)
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text in ("/rang", "/level", "/xp"):
+                    daten = _rang_daten.get(user_id)
+                    if not daten:
+                        antwort = f"🆕 Du bist noch nicht im System.\nNutze /checkin zum Starten!"
+                    else:
+                        lv  = daten.get("level", 1)
+                        lv_name = daten.get("level_name", "🆕 Newcomer")
+                        xp  = daten.get("xp", 0)
+                        _, _, bis = berechne_level(xp)
+                        gw  = daten.get("gewinne", 0)
+                        vl  = daten.get("verluste", 0)
+                        streak = daten.get("streak", 0)
+                        pct = round(gw/max(gw+vl,1)*100)
+                        # XP-Balken
+                        balken_len = 10
+                        if bis > 0:
+                            aktuell_level_xp = next((s[0] for s in LEVEL_STUFEN if s[1]==lv), 0)
+                            naechstes_xp = aktuell_level_xp + bis
+                            fortschritt = int((xp - aktuell_level_xp) / max(bis, 1) * balken_len)
+                        else:
+                            fortschritt = balken_len
+                        balken = "█" * fortschritt + "░" * (balken_len - fortschritt)
+                        antwort = (f"🏅 <b>{username}s Rang-Profil</b>\n"
+                                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                                   f"🎯 Level: <b>{lv} – {lv_name}</b>\n"
+                                   f"⭐ XP: <b>{xp:,}</b>\n"
+                                   f"[{balken}] {'' if bis==0 else f'noch {bis:,} XP'}\n"
+                                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                                   f"✅ Gewinne: <b>{gw}</b> | ❌ Verluste: <b>{vl}</b>\n"
+                                   f"🎯 Quote: <b>{pct}%</b>\n"
+                                   f"🔥 Streak: <b>{streak}</b>\n"
+                                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                                   f"📅 /checkin für täglich +{XP_QUELLEN['daily_checkin']} XP")
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text == "/xprangliste":
+                    antwort = f"🏆 <b>XP Rangliste</b>\n━━━━━━━━━━━━━━━━━━━━\n{xp_rangliste()}"
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text == "/features":
+                    inv_data = _community_system["einladungen"].get(user_id, {})
+                    inv_count = inv_data.get("count", 0)
+                    feat_text = invite_features_text(inv_count)
+                    antwort = (f"🔓 <b>Deine freigeschalteten Features</b>\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n"
+                               f"👥 Einladungen: <b>{inv_count}</b>\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n"
+                               f"{feat_text}\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n"
+                               f"📤 Dein Link: <code>t.me/frums72bot?start=inv_{user_id}</code>")
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text == "/meinestatistik":
+                    daten = _community_system["rollen"].get(user_id)
+                    if not daten:
+                        antwort = (f"📊 <b>Deine Statistik</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                                   f"Du hast noch keine Community-Tipps abgegeben.\n"
+                                   f"Nutze /tipp um anzufangen!")
+                    else:
+                        ges  = daten["tipps"]
+                        gw   = daten["gewinne"]
+                        vl   = daten.get("verluste", 0)
+                        pct  = round(gw / max(ges, 1) * 100)
+                        rolle = daten.get("rolle", "🆕 Neuling")
+                        streak = daten.get("streak", 0)
+                        beste  = daten.get("beste_streak", 0)
+                        # Nächste Rolle
+                        naechste = ""
+                        for min_g, name, _ in ROLLEN:
+                            if gw < min_g:
+                                naechste = f"\n🎯 Noch {min_g - gw} Gewinne bis {name}"
+                                break
+                        antwort = (f"📊 <b>Deine Statistik, {username}</b>\n"
+                                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                                   f"🏅 Rolle: <b>{rolle}</b>\n"
+                                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                                   f"✅ Gewonnen: <b>{gw}</b>\n"
+                                   f"❌ Verloren: <b>{vl}</b>\n"
+                                   f"🎯 Trefferquote: <b>{pct}%</b>\n"
+                                   f"🔥 Aktueller Streak: <b>{streak}</b>\n"
+                                   f"⭐ Bester Streak: <b>{beste}</b>{naechste}")
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text == "/einladungen":
+                    daten = _community_system["einladungen"].get(user_id)
+                    if not daten:
+                        antwort = (f"🎁 <b>Einladungs-Programm</b>\n"
+                                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                                   f"Du hast noch niemanden eingeladen.\n\n"
+                                   f"📤 Dein Einladungslink:\n"
+                                   f"<code>t.me/frums72bot?start=inv_{user_id}</code>\n\n"
+                                   f"🎁 Belohnungen ab 1 Einladung!")
+                    else:
+                        count  = daten["count"]
+                        belohn = daten.get("belohnungen", [])
+                        # Nächste Belohnung
+                        naechste_key = min([k for k in INVITE_BELOHNUNGEN if k > count] or [999])
+                        naechste_txt = f"\n🎯 Noch {naechste_key - count} bis: {INVITE_BELOHNUNGEN.get(naechste_key,'–')}" if naechste_key < 999 else ""
+                        antwort = (f"🎁 <b>Deine Einladungen, {username}</b>\n"
+                                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                                   f"👥 Eingeladen: <b>{count}</b> Personen{naechste_txt}\n"
+                                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                                   f"🏆 Verdiente Belohnungen:\n"
+                                   + ("\n".join([f"✅ {b}" for b in belohn]) if belohn else "Noch keine") +
+                                   f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                                   f"📤 Dein Link:\n<code>t.me/frums72bot?start=inv_{user_id}</code>")
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text == "/rollenrangliste":
+                    rollen_data = _community_system.get("rollen", {})
+                    sortiert = sorted(rollen_data.items(),
+                                      key=lambda x: x[1].get("gewinne", 0), reverse=True)[:10]
+                    if not sortiert:
+                        antwort = "Noch keine Einträge. Nutze /tipp um anzufangen!"
+                    else:
+                        medals = ["🥇","🥈","🥉"]
+                        zeilen = []
+                        for i, (uid, d) in enumerate(sortiert):
+                            m   = medals[i] if i < 3 else f"{i+1}."
+                            pct = round(d.get("gewinne",0)/max(d.get("tipps",1),1)*100)
+                            zeilen.append(f"{m} {d.get('name','?')} | {d.get('gewinne',0)}W | {pct}% | {d.get('rolle','🆕')}")
+                        antwort = ("🏆 <b>Community Rollenrangliste</b>\n"
+                                   "━━━━━━━━━━━━━━━━━━━━\n" + "\n".join(zeilen))
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text.startswith("/challenge"):
+                    if "join" in text:
+                        monat = de_now().strftime("%Y-%m")
+                        if monat not in _community_system["challenges"]:
+                            sende_monatliche_challenge()
+                        _community_system["challenges"][monat]["teilnehmer"][user_id] = {
+                            "name": username, "beigetreten": jetzt()
+                        }
+                        community_system_speichern()
+                        antwort = (f"✅ <b>Du nimmst an der Challenge teil!</b>\n"
+                                   f"Dokumentiere deine Tipps mit /tipp\n"
+                                   f"Viel Erfolg! 🎯")
+                    else:
+                        monat = de_now().strftime("%Y-%m")
+                        teilnehmer = _community_system["challenges"].get(monat, {}).get("teilnehmer", {})
+                        antwort = (f"🏆 <b>Monatliche Challenge – {de_now().strftime('%B %Y')}</b>\n"
+                                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                                   f"👥 Teilnehmer: <b>{len(teilnehmer)}</b>\n\n"
+                                   f"💰 Wer macht aus 10€ am meisten?\n\n"
+                                   f"🎁 Preise: Premium, Bot-Analyse, VIP\n"
+                                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                                   f"Mitmachen: <code>/challenge join</code>")
                     requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                                   json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
 
@@ -4175,7 +4367,7 @@ def bot_telegram_befehle():
                     requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                                   json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
 
-                elif text == "/auswertung":
+                elif text in ("/auswertung", "/status_auswertung"):
                     offene     = tracker_get_offene()
                     alle       = list(_signal_tracker.values())
                     ausgewertet = [s for s in alle if s.get("status") == "ausgewertet"]
@@ -7131,6 +7323,583 @@ def bot_morgen_uebersicht():
             print(f"  [Morgen-Bot] Fehler: {e}")
         time.sleep(60)
 
+
+
+
+def discord_vote_auswerten(signal_key: str, gewonnen: bool):
+    """Wertet alle Votes für ein Signal aus."""
+    votes = _discord_votes.get(signal_key, {})
+    for uid, vote in votes.items():
+        richtig = (vote == "ja" and gewonnen) or (vote == "nein" and not gewonnen)
+        if uid not in _discord_punkte:
+            _discord_punkte[uid] = {"punkte": 0, "gewinne": 0, "verluste": 0, "name": "?"}
+        d = _discord_punkte[uid]
+        if richtig:
+            d["punkte"] += 10; d["gewinne"] += 1
+        else:
+            d["punkte"] = max(0, d["punkte"] - 3); d["verluste"] += 1
+    discord_votes_speichern()
+
+_discord_votes  = {}
+_discord_punkte = {}
+DISCORD_VOTE_DATEI = "discord_votes.json"
+
+def discord_votes_laden():
+    import json, os
+    global _discord_votes, _discord_punkte
+    for datei, var in [(DISCORD_VOTE_DATEI, "_discord_votes"), ("discord_punkte.json", "_discord_punkte")]:
+        if os.path.exists(datei):
+            try:
+                with open(datei) as f:
+                    d = json.load(f)
+                if var == "_discord_votes": _discord_votes = d
+                else: _discord_punkte = d
+            except Exception: pass
+
+def discord_votes_speichern():
+    import json
+    for datei, daten in [(DISCORD_VOTE_DATEI, _discord_votes), ("discord_punkte.json", _discord_punkte)]:
+        try:
+            with open(datei, "w") as f: json.dump(daten, f)
+        except Exception: pass
+
+def sende_discord_rangliste():
+    if not _discord_punkte: return
+    sortiert = sorted(_discord_punkte.items(), key=lambda x: x[1].get("punkte",0), reverse=True)[:10]
+    medals = ["🥇","🥈","🥉"]
+    felder = []
+    for i, (uid, d) in enumerate(sortiert):
+        m = medals[i] if i < 3 else f"{i+1}."
+        felder.append({"name": f"{m} {d.get('name','User')}", "value": f"{d['punkte']} Pkt | {d['gewinne']}✅ {d['verluste']}❌", "inline": True})
+    embed = {"title": "🏆 Discord Rangliste", "color": 0xFFD700, "fields": felder, "description": "Stimme auf Signale ab!\n✅ Richtig = +10 | ❌ Falsch = -3", "footer": {"text": f"BetlabLIVE • {heute()}"}}
+    send_discord_embed(DISCORD_WEBHOOK_BILANZ, embed)
+
+# ============================================================
+#  🏆 MEGA RANG & BELOHNUNGS-SYSTEM v51
+# ============================================================
+
+# ── XP-Quellen ─────────────────────────────────────────────
+XP_QUELLEN = {
+    "tipp_gewonnen":     50,
+    "tipp_verloren":     10,   # Teilnahme belohnen
+    "daily_checkin":     20,
+    "einladung":        200,
+    "streak_5":          50,
+    "streak_10":        150,
+    "streak_20":        500,
+    "challenge_gewon":  500,
+    "challenge_teiln":   50,
+    "woche_gewonnen":   100,
+    "monat_top3":       300,
+    "erster_tipp":       25,
+    "100_tipps":        250,
+    "sniper_unlock":    200,
+}
+
+# ── Level-Stufen ────────────────────────────────────────────
+LEVEL_STUFEN = [
+    (0,     1,  "🆕 Newcomer"),
+    (100,   2,  "🎯 Einsteiger"),
+    (300,   3,  "📊 Tipper"),
+    (600,   4,  "🔍 Analyst"),
+    (1000,  5,  "🥉 Bronze Tipster"),
+    (1500,  6,  "📈 Fortgeschrittener"),
+    (2200,  7,  "🎲 Tipp-Profi"),
+    (3000,  8,  "🥈 Silber Tipster"),
+    (4000,  9,  "🔥 Heißer Draht"),
+    (5500,  10, "🥇 Gold Tipster"),
+    (7500,  11, "💡 Stratege"),
+    (10000, 12, "⚡ Streak Hunter"),
+    (13000, 13, "🎯 Sniper"),
+    (17000, 14, "💎 Diamond Tipster"),
+    (22000, 15, "🌟 Superstar"),
+    (28000, 16, "🏅 Elite Analyst"),
+    (35000, 17, "💠 Platinum Tipster"),
+    (45000, 18, "🔮 Oracle"),
+    (60000, 19, "👑 Legend"),
+    (80000, 20, "🌍 Hall of Fame"),
+]
+
+# ── Discord Rollen (basierend auf Gewinnen) ─────────────────
+DISCORD_ROLLEN = [
+    (200, "🌍 Hall of Fame",    0xFFD700),
+    (100, "👑 Legend",          0xFF6B00),
+    (75,  "💠 Platinum",        0x7DF9FF),
+    (50,  "💎 Diamond Tipster", 0x00BFFF),
+    (30,  "🥇 Gold Tipster",    0xFFD700),
+    (15,  "🥈 Silber Tipster",  0xC0C0C0),
+    (5,   "🥉 Bronze Tipster",  0xCD7F32),
+    (0,   "🆕 Newcomer",        0x808080),
+]
+
+SPEZIAL_ROLLEN = {
+    "sniper":       ("🎯 Sniper",        "75%+ Trefferquote bei 20+ Tipps"),
+    "streak_5":     ("🔥 On Fire",       "5 Tipps in Folge gewonnen"),
+    "streak_10":    ("⚡ Streak Master", "10 Tipps in Folge gewonnen"),
+    "streak_20":    ("💥 Unstoppable",   "20 Tipps in Folge gewonnen"),
+    "whale":        ("🐋 Whale",         "50+ Tipps mit 60%+ Quote"),
+    "ambassador":   ("🤝 Ambassador",    "10+ Einladungen"),
+    "champion":     ("🏆 Champion",      "Monatliche Challenge gewonnen"),
+    "veteran":      ("⚔️ Veteran",       "100+ Tipps insgesamt"),
+    "analyst":      ("📊 Analyst",       "50+ Tipps insgesamt"),
+    "early_bird":   ("🐦 Early Bird",    "Einer der ersten 100 Mitglieder"),
+}
+
+# ── Invite Feature-Unlock ───────────────────────────────────
+INVITE_FEATURES = {
+    0:  {"name": "🔓 Basis-Signale",        "beschreibung": "Alle Live-Signale im Discord"},
+    1:  {"name": "⭐ VIP Channel",           "beschreibung": "Zugang zum exklusiven VIP-Channel"},
+    2:  {"name": "📊 Wöchentlicher Report",  "beschreibung": "Persönlicher Tipp-Report jeden Montag"},
+    3:  {"name": "🤖 Bot-Analyse",           "beschreibung": "Persönliche Analyse deiner Tipps vom Bot"},
+    5:  {"name": "💎 Premium (1 Monat)",     "beschreibung": "Alle Premium-Features für 1 Monat"},
+    8:  {"name": "🔒 Insider-Channel",       "beschreibung": "Exklusive Vorschau auf kommende Signale"},
+    10: {"name": "♾️ Lifetime-Mitglied",     "beschreibung": "Dauerhafter kostenloser Zugang"},
+    15: {"name": "📢 Bot-Shoutout",          "beschreibung": "Bot nennt deinen Namen bei Signalen"},
+    20: {"name": "🛡️ Co-Admin",              "beschreibung": "Admin-Rechte im Discord"},
+    25: {"name": "🎯 Custom Alerts",         "beschreibung": "Persönliche Alert-Einstellungen"},
+    30: {"name": "💎 Partner Badge",         "beschreibung": "Offizieller Partner-Status"},
+    40: {"name": "🎙️ Eigener Channel",       "beschreibung": "Dein eigener Channel im Discord"},
+    50: {"name": "🏆 Hall of Fame",          "beschreibung": "Platz in der ewigen Bestenliste"},
+    75: {"name": "🤝 Revenue Share",         "beschreibung": "Anteil an Affiliate-Einnahmen"},
+    100:{"name": "👑 Co-Founder Badge",      "beschreibung": "Offizieller Mitgründer-Status"},
+}
+
+# ── Daily Check-in ──────────────────────────────────────────
+_checkin_heute = {}  # user_id → datum
+
+def mache_daily_checkin(user_id: str, username: str) -> str:
+    """Täglicher Check-in für XP-Bonus."""
+    heute = de_now().strftime("%Y-%m-%d")
+    if _checkin_heute.get(user_id) == heute:
+        return f"⏰ Du hast heute bereits eingecheckt! Komm morgen wieder für +{XP_QUELLEN['daily_checkin']} XP."
+    _checkin_heute[user_id] = heute
+    xp   = XP_QUELLEN["daily_checkin"]
+    xp_s = gib_xp(user_id, username, xp, "daily_checkin")
+    streak_d = xp_s.get("checkin_streak", 1)
+    bonus = ""
+    if streak_d == 7:
+        gib_xp(user_id, username, 100, "woche_7tage")
+        bonus = "\n🎉 7-Tage-Streak Bonus: +100 XP!"
+    elif streak_d == 30:
+        gib_xp(user_id, username, 500, "monat_30tage")
+        bonus = "\n🏆 30-Tage-Streak Bonus: +500 XP!"
+    return (f"✅ <b>Check-in erfolgreich!</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 {username}\n"
+            f"⭐ +{xp} XP verdient{bonus}\n"
+            f"📅 Tag-Streak: {streak_d}\n"
+            f"📊 Gesamt-XP: {xp_s.get('xp', 0):,}\n"
+            f"🏅 Level: {xp_s.get('level_name', '?')}")
+
+# ── XP System ───────────────────────────────────────────────
+RANG_DATEI = "rang_system.json"
+_rang_daten = {}  # user_id → {xp, level, gewinne, checkins...}
+
+def rang_laden():
+    import json, os
+    global _rang_daten
+    if os.path.exists(RANG_DATEI):
+        try:
+            with open(RANG_DATEI) as f:
+                _rang_daten = json.load(f)
+            print(f"  [Rang] {len(_rang_daten)} User geladen")
+        except Exception as e:
+            print(f"  [Rang] Ladefehler: {e}")
+
+def rang_speichern():
+    import json
+    try:
+        with open(RANG_DATEI, "w") as f:
+            json.dump(_rang_daten, f, indent=2)
+    except Exception as e:
+        print(f"  [Rang] Speicherfehler: {e}")
+
+def berechne_level(xp: int) -> tuple:
+    """Gibt (level, name, xp_bis_nächstes) zurück."""
+    aktuell = LEVEL_STUFEN[0]
+    for min_xp, level, name in LEVEL_STUFEN:
+        if xp >= min_xp:
+            aktuell = (min_xp, level, name)
+    # Nächstes Level
+    idx = next((i for i, s in enumerate(LEVEL_STUFEN)
+                if s[1] == aktuell[1]), 0)
+    if idx < len(LEVEL_STUFEN) - 1:
+        naechstes_xp = LEVEL_STUFEN[idx + 1][0]
+        bis_naechstes = naechstes_xp - xp
+    else:
+        bis_naechstes = 0
+    return aktuell[1], aktuell[2], bis_naechstes
+
+def gib_xp(user_id: str, username: str, xp: int, grund: str) -> dict:
+    """Gibt einem User XP und prüft Level-Up."""
+    if user_id not in _rang_daten:
+        _rang_daten[user_id] = {
+            "name": username, "xp": 0, "level": 1,
+            "level_name": "🆕 Newcomer", "gewinne": 0,
+            "verluste": 0, "streak": 0, "checkin_streak": 0,
+            "letzte_checkin": "", "spezial_rollen": [],
+            "xp_history": []
+        }
+    d = _rang_daten[user_id]
+    d["name"] = username
+    altes_level = d["level"]
+    d["xp"] += xp
+    d["xp_history"].append({"xp": xp, "grund": grund, "ts": jetzt()})
+    d["xp_history"] = d["xp_history"][-50:]  # Max 50 Einträge
+    # Level berechnen
+    neues_level, level_name, bis_naechstes = berechne_level(d["xp"])
+    d["level"]      = neues_level
+    d["level_name"] = level_name
+    rang_speichern()
+    # Level-Up Benachrichtigung
+    if neues_level > altes_level:
+        msg = (f"🎉 <b>LEVEL UP! {username}</b>\n"
+               f"━━━━━━━━━━━━━━━━━━━━\n"
+               f"Level {altes_level} → <b>Level {neues_level}</b>\n"
+               f"🏅 <b>{level_name}</b>\n"
+               f"⭐ Gesamt-XP: {d['xp']:,}\n"
+               f"━━━━━━━━━━━━━━━━━━━━\n"
+               f"{'🔓 Neue Features freigeschaltet!' if neues_level % 5 == 0 else 'Weiter so!'}")
+        send_telegram_gruppe(msg)
+        sende_discord_level_up(username, altes_level, neues_level, level_name, d["xp"])
+    return d
+
+def sende_discord_level_up(username, alt, neu, name, xp_ges):
+    """Discord Embed bei Level-Up."""
+    farben = {5: 0xCD7F32, 8: 0xC0C0C0, 10: 0xFFD700,
+              14: 0x00BFFF, 19: 0xFF6B00, 20: 0xFFD700}
+    farbe = farben.get(neu, 0x5865F2)
+    embed = {
+        "title": f"🎉 LEVEL UP – {username}!",
+        "color": farbe,
+        "fields": [
+            {"name": "📈 Neues Level", "value": f"**Level {neu}** – {name}", "inline": False},
+            {"name": "⭐ Gesamt-XP",  "value": f"**{xp_ges:,} XP**",        "inline": True},
+            {"name": "📊 Vorher",     "value": f"Level {alt}",               "inline": True},
+        ],
+        "footer": {"text": f"BetlabLIVE Rang-System • {heute()}"},
+        "thumbnail": {"url": "https://i.imgur.com/placeholder.png"}
+    }
+    send_discord_embed(DISCORD_WEBHOOK_BILANZ, embed)
+
+def xp_rangliste() -> str:
+    """Top 10 XP Rangliste."""
+    sortiert = sorted(_rang_daten.items(),
+                      key=lambda x: x[1].get("xp", 0), reverse=True)[:10]
+    medals = ["🥇","🥈","🥉"]
+    zeilen = []
+    for i, (uid, d) in enumerate(sortiert):
+        m = medals[i] if i < 3 else f"{i+1}."
+        zeilen.append(f"{m} <b>{d.get('name','?')}</b> – "
+                      f"Lv.{d.get('level',1)} | {d.get('xp',0):,} XP | {d.get('level_name','?')}")
+    return "\n".join(zeilen) if zeilen else "Noch keine Einträge"
+
+def invite_features_text(count: int) -> str:
+    """Zeigt freigeschaltete Features basierend auf Einladungen."""
+    zeilen = []
+    for inv, feat in sorted(INVITE_FEATURES.items()):
+        if inv <= count:
+            zeilen.append(f"✅ {feat['name']}")
+        else:
+            zeilen.append(f"🔒 {feat['name']} <i>(ab {inv} Einladungen)</i>")
+    return "\n".join(zeilen)
+
+def wöchentliche_xp_auswertung():
+    """Gibt dem Wochen-Gewinner XP-Bonus."""
+    if not _rang_daten:
+        return
+    # Bester Gewinner diese Woche (aus community_tipps)
+    beste_uid = None
+    beste_pct  = 0
+    for uid, data in _community_system.get("rollen", {}).items():
+        ges = data.get("tipps", 0)
+        gw  = data.get("gewinne", 0)
+        if ges < 3:
+            continue
+        pct = gw / ges * 100
+        if pct > beste_pct:
+            beste_pct  = pct
+            beste_uid  = uid
+    if beste_uid and beste_uid in _rang_daten:
+        username = _rang_daten[beste_uid].get("name", "?")
+        gib_xp(beste_uid, username, XP_QUELLEN["woche_gewonnen"], "woche_top")
+        msg = (f"🏆 <b>Wochen-Champion: {username}!</b>\n"
+               f"📊 {round(beste_pct)}% Trefferquote\n"
+               f"⭐ +{XP_QUELLEN['woche_gewonnen']} Bonus-XP!")
+        send_telegram_gruppe(msg)
+
+# ============================================================
+#  COMMUNITY SYSTEM – Rollen, Einladungen, Challenges
+# ============================================================
+
+COMMUNITY_SYSTEM_DATEI = "community_system.json"
+_community_system = {
+    "einladungen":  {},   # user_id → {name, count, eingeladene: [], belohnungen: []}
+    "challenges":   {},   # monat → {teilnehmer: {user_id: {start, aktuell}}}
+    "vote_heute":   {},   # datum → {ja: [], nein: [], tipp: str}
+    "rollen":       {},   # user_id → {rolle, gewinne, streak}
+}
+
+# ── Rollen-Definitionen ─────────────────────────────────
+ROLLEN = [
+    (100, "👑 Legend",          "legend"),
+    (50,  "💎 Diamond Tipster", "diamond"),
+    (30,  "🥇 Gold Tipster",    "gold"),
+    (15,  "🥈 Silber Tipster",  "silber"),
+    (5,   "🥉 Bronze Tipster",  "bronze"),
+    (0,   "🆕 Neuling",         "neuling"),
+]
+
+STREAK_ROLLEN = [
+    (10, "⚡ Streak Legend"),
+    (5,  "⚡ Streak Master"),
+    (3,  "🔥 On Fire"),
+]
+
+SNIPER_MIN_TIPPS  = 20
+SNIPER_MIN_QUOTE  = 75  # %
+
+# ── Einladungs-Belohnungen ──────────────────────────────
+INVITE_BELOHNUNGEN = {
+    1:  "🔓 VIP Channel Zugang",
+    2:  "📊 Wöchentlicher persönlicher Report",
+    3:  "🤖 Persönliche Tipp-Analyse",
+    5:  "⭐ 1 Monat Premium kostenlos",
+    8:  "🔒 Exklusiver Insider-Channel",
+    10: "💰 Lifetime Mitgliedschaft",
+    15: "📢 Bot nennt deinen Namen bei Signalen",
+    20: "👤 Co-Admin Rechte",
+    25: "🎯 Persönlicher Custom Alert",
+    30: "💎 Lifetime VIP + Partner Badge",
+    50: "🏆 Hall of Fame + eigener Channel",
+}
+
+def community_system_laden():
+    import json, os
+    global _community_system
+    if not os.path.exists(COMMUNITY_SYSTEM_DATEI):
+        return
+    try:
+        with open(COMMUNITY_SYSTEM_DATEI) as f:
+            data = json.load(f)
+        _community_system.update(data)
+        print(f"  [Community] System geladen: {len(_community_system['einladungen'])} User")
+    except Exception as e:
+        print(f"  [Community] Ladefehler: {e}")
+
+def community_system_speichern():
+    import json
+    try:
+        with open(COMMUNITY_SYSTEM_DATEI, "w") as f:
+            json.dump(_community_system, f, indent=2)
+    except Exception as e:
+        print(f"  [Community] Speicherfehler: {e}")
+
+def berechne_rolle(gewinne: int, trefferquote: float, streak: int) -> str:
+    """Berechnet die Rolle eines Users."""
+    spezial = []
+    # Streak-Rolle
+    for min_s, name in STREAK_ROLLEN:
+        if streak >= min_s:
+            spezial.append(name)
+            break
+    # Sniper-Rolle
+    if trefferquote >= SNIPER_MIN_QUOTE:
+        spezial.append("🎯 Sniper")
+    # Basis-Rolle
+    basis = ROLLEN[-1][1]
+    for min_g, name, _ in ROLLEN:
+        if gewinne >= min_g:
+            basis = name
+            break
+    alle = [basis] + spezial
+    return " | ".join(alle)
+
+def update_user_rolle(user_id: str, username: str, gewonnen: bool):
+    """Aktualisiert Rolle nach einem Tipp-Ergebnis."""
+    if user_id not in _community_system["rollen"]:
+        _community_system["rollen"][user_id] = {
+            "name": username, "gewinne": 0, "verluste": 0,
+            "streak": 0, "beste_streak": 0, "tipps": 0
+        }
+    data = _community_system["rollen"][user_id]
+    data["tipps"]  += 1
+    data["name"]    = username
+    if gewonnen:
+        data["gewinne"]      += 1
+        data["streak"]        = data.get("streak", 0) + 1
+        data["beste_streak"]  = max(data.get("beste_streak", 0), data["streak"])
+    else:
+        data["verluste"] = data.get("verluste", 0) + 1
+        data["streak"]   = 0
+    pct   = round(data["gewinne"] / max(data["tipps"], 1) * 100)
+    rolle = berechne_rolle(data["gewinne"], pct, data["streak"])
+    alte_rolle = data.get("rolle", "")
+    data["rolle"] = rolle
+    community_system_speichern()
+    # Benachrichtigung bei neuer Rolle
+    if alte_rolle != rolle and alte_rolle:
+        msg = (f"🎉 <b>{username} hat eine neue Rolle!</b>\n"
+               f"━━━━━━━━━━━━━━━━━━━━\n"
+               f"Vorher: {alte_rolle}\n"
+               f"Jetzt:  <b>{rolle}</b>\n"
+               f"📊 {data['gewinne']}W | {data.get('verluste',0)}L | {pct}% Quote")
+        send_telegram_gruppe(msg)
+    return rolle
+
+def registriere_einladung(einlader_id: str, einlader_name: str,
+                           neuer_id: str, neuer_name: str):
+    """Registriert eine neue Einladung."""
+    if einlader_id not in _community_system["einladungen"]:
+        _community_system["einladungen"][einlader_id] = {
+            "name": einlader_name, "count": 0,
+            "eingeladene": [], "belohnungen": []
+        }
+    data = _community_system["einladungen"][einlader_id]
+    if neuer_id in data["eingeladene"]:
+        return  # Bereits registriert
+    data["eingeladene"].append(neuer_id)
+    data["count"] += 1
+    data["name"]   = einlader_name
+    anzahl = data["count"]
+    community_system_speichern()
+    # Belohnung prüfen
+    belohnung = INVITE_BELOHNUNGEN.get(anzahl)
+    if belohnung and belohnung not in data["belohnungen"]:
+        data["belohnungen"].append(belohnung)
+        community_system_speichern()
+        msg = (f"🎁 <b>{einlader_name} hat eine Belohnung verdient!</b>\n"
+               f"━━━━━━━━━━━━━━━━━━━━\n"
+               f"✅ {anzahl}. Einladung – {neuer_name} beigetreten\n"
+               f"🎁 Belohnung: <b>{belohnung}</b>\n"
+               f"━━━━━━━━━━━━━━━━━━━━\n"
+               f"Kontaktiere einen Admin zur Einlösung!")
+        send_telegram(msg)
+
+def freundes_bonus_prüfen(user_id: str, username: str):
+    """Prüft ob jemand einen Einlader hat und benachrichtigt ihn beim ersten Gewinn."""
+    for einlader_id, data in _community_system["einladungen"].items():
+        if user_id in data.get("eingeladene", []):
+            bonus_key = f"bonus_{user_id}"
+            if data.get(bonus_key):
+                return  # Bereits benachrichtigt
+            data[bonus_key] = True
+            community_system_speichern()
+            msg = (f"🎉 <b>Freundes-Bonus!</b>\n"
+                   f"━━━━━━━━━━━━━━━━━━━━\n"
+                   f"Dein eingeladener Freund <b>{username}</b>\n"
+                   f"hat seinen ersten Tipp gewonnen! 🥳\n"
+                   f"Danke dass du die Community wachsen lässt! 💪")
+            # An Einlader schicken
+            try:
+                requests.post(
+                    f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                    json={"chat_id": einlader_id, "text": msg, "parse_mode": "HTML"},
+                    timeout=10
+                )
+            except Exception:
+                pass
+            break
+
+def sende_tipp_vote(tipp: str, spiel: str, liga: str):
+    """Sendet den Tipp des Tages mit Abstimmungs-Buttons."""
+    heute = de_now().strftime("%Y-%m-%d")
+    _community_system["vote_heute"][heute] = {"ja": [], "nein": [], "tipp": tipp, "spiel": spiel}
+    community_system_speichern()
+    import json as _json
+    keyboard = {
+        "inline_keyboard": [[
+            {"text": "✅ Ich nehme den Tipp!", "callback_data": f"vote_ja_{heute}"},
+            {"text": "❌ Ich passe aus",        "callback_data": f"vote_nein_{heute}"},
+        ]]
+    }
+    msg = (f"🗳️ <b>Tipp des Tages – Abstimmung!</b>\n"
+           f"━━━━━━━━━━━━━━━━━━━━\n"
+           f"🏆 {liga}\n📌 {spiel}\n"
+           f"━━━━━━━━━━━━━━━━━━━━\n"
+           f"🎯 Tipp: <b>{tipp}</b>\n"
+           f"━━━━━━━━━━━━━━━━━━━━\n"
+           f"👇 Nimmst du den Tipp mit?")
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            json={"chat_id": TELEGRAM_CHAT_ID, "text": msg,
+                  "parse_mode": "HTML",
+                  "reply_markup": _json.dumps(keyboard)},
+            timeout=10
+        )
+    except Exception as e:
+        print(f"  [Vote] Fehler: {e}")
+
+def verarbeite_vote_callback(data: str, user_id: str, username: str):
+    """Verarbeitet Vote-Button-Drücke."""
+    heute = de_now().strftime("%Y-%m-%d")
+    if heute not in _community_system["vote_heute"]:
+        return "Keine aktive Abstimmung heute"
+    vote_data = _community_system["vote_heute"][heute]
+    # Alten Vote entfernen
+    vote_data["ja"]   = [u for u in vote_data["ja"]   if u != user_id]
+    vote_data["nein"] = [u for u in vote_data["nein"] if u != user_id]
+    if "vote_ja_" in data:
+        vote_data["ja"].append(user_id)
+        antwort = f"✅ Du nimmst den Tipp mit! ({len(vote_data['ja'])} Stimmen)"
+    else:
+        vote_data["nein"].append(user_id)
+        antwort = f"❌ Du passt aus! ({len(vote_data['nein'])} Stimmen)"
+    community_system_speichern()
+    return antwort
+
+def sende_einladungs_leaderboard():
+    """Wöchentliches Einladungs-Leaderboard."""
+    einladungen = _community_system["einladungen"]
+    if not einladungen:
+        return
+    sortiert = sorted(einladungen.items(),
+                      key=lambda x: x[1]["count"], reverse=True)[:10]
+    medals  = ["🥇","🥈","🥉"]
+    zeilen  = []
+    for i, (uid, data) in enumerate(sortiert):
+        m = medals[i] if i < 3 else f"{i+1}."
+        naechste = min([k for k in INVITE_BELOHNUNGEN if k > data["count"]] or [999])
+        noch = naechste - data["count"] if naechste < 999 else 0
+        zeilen.append(
+            f"{m} <b>{data['name']}</b>: {data['count']} Einladungen"
+            + (f" (noch {noch} bis nächste Belohnung)" if noch > 0 else " 🏆")
+        )
+    msg = (f"📊 <b>Einladungs-Leaderboard diese Woche</b>\n"
+           f"━━━━━━━━━━━━━━━━━━━━\n"
+           + "\n".join(zeilen) +
+           f"\n━━━━━━━━━━━━━━━━━━━━\n"
+           f"🎁 Lade Freunde ein und gewinne Belohnungen!\n"
+           f"Dein Link: t.me/frums72bot")
+    send_telegram(msg)
+    send_telegram_gruppe(msg)
+
+def sende_monatliche_challenge():
+    """Startet monatliche Wett-Challenge."""
+    monat = de_now().strftime("%Y-%m")
+    if monat in _community_system["challenges"]:
+        return
+    _community_system["challenges"][monat] = {"teilnehmer": {}, "aktiv": True}
+    community_system_speichern()
+    msg = (f"🏆 <b>Monatliche Challenge startet!</b>\n"
+           f"━━━━━━━━━━━━━━━━━━━━\n"
+           f"📅 {de_now().strftime('%B %Y')}\n\n"
+           f"💰 <b>Challenge: Wer macht aus 10€ am meisten?</b>\n\n"
+           f"📋 Regeln:\n"
+           f"• Startkapital: 10€\n"
+           f"• Nur Bot-Signale verwenden\n"
+           f"• Monatlich beste Trefferquote gewinnt\n"
+           f"• Einsätze selbst dokumentieren mit /tipp\n\n"
+           f"🎁 Preise:\n"
+           f"🥇 Platz 1: 1 Monat Premium gratis\n"
+           f"🥈 Platz 2: Persönliche Bot-Analyse\n"
+           f"🥉 Platz 3: VIP Channel 2 Wochen\n"
+           f"━━━━━━━━━━━━━━━━━━━━\n"
+           f"Mitmachen mit: <code>/challenge join</code>")
+    send_telegram(msg)
+    send_telegram_gruppe(msg)
+
 # ============================================================
 #  MULTI-ADMIN SUPPORT
 # ============================================================
@@ -8358,10 +9127,12 @@ def bot_nachschau():
         "vztore":     auswertung_vztore,
     }
 
+    # MIN_WARTE auf 0 – sofort auswerten wenn FT erkannt
+    # Keine Zeitabhängigkeit mehr – nur Status zählt
     MIN_WARTE = {
-        "ecken": 50, "torflut": 50, "hz1tore": 35,
-        "vztore": 75, "karten": 75, "torwart": 30,
-        "comeback": 25, "druck": 25, "rotkarte": 20, "ecken_over": 20,
+        "ecken": 0, "torflut": 0, "hz1tore": 0,
+        "vztore": 0, "karten": 0, "torwart": 0,
+        "comeback": 0, "druck": 0, "rotkarte": 0, "ecken_over": 0,
     }
 
     while True:
@@ -8445,6 +9216,7 @@ def bot_nachschau():
 
                 tracker_ausgewertet_markieren(key, gewonnen)
                 check_streak_alarm()
+                discord_vote_auswerten(key, gewonnen)
                 print(f"  [Nachschau] ✅ Ausgewertet: {home} vs {away} ({typ}) → {'GEWONNEN' if gewonnen else 'VERLOREN'}")
 
                 # Claude Verlust-Analyse
@@ -8458,7 +9230,7 @@ def bot_nachschau():
             bot_fehler_reset("Nachschau-Bot")
         except Exception as e:
             bot_fehler_melden("Nachschau-Bot", e)
-        time.sleep(3 * 60)  # Alle 3 Minuten
+        time.sleep(90)  # Alle 90 Sekunden – aggressiver für schnelle Auswertung
 
 def bot_watchdog():
     """Überwacht alle Bot-Threads und startet sie neu falls sie abstürzen."""
@@ -8488,7 +9260,7 @@ def bot_watchdog():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v49")
+    print("  ⚽ FUSSBALL BOTS v52")
     print("  Value Bets · CS2 · Telegram Befehle · Bankroll · Multi-Signal · Persistenz")
     print("=" * 50 + "\n")
 
@@ -8507,6 +9279,9 @@ if __name__ == "__main__":
     manuell_tipps_laden()
     community_laden()
     telegram_filter_laden()
+    community_system_laden()
+    rang_laden()
+    discord_votes_laden()
 
     # Dynamische Filter laden (Funktion weiter unten definiert)
     try:
