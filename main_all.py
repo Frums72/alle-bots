@@ -1,4 +1,4 @@
-# v45 - GitHub Persistenz + Restore beim Start + Signal-Spam Schutz
+# v47 - Triple-Verifikation in ALLEN Auswertungs-Funktionen
 import requests
 import re
 import time
@@ -28,6 +28,7 @@ DISCORD_WEBHOOK_VZTORE   = "https://discord.com/api/webhooks/1501252266630316163
 
 ODDS_API_KEY       = "866948de5d6c34ca51faf6bd77e0bb2a"
 PANDASCORE_API_KEY = "qeVqpzDJKy5rt6Ky7vmWCdqEkkUt9j53togKOK9gzeIvGNCEbMg"  # pandascore.co
+FOOTBALLDATA_KEY   = "e17f09662062462b850a73f857e1f974"  # football-data.org
 
 # Value Bet Finder
 VALUE_BET_MIN_QUOTE   = 1.6   # Mindestquote damit ein Value Bet interessant ist
@@ -2152,13 +2153,16 @@ def auswertung_ecken(spiel):
     hz1_ecken = spiel["hz1_ecken"]
     grenze    = hz1_ecken * 2 + 1
     home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
+    liga = spiel.get("competition", spiel.get("liga", ""))
     try:
+        # Triple-Verifikation für FT-Bestätigung
+        result = ls_get_match_result(match_id, home, away, liga)
+        if not result:
+            return None  # Noch kein verlässliches Ergebnis
         stats       = get_statistiken(match_id)
         total_ecken = stats["corners_home"] + stats["corners_away"]
-        # Wenn 0 Ecken → API-Fehler, verwende HZ1-Ecken als Minimum
         if total_ecken == 0 and hz1_ecken > 0:
-            print(f"  [Auswertung] Ecken: API gibt 0, HZ1 waren {hz1_ecken} → verwende Minimum")
-            total_ecken = hz1_ecken  # mindestens so viele wie in HZ1
+            total_ecken = hz1_ecken
         gewonnen    = total_ecken < grenze
         update_statistik("ecken", gewonnen, quote)
         emoji = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
@@ -2177,12 +2181,14 @@ def auswertung_ecken_over(spiel):
     hz1_ecken = spiel["hz1_ecken"]
     GRENZE    = 14
     home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
+    liga = spiel.get("competition", spiel.get("liga", ""))
     try:
+        result = ls_get_match_result(match_id, home, away, liga)
+        if not result:
+            return None
         stats       = get_statistiken(match_id)
         total_ecken = stats["corners_home"] + stats["corners_away"]
-        # Wenn 0 Ecken → API-Fehler, verwende HZ1-Ecken als Basis
         if total_ecken == 0 and hz1_ecken >= 7:
-            print(f"  [Auswertung] Ecken-Über: API gibt 0, HZ1 waren {hz1_ecken}")
             total_ecken = hz1_ecken
         gewonnen    = total_ecken > GRENZE
         update_statistik("ecken_over", gewonnen, quote)
@@ -2201,7 +2207,11 @@ def auswertung_karten(spiel):
     karten_hz1 = spiel["karten_anzahl"]
     GRENZE     = 5
     home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
+    liga = spiel.get("competition", spiel.get("liga", ""))
     try:
+        result = ls_get_match_result(match_id, home, away, liga)
+        if not result:
+            return None
         events   = get_events(match_id)
         anzahl   = len([e for e in events if e.get("event") in KARTEN_TYPEN])
         gewonnen = anzahl > GRENZE
@@ -2219,9 +2229,12 @@ def auswertung_karten(spiel):
 def auswertung_torwart(spiel):
     match_id = spiel["match_id"]
     home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
+    liga = spiel.get("competition", spiel.get("liga", ""))
     try:
-        match    = ls_get_single_match(match_id)
-        score    = match.get("scores", {}).get("score", "")
+        result = ls_get_match_result(match_id, home, away, liga)
+        if not result:
+            return None
+        score    = result.get("score", "")
         h, a     = parse_score(score) if score else (0, 0)
         # Fallback via Events wenn API 0-0 zurückgibt
         if h == 0 and a == 0:
@@ -2252,9 +2265,12 @@ def auswertung_druck(spiel):
     score_signal = spiel.get("score_signal", "")
     home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
     h_sig, a_sig = parse_score(score_signal) if score_signal else (0, 0)
+    liga = spiel.get("competition", spiel.get("liga", ""))
     try:
-        match = ls_get_single_match(match_id)
-        score = match.get("scores", {}).get("score", "")
+        result = ls_get_match_result(match_id, home, away, liga)
+        if not result:
+            return None
+        score = result.get("score", "")
         h, a  = parse_score(score) if score else (0, 0)
 
         # Fallback via Events wenn API 0-0 zurückgibt
@@ -2298,9 +2314,12 @@ def auswertung_comeback(spiel):
     # Score beim Signal speichern für Fallback
     score_signal = spiel.get("score_signal", "")
     h_sig, a_sig = parse_score(score_signal) if score_signal else (0, 0)
+    liga = spiel.get("competition", spiel.get("liga", ""))
     try:
-        match = ls_get_single_match(match_id)
-        score = match.get("scores", {}).get("score", "")
+        result = ls_get_match_result(match_id, home, away, liga)
+        if not result:
+            return None
+        score = result.get("score", "")
         h, a  = parse_score(score) if score else (0, 0)
 
         # Wenn API 0-0 zurückgibt aber zum Signalzeitpunkt schon Tore gefallen:
@@ -2346,12 +2365,14 @@ def auswertung_torflut(spiel):
     grenze    = spiel["grenze"]
     hz1_tore  = spiel["hz1_tore"]
     home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
+    liga = spiel.get("competition", spiel.get("liga", ""))
     try:
-        match = ls_get_single_match(match_id)
-        score = match.get("scores", {}).get("score", "")
+        result = ls_get_match_result(match_id, home, away, liga)
+        if not result:
+            return None
+        score = result.get("score", "")
         h, a  = parse_score(score) if score else (0, 0)
         tore  = h + a
-        # Fallback via Events wenn API 0-0 aber HZ1 schon Tore hatte
         if tore == 0 and hz1_tore > 0:
             h_e, a_e = _hole_tore_via_events(match_id)
             if h_e + a_e > 0:
@@ -2381,11 +2402,13 @@ def auswertung_rotkarte(spiel):
     score_signal  = spiel["score_signal"]
     home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
     try:
-        match = ls_get_single_match(match_id)
-        score = match.get("scores", {}).get("score", "")
+        liga = spiel.get("competition", spiel.get("liga", ""))
+        result = ls_get_match_result(match_id, home, away, liga)
+        if not result:
+            return None
+        score = result.get("score", "")
         h_end, a_end = parse_score(score) if score else (0, 0)
         h_sig, a_sig = parse_score(score_signal) if score_signal else (0, 0)
-        # Fallback via Events wenn API 0-0 zurückgibt
         if h_end == 0 and a_end == 0 and (h_sig > 0 or a_sig > 0):
             try:
                 events = ls_get_events(match_id)
@@ -2416,9 +2439,12 @@ def auswertung_hz1tore(spiel):
     richtung  = spiel["richtung"]
     linie     = spiel["linie"]
     home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
+    liga = spiel.get("competition", spiel.get("liga", ""))
     try:
-        match = ls_get_single_match(match_id)
-        ht    = (match.get("scores") or {}).get("ht_score", "")
+        result = ls_get_match_result(match_id, home, away, liga)
+        if not result:
+            return None
+        ht    = result.get("ht_score", "")
         if not ht:
             # HZ1 Score nicht in single match – versuche nochmal direkt
             import time as _t; _t.sleep(5)
@@ -2457,19 +2483,20 @@ def auswertung_vztore(spiel):
     richtung  = spiel["richtung"]
     linie     = spiel["linie"]
     home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
+    liga = spiel.get("competition", spiel.get("liga", ""))
     try:
-        match    = ls_get_single_match(match_id)
-        score    = match.get("scores", {}).get("score", "")
+        result = ls_get_match_result(match_id, home, away, liga)
+        if not result:
+            return None
+        score    = result.get("score", "")
         h, a     = parse_score(score) if score else (0, 0)
         vz_tore  = h + a
-        # Fallback via Events wenn API 0-0
         if vz_tore == 0:
             h_e, a_e = _hole_tore_via_events(match_id)
             if h_e + a_e > 0:
                 h, a    = h_e, a_e
                 vz_tore = h + a
                 score   = f"{h} - {a}"
-                print(f"  [Auswertung] VZ-Tore: Events-Fallback → {score}")
         if richtung == "über":
             gewonnen = vz_tore > linie
         else:
@@ -3161,7 +3188,7 @@ def bot_comeback():
                     "typ": "comeback", "match_id": match_id,
                     "home": home, "away": away, "rueckliegend": rueckliegend,
                     "score_signal": score_str,
-                    "quote": quote, "webhook": DISCORD_WEBHOOK_COMEBACK, "signal_zeit": time.time(), "bot": "Comeback-Bot"
+                    "quote": quote, "webhook": DISCORD_WEBHOOK_COMEBACK, "signal_zeit": time.time(), "bot": "Comeback-Bot", "competition": comp
                     })
                 print(f"  [Comeback-Bot] OK: {home} vs {away} | {rueckliegend} liegt zurück aber dominiert")
                 time.sleep(0.5)
@@ -7945,46 +7972,200 @@ def tracker_get_offene() -> list:
             offene.append((key, sig))
     return offene
 
-def ls_get_match_result(match_id: str) -> dict | None:
-    """
-    Versucht das Endergebnis eines Spiels zu finden.
-    Probiert mehrere Quellen: single_match, history, events.
-    """
-    # Methode 1: Single Match
+# ── Football-Data.org Hilfsfunktionen ─────────────────────────
+FD_BASE = "https://api.football-data.org/v4"
+
+# Mapping livescore-api Liga-Namen → football-data.org Competition IDs
+FD_LIGA_IDS = {
+    "Premier League": 2021,
+    "Bundesliga": 2002,
+    "La Liga": 2014,
+    "Serie A": 2019,
+    "Ligue 1": 2015,
+    "Primeira Liga": 2017,
+    "Eredivisie": 2003,
+    "Championship": 2016,
+    "Champions League": 2001,
+    "Europa League": 2146,
+    "World Cup": 2000,
+    "European Championship": 2018,
+}
+
+def fd_suche_spiel(home: str, away: str, liga: str = "") -> dict | None:
+    """Sucht ein Spiel auf football-data.org anhand Teamnamen."""
+    if not FOOTBALLDATA_KEY:
+        return None
     try:
-        match = ls_get_single_match(match_id)
-        status = str(match.get("status", "") or "")
+        headers = {"X-Auth-Token": FOOTBALLDATA_KEY}
+        # Versuche über Competition ID
+        liga_id = FD_LIGA_IDS.get(liga)
+        urls_zu_prüfen = []
+        if liga_id:
+            urls_zu_prüfen.append(f"{FD_BASE}/competitions/{liga_id}/matches?status=FINISHED")
+        urls_zu_prüfen.append(f"{FD_BASE}/matches?status=FINISHED")
+        for url in urls_zu_prüfen:
+            try:
+                resp = requests.get(url, headers=headers, timeout=8)
+                if resp.status_code != 200:
+                    continue
+                for match in resp.json().get("matches", []):
+                    h = (match.get("homeTeam") or {}).get("shortName", "") or                         (match.get("homeTeam") or {}).get("name", "")
+                    a = (match.get("awayTeam") or {}).get("shortName", "") or                         (match.get("awayTeam") or {}).get("name", "")
+                    # Unscharfer Vergleich: mind. 4 Buchstaben übereinstimmend
+                    home_short = home[:5].lower()
+                    away_short  = away[:5].lower()
+                    if (home_short in h.lower() or h.lower()[:5] in home.lower()) and                        (away_short in a.lower() or a.lower()[:5] in away.lower()):
+                        score = match.get("score", {})
+                        full  = score.get("fullTime", {})
+                        half  = score.get("halfTime", {})
+                        h_ft  = full.get("home")
+                        a_ft  = full.get("away")
+                        h_ht  = half.get("home")
+                        a_ht  = half.get("away")
+                        status = match.get("status", "")
+                        if status == "FINISHED" and h_ft is not None and a_ft is not None:
+                            return {
+                                "status": "FT",
+                                "score": f"{h_ft} - {a_ft}",
+                                "ht_score": f"{h_ht} - {a_ht}" if h_ht is not None else "",
+                                "quelle": "football-data.org",
+                                "home": h, "away": a,
+                            }
+            except Exception as e:
+                print(f"  [FD] Fehler bei {url}: {e}")
+                continue
+    except Exception as e:
+        print(f"  [FD] Suche Fehler: {e}")
+    return None
+
+def thesportsdb_suche_spiel(home: str, away: str) -> dict | None:
+    """Sucht Spielergebnis auf TheSportsDB (kostenlos, kein Key)."""
+    try:
+        # TheSportsDB Live Events
+        resp = requests.get(
+            "https://www.thesportsdb.com/api/v1/json/3/liveevents.php",
+            timeout=8
+        )
+        if resp.status_code != 200:
+            return None
+        for ev in (resp.json().get("events") or []):
+            if ev.get("strSport", "").lower() != "soccer":
+                continue
+            h_name = ev.get("strHomeTeam", "").lower()
+            a_name = ev.get("strAwayTeam", "").lower()
+            if home[:5].lower() in h_name and away[:5].lower() in a_name:
+                h_score = ev.get("intHomeScore")
+                a_score = ev.get("intAwayScore")
+                status  = ev.get("strStatus", "").lower()
+                if status in ("ft", "finished", "aet") and h_score is not None:
+                    return {
+                        "status": "FT",
+                        "score": f"{h_score} - {a_score}",
+                        "ht_score": "",
+                        "quelle": "thesportsdb",
+                    }
+    except Exception as e:
+        print(f"  [TSDB] Fehler: {e}")
+    return None
+
+def ls_get_match_result(match_id: str, home: str = "",
+                         away: str = "", liga: str = "") -> dict | None:
+    """
+    TRIPLE-VERIFIKATION: Prüft Spielergebnis über 3 unabhängige Quellen.
+    Erst wenn 2 von 3 übereinstimmen → sicheres Ergebnis.
+    """
+    ergebnisse = {}  # quelle → score
+
+    # ── Quelle 1: livescore-api ──────────────────────────────────
+    try:
+        match    = ls_get_single_match(match_id)
+        status   = str(match.get("status", "") or "")
         time_val = str(match.get("time", "") or "")
-        score = (match.get("scores") or {}).get("score", "")
+        score    = (match.get("scores") or {}).get("score", "")
         ht_score = (match.get("scores") or {}).get("ht_score", "")
-
-        FT_STATI = {"FT", "Finished", "FINISHED", "AET", "PEN",
-                    "finished", "aet", "pen", "Full Time", "full time",
-                    "FULL TIME", "After Extra Time", "Penalties", "ft", "FT."}
-
         if time_val.upper() in ("FT", "FULL TIME", "AET"):
             status = "FT"
-
-        if status in FT_STATI and score:
-            return {"status": "FT", "score": score, "ht_score": ht_score,
-                    "quelle": "single_match"}
+        if status in FT_STATI and score and score != "0 - 0":
+            ergebnisse["livescore"] = score
+            print(f"  [Triple] Quelle 1 livescore-api: {score} ✅")
+        elif status in FT_STATI:
+            ergebnisse["livescore_ft"] = "0 - 0"  # FT aber 0-0 → unsicher
     except Exception as e:
-        print(f"  [Tracker] single_match Fehler: {e}")
+        print(f"  [Triple] Livescore Fehler: {e}")
 
-    # Methode 2: Nicht mehr in Live-Liste
-    try:
-        live = get_live_matches()
-        live_ids = {str(m.get("id")) for m in live}
-        if match_id not in live_ids:
-            # Spiel ist nicht mehr live – versuche Score aus Events
-            events = ls_get_events(match_id)
-            tore = [e for e in events if e.get("event") in ("Goal", "goal", "Tor")]
-            if events:  # Events vorhanden = Spiel hat stattgefunden
-                return {"status": "FT_vermutet", "score": None,
-                        "ht_score": None, "quelle": "nicht_live",
-                        "events": events}
-    except Exception as e:
-        print(f"  [Tracker] Live-Check Fehler: {e}")
+    # ── Quelle 2: football-data.org ──────────────────────────────
+    if home and away:
+        try:
+            fd_result = fd_suche_spiel(home, away, liga)
+            if fd_result:
+                ergebnisse["football_data"] = fd_result["score"]
+                ht_score = fd_result.get("ht_score", ht_score)
+                print(f"  [Triple] Quelle 2 football-data.org: {fd_result['score']} ✅")
+        except Exception as e:
+            print(f"  [Triple] football-data Fehler: {e}")
+
+    # ── Quelle 3: TheSportsDB ────────────────────────────────────
+    if home and away and len(ergebnisse) < 2:
+        try:
+            tsdb = thesportsdb_suche_spiel(home, away)
+            if tsdb:
+                ergebnisse["thesportsdb"] = tsdb["score"]
+                print(f"  [Triple] Quelle 3 TheSportsDB: {tsdb['score']} ✅")
+        except Exception as e:
+            print(f"  [Triple] TheSportsDB Fehler: {e}")
+
+    # ── Quelle 4: Events Fallback ────────────────────────────────
+    if not ergebnisse:
+        try:
+            live     = get_live_matches()
+            live_ids = {str(m.get("id")) for m in live}
+            if match_id not in live_ids:
+                events   = ls_get_events(match_id)
+                tore_h   = len([e for e in events if e.get("event") in ("Goal","goal")
+                                 and e.get("home_away") == "home"])
+                tore_a   = len([e for e in events if e.get("event") in ("Goal","goal")
+                                 and e.get("home_away") == "away"])
+                if events:
+                    ev_score = f"{tore_h} - {tore_a}"
+                    ergebnisse["events"] = ev_score
+                    print(f"  [Triple] Quelle 4 Events: {ev_score} ✅")
+        except Exception as e:
+            print(f"  [Triple] Events Fehler: {e}")
+
+    # ── Entscheidung: 2 von 3 müssen übereinstimmen ──────────────
+    if not ergebnisse:
+        print(f"  [Triple] ❌ Keine Quelle hat Ergebnis geliefert")
+        return None
+
+    # Scores zählen (ohne unsichere 0-0 FT-Markierung)
+    sichere = {k: v for k, v in ergebnisse.items() if k != "livescore_ft"}
+
+    if not sichere:
+        print(f"  [Triple] ⚠️ Nur unsichere 0-0 Meldung – warte auf Bestätigung")
+        return None
+
+    # Wenn mindestens 2 Quellen dasselbe Ergebnis liefern
+    from collections import Counter
+    zaehler = Counter(sichere.values())
+    bestes  = zaehler.most_common(1)[0]
+    bester_score, anzahl = bestes
+
+    if anzahl >= 2:
+        print(f"  [Triple] ✅ BESTÄTIGT ({anzahl}/3 Quellen): {bester_score}")
+        return {"status": "FT", "score": bester_score,
+                "ht_score": ht_score, "quelle": f"triple_verified ({anzahl}/3)",
+                "alle_quellen": ergebnisse}
+    elif len(sichere) == 1:
+        # Nur eine Quelle – trotzdem verwenden wenn nicht 0-0
+        einziger_score = list(sichere.values())[0]
+        if einziger_score != "0 - 0":
+            print(f"  [Triple] ⚠️ Nur 1 Quelle: {einziger_score} – verwende trotzdem")
+            return {"status": "FT", "score": einziger_score,
+                    "ht_score": ht_score, "quelle": "single_source",
+                    "alle_quellen": ergebnisse}
+    else:
+        # Quellen widersprechen sich
+        print(f"  [Triple] ⚠️ Quellen uneinig: {sichere} – warte auf mehr Daten")
 
     return None
 
@@ -8050,7 +8231,12 @@ def bot_nachschau():
                 print(f"  [Nachschau] Prüfe: {home} vs {away} ({typ}) | Versuch #{sig.get('versuche',0)+1}")
 
                 # Ergebnis holen
-                result = ls_get_match_result(match_id)
+                result = ls_get_match_result(
+                    match_id,
+                    home=sig.get("home", ""),
+                    away=sig.get("away", ""),
+                    liga=sig.get("competition", sig.get("liga", ""))
+                )
                 if not result:
                     print(f"  [Nachschau] {home} vs {away} | Noch kein Ergebnis")
                     continue
@@ -8134,7 +8320,7 @@ def bot_watchdog():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v45")
+    print("  ⚽ FUSSBALL BOTS v47")
     print("  Value Bets · CS2 · Telegram Befehle · Bankroll · Multi-Signal · Persistenz")
     print("=" * 50 + "\n")
 
