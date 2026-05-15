@@ -413,9 +413,12 @@ def signal_log_speichern():
     except Exception as e:
         print(f"  [Signal-Log] Speicherfehler: {e}")
 
+_notified_sets_letzter_push = 0  # Anti-Spam: max. alle 2 Minuten auf GitHub pushen
+
 def notified_sets_speichern():
     """Speichert alle notified Sets – verhindert Doppel-Signale nach Neustart."""
     import json
+    global _notified_sets_letzter_push
     try:
         data = {
             "ecken":          list(notified_ecken),
@@ -436,8 +439,43 @@ def notified_sets_speichern():
         }
         with open(NOTIFIED_DATEI, "w") as f:
             json.dump(data, f)
+        # Sofort auf GitHub sichern – aber max. alle 2 Minuten
+        # Verhindert Doppel-Signale auch bei ungeplanten Neustarts
+        if time.time() - _notified_sets_letzter_push > 120:
+            _notified_sets_letzter_push = time.time()
+            threading.Thread(
+                target=_notified_sets_github_push,
+                daemon=True
+            ).start()
     except Exception as e:
         print(f"  [Notified] Speicherfehler: {e}")
+
+def _notified_sets_github_push():
+    """Pusht nur notified_sets.json sofort auf GitHub (im Hintergrund)."""
+    import json, base64, os
+    if not GITHUB_TOKEN or not os.path.exists(NOTIFIED_DATEI):
+        return
+    try:
+        headers = {
+            "Authorization": f"token {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+        with open(NOTIFIED_DATEI, "rb") as f:
+            inhalt = base64.b64encode(f.read()).decode()
+        pfad    = f"{GITHUB_DATA_PFAD}/{NOTIFIED_DATEI}"
+        api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{pfad}"
+        # Bestehende Datei-SHA holen
+        r = requests.get(api_url, headers=headers, timeout=8)
+        sha = r.json().get("sha") if r.status_code == 200 else None
+        payload = {
+            "message": f"notified-sets {de_now().strftime('%H:%M')} [skip ci]",
+            "content": inhalt,
+        }
+        if sha:
+            payload["sha"] = sha
+        requests.put(api_url, headers=headers, json=payload, timeout=10)
+    except Exception:
+        pass  # Stiller Fehler – nächstes Mal wird es erneut versucht
 
 def notified_sets_laden():
     """Lädt notified Sets beim Start – kein Doppel-Signal nach Neustart."""
