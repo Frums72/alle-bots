@@ -88,5 +88,18 @@
     "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
     "signal_zeit": 1778873436.489551,
     "bot": "Torwart-Bot"
+  },
+  "711548_ecken_over": {
+    "typ": "ecken_over",
+    "match_id": "711548",
+    "home": "Bohemian FC",
+    "away": "Drogheda United",
+    "hz1_ecken": 9,
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Premier Division",
+    "webhook": "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4",
+    "signal_zeit": 1778873454.8600256,
+    "bot": "Ecken-\u00dcber-Bot"
   }
 }
