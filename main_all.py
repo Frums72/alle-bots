@@ -2665,27 +2665,6 @@ def auswertung_vztore(spiel):
 #  AUSWERTUNGS- & BERICHT-THREAD
 # ============================================================
 
-def bot_auswertung_und_berichte():
-    """
-    v26: Direkte FT-Erkennung via Single-Match Endpoint alle 2 Minuten.
-    Viel schneller und zuverlässiger als auf Verschwinden aus Live-Liste zu warten.
-    """
-    global tagesbericht_gesendet
-    print("[Auswertung-Bot] Gestartet | Direkte FT-Erkennung alle 2 Min.")
-    letzter_wochenbericht = de_now().isocalendar()[1]
-
-    AUSWERTUNG_FNS = {
-        "ecken":      auswertung_ecken,
-        "ecken_over": auswertung_ecken_over,
-        "karten":     auswertung_karten,
-        "torwart":    auswertung_torwart,
-        "druck":      auswertung_druck,
-        "comeback":   auswertung_comeback,
-        "torflut":    auswertung_torflut,
-        "rotkarte":   auswertung_rotkarte,
-        "hz1tore":    auswertung_hz1tore,
-        "vztore":     auswertung_vztore,
-    }
     # Alle FT-Stati werden mit .upper() verglichen – kein Case-Fehler möglich
 FT_STATI_SET    = {"FT", "FINISHED", "AET", "PEN", "FULL TIME",
                    "AFTER EXTRA TIME", "PENALTIES", "ENDED", "FT.", "AET."}
@@ -2709,8 +2688,23 @@ def bot_auswertung_und_berichte():
     tagesbericht_gesendet  = None
     wochenbericht_gesendet = None
     monatsbericht_gesendet = None
-    leerer_status = {}
-    auswertung_done = set()
+    leerer_status          = {}
+    ft_bestaetigung        = {}   # Fix Bug 5: fehlende Variable ergänzt
+    auswertung_done        = set()
+    letzter_wochenbericht  = de_now().isocalendar()[1]  # Fix Bug 4: fehlende Initialisierung
+
+    AUSWERTUNG_FNS = {              # Fix Bug 2: AUSWERTUNG_FNS in diese Funktion verschoben
+        "ecken":      auswertung_ecken,
+        "ecken_over": auswertung_ecken_over,
+        "karten":     auswertung_karten,
+        "torwart":    auswertung_torwart,
+        "druck":      auswertung_druck,
+        "comeback":   auswertung_comeback,
+        "torflut":    auswertung_torflut,
+        "rotkarte":   auswertung_rotkarte,
+        "hz1tore":    auswertung_hz1tore,
+        "vztore":     auswertung_vztore,
+    }
 
     while True:
         try:
@@ -2806,9 +2800,9 @@ def bot_auswertung_und_berichte():
                         continue
 
                 # FT erkennen wenn: Status FT, ODER (nicht live + 2x kein Status)
-                # Robuste FT-Erkennung
-                status_raw = str(spiel_live.get("status", "") if spiel_live else "")
-                time_raw   = str(spiel_live.get("time",   "") if spiel_live else "")
+                # Robuste FT-Erkennung  (Fix Bug 3: spiel_live → match)
+                status_raw = str(match.get("status", "") if match else "")
+                time_raw   = str(match.get("time",   "") if match else "")
                 ist_fertig = (ist_spiel_fertig(status_raw, time_raw) or
                               (nicht_live and leerer_status.get(match_id, 0) >= 2))
 
