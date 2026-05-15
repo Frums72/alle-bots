@@ -173,5 +173,45 @@
     "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
     "signal_zeit": 1778876901.1696393,
     "bot": "Torwart-Bot"
+  },
+  "711554_druck": {
+    "typ": "druck",
+    "match_id": "711554",
+    "home": "Cordoba",
+    "away": "Albacete",
+    "druck_team": "Cordoba",
+    "score_signal": "1 - 2",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Segunda Division",
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778877943.44464,
+    "bot": "Druck-Bot"
+  },
+  "711560_ecken": {
+    "typ": "ecken",
+    "match_id": "711560",
+    "home": "FC Cajamarca",
+    "away": "Sporting Cristal",
+    "hz1_ecken": 5,
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Primera Division",
+    "webhook": "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4",
+    "signal_zeit": 1778878346.3561714,
+    "bot": "Ecken-Bot"
+  },
+  "711562_ecken": {
+    "typ": "ecken",
+    "match_id": "711562",
+    "home": "Rubio Nu",
+    "away": "Nacional Asuncion",
+    "hz1_ecken": 5,
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Division Profesional",
+    "webhook": "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4",
+    "signal_zeit": 1778878469.720788,
+    "bot": "Ecken-Bot"
   }
 }
