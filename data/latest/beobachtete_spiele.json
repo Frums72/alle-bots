@@ -1,0 +1,38 @@
+{
+  "711521_torwart": {
+    "typ": "torwart",
+    "match_id": "711521",
+    "home": "Al-Taawon",
+    "away": "Al Riyadh",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Premier League",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1778872607.5868,
+    "bot": "Torwart-Bot"
+  },
+  "711522_torwart": {
+    "typ": "torwart",
+    "match_id": "711522",
+    "home": "Bari",
+    "away": "FC Sudtirol",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Serie B",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1778872609.587046,
+    "bot": "Torwart-Bot"
+  },
+  "711528_torflut": {
+    "typ": "torflut",
+    "match_id": "711528",
+    "home": "Aarau",
+    "away": "Yverdon",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778872612.9589822,
+    "bot": "Torflut-Bot"
+  }
+}
