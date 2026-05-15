@@ -1,4 +1,4 @@
-# v52 - KRITISCHE Auswertungs-Fixes + Discord Vote-Rang-System
+# v53 - Virtuelle Konten + Daily Recap Grafik + Warum-Button + Vollständig
 import os
 import requests
 import re
@@ -2670,6 +2670,7 @@ def bot_auswertung_und_berichte():
             # Tagesbericht
             if now.hour == TAGESBERICHT_UHRZEIT and tagesbericht_gesendet != now.date():
                 send_tagesbericht()
+                sende_daily_recap()
                 tagesbericht_gesendet = now.date()
             # Wochenbericht (Montag)
             aktuelle_woche = now.isocalendar()[1]
@@ -4059,6 +4060,17 @@ def bot_telegram_befehle():
 
                 elif text in ("/checkin", "/check"):
                     antwort = mache_daily_checkin(user_id, username)
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
+                elif text == "/konten":
+                    antwort = (f"💼 <b>Virtuelle Konten</b>\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n"
+                               f"{vk_status_text()}\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n"
+                               f"🛡️ Safe: Ecken, Karten, HZ1-Tore\n"
+                               f"⚡ High-Risk: Comeback, Druck, CS2\n"
+                               f"💎 Value: Value-Bets, Arbitrage")
                     requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                                   json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
 
@@ -7374,6 +7386,133 @@ def sende_discord_rangliste():
     embed = {"title": "🏆 Discord Rangliste", "color": 0xFFD700, "fields": felder, "description": "Stimme auf Signale ab!\n✅ Richtig = +10 | ❌ Falsch = -3", "footer": {"text": f"BetlabLIVE • {heute()}"}}
     send_discord_embed(DISCORD_WEBHOOK_BILANZ, embed)
 
+
+# ============================================================
+#  VIRTUELLE KONTEN
+# ============================================================
+VIRTUELLE_KONTEN = {
+    "safe":     {"name": "Shield Safe",  "bots": ["ecken","ecken_over","karten","hz1tore"], "bankroll": 100.0, "start": 100.0},
+    "highrise": {"name": "Flash High",   "bots": ["comeback","druck","rotkarte","cs2"],     "bankroll": 50.0,  "start": 50.0},
+    "value":    {"name": "Diamond Value","bots": ["value","arbitrage","sharp"],              "bankroll": 75.0,  "start": 75.0},
+}
+VIRTUELLE_KONTEN_DATEI = "virtuelle_konten.json"
+
+def vk_laden():
+    import json, os
+    global VIRTUELLE_KONTEN
+    if os.path.exists(VIRTUELLE_KONTEN_DATEI):
+        try:
+            with open(VIRTUELLE_KONTEN_DATEI) as f: VIRTUELLE_KONTEN = json.load(f)
+        except Exception: pass
+
+def vk_speichern():
+    import json
+    try:
+        with open(VIRTUELLE_KONTEN_DATEI,"w") as f: json.dump(VIRTUELLE_KONTEN,f,indent=2)
+    except Exception: pass
+
+def vk_update(typ, gewonnen, quote=1.85):
+    konto = next((k for k,v in VIRTUELLE_KONTEN.items() if typ in v.get("bots",[])), "safe")
+    br = VIRTUELLE_KONTEN[konto]["bankroll"]
+    eins = min(br*0.05, 10)
+    VIRTUELLE_KONTEN[konto]["bankroll"] = round(br+eins*(quote-1) if gewonnen else max(1,br-eins), 2)
+    vk_speichern()
+
+def vk_status_text():
+    zeilen = []
+    for k,v in VIRTUELLE_KONTEN.items():
+        diff = round(v["bankroll"]-v["start"],2)
+        zeilen.append(f"{v['name']}: <b>{v['bankroll']}€</b> ({'+' if diff>=0 else ''}{diff}€)")
+    return "\n".join(zeilen)
+
+# ============================================================
+#  DAILY RECAP GRAFIK
+# ============================================================
+
+def erstelle_daily_recap_grafik():
+    try:
+        import matplotlib; matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from matplotlib.patches import FancyBboxPatch
+        gw  = sum(statistik[t]["gewonnen"] for t in statistik)
+        vl  = sum(statistik[t]["verloren"] for t in statistik)
+        pct = round(gw/max(gw+vl,1)*100)
+        fig, ax = plt.subplots(figsize=(9,5), facecolor="#0d1117")
+        ax.set_facecolor("#0d1117"); ax.axis("off")
+        ax.add_patch(FancyBboxPatch((0.02,0.05),0.96,0.9,boxstyle="round,pad=0.02",
+            facecolor="#161b22",edgecolor="#30363d",linewidth=2,transform=ax.transAxes))
+        ax.text(0.5,0.88,"BetlabLIVE",ha="center",fontsize=22,
+                fontweight="bold",color="#58a6ff",transform=ax.transAxes)
+        ax.text(0.5,0.78,f"Daily Recap {de_now().strftime('%d.%m.%Y')}",
+                ha="center",fontsize=12,color="#8b949e",transform=ax.transAxes)
+        ax.text(0.2,0.58,str(gw),ha="center",fontsize=48,fontweight="bold",
+                color="#3fb950",transform=ax.transAxes)
+        ax.text(0.2,0.43,"Gewonnen",ha="center",fontsize=11,
+                color="#8b949e",transform=ax.transAxes)
+        ax.text(0.5,0.58,f"{pct}%",ha="center",fontsize=48,fontweight="bold",
+                color="#58a6ff",transform=ax.transAxes)
+        ax.text(0.5,0.43,"Trefferquote",ha="center",fontsize=11,
+                color="#8b949e",transform=ax.transAxes)
+        ax.text(0.8,0.58,str(vl),ha="center",fontsize=48,fontweight="bold",
+                color="#f85149",transform=ax.transAxes)
+        ax.text(0.8,0.43,"Verloren",ha="center",fontsize=11,
+                color="#8b949e",transform=ax.transAxes)
+        ax.axhline(y=0.37,xmin=0.05,xmax=0.95,color="#30363d",linewidth=1,transform=ax.transAxes)
+        ax.text(0.5,0.20,"discord.gg/bettinglab  |  t.me/frums72bot",
+                ha="center",fontsize=10,color="#8b949e",transform=ax.transAxes)
+        pfad = "/tmp/daily_recap.png"
+        plt.tight_layout(pad=0)
+        plt.savefig(pfad,dpi=150,bbox_inches="tight",facecolor="#0d1117")
+        plt.close()
+        return pfad
+    except Exception as e:
+        print(f"  [Recap] Fehler: {e}")
+        return None
+
+def sende_daily_recap():
+    pfad = erstelle_daily_recap_grafik()
+    if not pfad: return
+    gw = sum(statistik[t]["gewonnen"] for t in statistik)
+    vl = sum(statistik[t]["verloren"] for t in statistik)
+    pct = round(gw/max(gw+vl,1)*100)
+    try:
+        with open(pfad,"rb") as f:
+            requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto",
+                data={"chat_id":TELEGRAM_CHAT_ID,
+                      "caption":f"Daily Recap {de_now().strftime('%d.%m.%Y')} | {gw} Gew. | {vl} Ver. | {pct}%"},
+                files={"photo":f},timeout=20)
+    except Exception: pass
+
+# ============================================================
+#  WARUM-BUTTON
+# ============================================================
+
+def erstelle_warum_button(match_id, typ):
+    import json as _j
+    return {"inline_keyboard": [[
+        {"text": "Warum dieser Tipp?", "callback_data": f"warum_{match_id}_{typ}"},
+        {"text": "Ich tippe!",         "callback_data": f"vote_ja_{match_id}_{typ}"},
+    ]]}
+
+def verarbeite_warum_callback(match_id, typ, chat_id, spiel_data=None):
+    home = (spiel_data or {}).get("home","Heim")
+    away = (spiel_data or {}).get("away","Gast")
+    erkl = {
+        "ecken":   "Wenige Ecken in HZ1 - statistisch bleiben ruhige Spiele ruhig.",
+        "druck":   f"{home} dominiert klar - anhaltender Druck fuehrt zu Toren.",
+        "comeback":"Das Team liegt hinten aber dominiert die Statistiken.",
+        "torwart": "Viele Schuesse aufs Tor aber kein Treffer - erstes Tor ueberfaellig.",
+        "karten":  "Fruehe Karten deuten auf hitziges Spiel hin.",
+        "value":   "Quote liegt deutlich ueber dem Marktwert.",
+    }
+    text = erkl.get(typ, "Der Bot hat starke Signale erkannt.")
+    try:
+        requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            json={"chat_id":chat_id,
+                  "text":f"Warum dieser Tipp?\n{home} vs {away}\n{TYP_NAMEN.get(typ,typ)}\n\n{text}",
+                  "parse_mode":"HTML"},timeout=10)
+    except Exception: pass
+
 # ============================================================
 #  🏆 MEGA RANG & BELOHNUNGS-SYSTEM v51
 # ============================================================
@@ -9217,6 +9356,7 @@ def bot_nachschau():
                 tracker_ausgewertet_markieren(key, gewonnen)
                 check_streak_alarm()
                 discord_vote_auswerten(key, gewonnen)
+                vk_update(typ, gewonnen, sig.get("quote", 1.85))
                 print(f"  [Nachschau] ✅ Ausgewertet: {home} vs {away} ({typ}) → {'GEWONNEN' if gewonnen else 'VERLOREN'}")
 
                 # Claude Verlust-Analyse
@@ -9260,7 +9400,7 @@ def bot_watchdog():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v52")
+    print("  ⚽ FUSSBALL BOTS v53")
     print("  Value Bets · CS2 · Telegram Befehle · Bankroll · Multi-Signal · Persistenz")
     print("=" * 50 + "\n")
 
@@ -9282,6 +9422,8 @@ if __name__ == "__main__":
     community_system_laden()
     rang_laden()
     discord_votes_laden()
+    vk_laden()
+    vk_laden()
 
     # Dynamische Filter laden (Funktion weiter unten definiert)
     try:
@@ -9351,7 +9493,7 @@ if __name__ == "__main__":
     dashboard = threading.Thread(target=bot_web_dashboard, daemon=True, name="Dashboard")
     dashboard.start()
 
-    # Watchdog starten # 
+    # Watchdog starten
     watchdog = threading.Thread(target=bot_watchdog, daemon=True, name="Watchdog")
     watchdog.start()
 
