@@ -1723,11 +1723,14 @@ def github_backup():
             print(f"  [Backup] Fehler bei {datei}: {e}")
     return gesichert
 
+_github_restore_gesendet = 0  # Timestamp der letzten Restore-Nachricht
+
 def github_restore():
     """
     Lädt beim Start alle Datendateien von GitHub herunter.
     Verhindert Datenverlust nach Railway-Neustart.
     """
+    global _github_restore_gesendet
     import base64, os
     if not GITHUB_TOKEN or GITHUB_TOKEN.startswith("GITHUB"):
         print("  [Restore] Kein GitHub Token – übersprungen")
@@ -1738,7 +1741,6 @@ def github_restore():
     }
     wiederhergestellt = 0
     for datei in PERSISTENZ_DATEIEN:
-        # Nur herunterladen wenn Datei NICHT lokal existiert (Neustart)
         if os.path.exists(datei):
             print(f"  [Restore] {datei} bereits lokal vorhanden – übersprungen")
             continue
@@ -1758,11 +1760,14 @@ def github_restore():
             print(f"  [Restore] Fehler bei {datei}: {e}")
     if wiederhergestellt > 0:
         print(f"  [Restore] {wiederhergestellt} Dateien wiederhergestellt ✅")
-        send_telegram(f"🔄 <b>Daten wiederhergestellt!</b>\n"
-                      f"━━━━━━━━━━━━━━━━━━━━\n"
-                      f"✅ {wiederhergestellt} Dateien von GitHub geladen\n"
-                      f"📊 Statistiken, Bankroll & Signale sind wiederhergestellt\n"
-                      f"🕐 {jetzt()} Uhr")
+        # Anti-Spam: nur einmal alle 5 Minuten senden
+        if time.time() - _github_restore_gesendet > 300:
+            _github_restore_gesendet = time.time()
+            send_telegram(f"🔄 <b>Daten wiederhergestellt!</b>\n"
+                          f"━━━━━━━━━━━━━━━━━━━━\n"
+                          f"✅ {wiederhergestellt} Dateien von GitHub geladen\n"
+                          f"📊 Statistiken, Bankroll & Signale sind wiederhergestellt\n"
+                          f"🕐 {jetzt()} Uhr")
     return wiederhergestellt
 
 def bot_github_backup():
@@ -6083,9 +6088,17 @@ def multi_modell_vote(home, away, typ, analyse, score, minute, liga: str = ""):
 
 BOT_START_ZEIT = time.time()
 
+_startup_alarm_gesendet = 0  # Anti-Spam Timestamp
+
 def bot_startup_alarm():
-    """Sendet Alarm wenn Bot neu startet."""
+    """Sendet Alarm wenn Bot neu startet – maximal einmal alle 3 Minuten."""
+    global _startup_alarm_gesendet
+    # Anti-Spam: bei schnellen Neustarts (z.B. Railway rolling deploy) nicht mehrfach senden
+    if time.time() - _startup_alarm_gesendet < 180:
+        print("  [Startup] Alarm bereits kürzlich gesendet – übersprungen")
+        return
     try:
+        _startup_alarm_gesendet = time.time()
         start_str = de_now().strftime("%d.%m.%Y %H:%M")
         msg = (f"🔄 <b>Bot neu gestartet!</b>\n"
                f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -10476,28 +10489,37 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"  [Startup] Alarm: {e}")
 
+    # ── Servers ZUERST starten damit Railway Health-Check nicht timeout ──
+    # Health-Check muss VOR allen Bots online sein (Railway wartet max. 60s)
+    health_thread = threading.Thread(target=bot_health_check_server, daemon=True, name="HealthCheck")
+    health_thread.start()
+
+    radar_thread = threading.Thread(target=bot_live_radar_server, daemon=True, name="LiveRadar")
+    radar_thread.start()
+
+    dashboard = threading.Thread(target=bot_web_dashboard, daemon=True, name="Dashboard")
+    dashboard.start()
+
+    # Kurz warten bis Server hochgefahren sind
+    time.sleep(2)
+    print("  [Startup] Health-Check, Dashboard und Live-Radar bereit ✅")
+
     # Targets für Watchdog merken
     for name, target in bot_definitionen:
         _bot_targets[name] = target
+
+    # Startup Alarm (Anti-Spam: nur wenn in letzten 5 Min kein Restart gesendet)
+    try:
+        bot_startup_alarm()
+    except Exception as e:
+        print(f"  [Startup] Alarm: {e}")
 
     threads = []
     for name, target in bot_definitionen:
         t = threading.Thread(target=target, daemon=True, name=name)
         threads.append(t)
         t.start()
-        time.sleep(2)
-
-    # Live-Radar starten (Port 8082)
-    radar_thread = threading.Thread(target=bot_live_radar_server, daemon=True, name="LiveRadar")
-    radar_thread.start()
-
-    # Health-Check starten (Port 8081)
-    health_thread = threading.Thread(target=bot_health_check_server, daemon=True, name="HealthCheck")
-    health_thread.start()
-
-    # Dashboard starten (Port 8080)
-    dashboard = threading.Thread(target=bot_web_dashboard, daemon=True, name="Dashboard")
-    dashboard.start()
+        time.sleep(0.3)  # 0.3s statt 2s → 10s Gesamt-Startup statt 68s
 
     # Watchdog starten
     watchdog = threading.Thread(target=bot_watchdog, daemon=True, name="Watchdog")
