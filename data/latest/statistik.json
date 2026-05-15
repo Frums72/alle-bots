@@ -1,0 +1,206 @@
+{
+  "statistik": {
+    "ecken": {
+      "gewonnen": 0,
+      "verloren": 0,
+      "gewinn": 0.0
+    },
+    "ecken_over": {
+      "gewonnen": 0,
+      "verloren": 0,
+      "gewinn": 0.0
+    },
+    "karten": {
+      "gewonnen": 0,
+      "verloren": 0,
+      "gewinn": 0.0
+    },
+    "torwart": {
+      "gewonnen": 1,
+      "verloren": 0,
+      "gewinn": 7.0
+    },
+    "druck": {
+      "gewonnen": 0,
+      "verloren": 0,
+      "gewinn": 0.0
+    },
+    "comeback": {
+      "gewonnen": 0,
+      "verloren": 0,
+      "gewinn": 0.0
+    },
+    "torflut": {
+      "gewonnen": 0,
+      "verloren": 0,
+      "gewinn": 0.0
+    },
+    "rotkarte": {
+      "gewonnen": 0,
+      "verloren": 0,
+      "gewinn": 0.0
+    },
+    "hz1tore": {
+      "gewonnen": 0,
+      "verloren": 0,
+      "gewinn": 0.0
+    },
+    "vztore": {
+      "gewonnen": 0,
+      "verloren": 0,
+      "gewinn": 0.0
+    }
+  },
+  "wochen_statistik": {
+    "ecken": {
+      "gewonnen": 0,
+      "verloren": 0,
+      "gewinn": 0.0
+    },
+    "ecken_over": {
+      "gewonnen": 0,
+      "verloren": 0,
+      "gewinn": 0.0
+    },
+    "karten": {
+      "gewonnen": 0,
+      "verloren": 0,
+      "gewinn": 0.0
+    },
+    "torwart": {
+      "gewonnen": 1,
+      "verloren": 0,
+      "gewinn": 7.0
+    },
+    "druck": {
+      "gewonnen": 0,
+      "verloren": 0,
+      "gewinn": 0.0
+    },
+    "comeback": {
+      "gewonnen": 0,
+      "verloren": 0,
+      "gewinn": 0.0
+    },
+    "torflut": {
+      "gewonnen": 0,
+      "verloren": 0,
+      "gewinn": 0.0
+    },
+    "rotkarte": {
+      "gewonnen": 0,
+      "verloren": 0,
+      "gewinn": 0.0
+    },
+    "hz1tore": {
+      "gewonnen": 0,
+      "verloren": 0,
+      "gewinn": 0.0
+    },
+    "vztore": {
+      "gewonnen": 0,
+      "verloren": 0,
+      "gewinn": 0.0
+    }
+  },
+  "stunden_statistik": {
+    "0": {
+      "gewonnen": 0,
+      "verloren": 0
+    },
+    "1": {
+      "gewonnen": 0,
+      "verloren": 0
+    },
+    "2": {
+      "gewonnen": 0,
+      "verloren": 0
+    },
+    "3": {
+      "gewonnen": 0,
+      "verloren": 0
+    },
+    "4": {
+      "gewonnen": 0,
+      "verloren": 0
+    },
+    "5": {
+      "gewonnen": 0,
+      "verloren": 0
+    },
+    "6": {
+      "gewonnen": 0,
+      "verloren": 0
+    },
+    "7": {
+      "gewonnen": 0,
+      "verloren": 0
+    },
+    "8": {
+      "gewonnen": 0,
+      "verloren": 0
+    },
+    "9": {
+      "gewonnen": 0,
+      "verloren": 0
+    },
+    "10": {
+      "gewonnen": 0,
+      "verloren": 0
+    },
+    "11": {
+      "gewonnen": 0,
+      "verloren": 0
+    },
+    "12": {
+      "gewonnen": 0,
+      "verloren": 0
+    },
+    "13": {
+      "gewonnen": 0,
+      "verloren": 0
+    },
+    "14": {
+      "gewonnen": 0,
+      "verloren": 0
+    },
+    "15": {
+      "gewonnen": 0,
+      "verloren": 0
+    },
+    "16": {
+      "gewonnen": 0,
+      "verloren": 0
+    },
+    "17": {
+      "gewonnen": 0,
+      "verloren": 0
+    },
+    "18": {
+      "gewonnen": 0,
+      "verloren": 0
+    },
+    "19": {
+      "gewonnen": 0,
+      "verloren": 0
+    },
+    "20": {
+      "gewonnen": 0,
+      "verloren": 0
+    },
+    "21": {
+      "gewonnen": 0,
+      "verloren": 0
+    },
+    "22": {
+      "gewonnen": 0,
+      "verloren": 0
+    },
+    "23": {
+      "gewonnen": 1,
+      "verloren": 0
+    }
+  },
+  "liga_statistik": {},
+  "tagesbericht_gesendet": null
+}
