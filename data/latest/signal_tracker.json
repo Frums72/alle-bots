@@ -139,5 +139,20 @@
     "status": "offen",
     "versuche": 1,
     "letzter_versuch": 1778874020.437972
+  },
+  "711555_torwart": {
+    "typ": "torwart",
+    "match_id": "711555",
+    "home": "Notts County",
+    "away": "Chesterfield",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "League 2",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1778876489.0381389,
+    "bot": "Torwart-Bot",
+    "status": "offen",
+    "versuche": 0,
+    "letzter_versuch": 0
   }
 }
