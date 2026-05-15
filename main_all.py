@@ -87,6 +87,33 @@ def telegram_filter_speichern():
     except Exception as e:
         print(f"  [TG-Filter] Speicherfehler: {e}")
 
+# Fix Bug 1: dynamische_filter_laden und _speichern waren nie definiert
+def dynamische_filter_laden():
+    """Lädt angepasste Bot-Filter des Selbstlern-Bots aus Datei."""
+    import json, os
+    global DYNAMISCHE_FILTER
+    pfad = "dynamische_filter.json"
+    if not os.path.exists(pfad):
+        return
+    try:
+        with open(pfad, "r") as f:
+            data = json.load(f)
+        for typ, werte in data.items():
+            if typ in DYNAMISCHE_FILTER:
+                DYNAMISCHE_FILTER[typ].update(werte)
+        print(f"  [DynFilter] Geladen: {list(data.keys())}")
+    except Exception as e:
+        print(f"  [DynFilter] Ladefehler: {e}")
+
+def dynamische_filter_speichern():
+    """Speichert aktuell gültige dynamische Filter."""
+    import json
+    try:
+        with open("dynamische_filter.json", "w") as f:
+            json.dump(DYNAMISCHE_FILTER, f, indent=2)
+    except Exception as e:
+        print(f"  [DynFilter] Speicherfehler: {e}")
+
 def telegram_signal_erlaubt(bot_key: str) -> bool:
     """Gibt False zurück wenn dieser Bot-Typ für Telegram deaktiviert ist."""
     return bot_key not in _telegram_deaktiviert
@@ -223,6 +250,15 @@ KOMBI_SIGNAL_TYPEN   = {
     frozenset(["torwart", "druck"]):   "Druck + Chancen",
 }
 kombi_gesendet = set()  # match_id → bereits kombisignal gesendet
+
+# ── Dynamische Filter (vom Selbstlern-Bot angepasst) ─────────
+# Fix Bug 1: war nie definiert – Selbstlern-Bot und laden/speichern crashten
+DYNAMISCHE_FILTER = {
+    "comeback": {"COMEBACK_AB_MINUTE": COMEBACK_AB_MINUTE},
+    "druck":    {"DRUCK_RATIO":         DRUCK_RATIO},
+    "torwart":  {"MIN_SHOTS_ON_TARGET": MIN_SHOTS_ON_TARGET},
+    "karten":   {"KARTEN_BIS_MINUTE":  KARTEN_BIS_MINUTE},
+}
 # ============================================================
 
 LS_BASE = "https://livescore-api.com/api-client"
@@ -236,6 +272,18 @@ _cache_matches   = []
 _cache_timestamp = 0
 _cache_lock      = threading.Lock()
 CACHE_TTL        = 20  # Reduziert von 45s für schnellere Signale
+
+# Stats + Events Cache – verhindert redundante API-Calls wenn mehrere Bots
+# dasselbe Spiel gleichzeitig prüfen (33 Threads × 20 Spiele = bis zu 660 Calls/Runde ohne Cache)
+_stats_cache      = {}   # match_id → {"data": dict, "ts": float}
+_events_cache     = {}   # match_id → {"data": list, "ts": float}
+_stats_cache_lock = threading.Lock()
+_events_cache_lock= threading.Lock()
+STATS_CACHE_TTL   = 60   # Statistiken 60s cachen – live Daten ändern sich selten schneller
+EVENTS_CACHE_TTL  = 45   # Events 45s cachen – Tore/Karten kommen seltener als 1x/Minute
+
+# Statistik-Lock – verhindert Race Conditions bei gleichzeitigen Auswertungen
+_statistik_lock   = threading.Lock()
 
 notified_ecken      = set()
 notified_ecken_over = set()
@@ -664,8 +712,60 @@ def get_live_matches():
             print(f"  [Cache] {len(_cache_matches)} Spiele geladen")
         return list(_cache_matches)
 
-def get_statistiken(match_id): return ls_get_statistiken(match_id)
-def get_events(match_id):      return ls_get_events(match_id)
+def get_statistiken(match_id: str) -> dict:
+    """
+    Gibt Statistiken für ein Spiel zurück – mit 60s Cache.
+    Verhindert dass 33 Threads dieselben API-Calls für dasselbe Spiel machen.
+    """
+    now = time.time()
+    with _stats_cache_lock:
+        cached = _stats_cache.get(match_id)
+        if cached and now - cached["ts"] < STATS_CACHE_TTL:
+            return cached["data"]
+    data = ls_get_statistiken(match_id)
+    with _stats_cache_lock:
+        _stats_cache[match_id] = {"data": data, "ts": now}
+    return data
+
+def get_events(match_id: str) -> list:
+    """
+    Gibt Events für ein Spiel zurück – mit 45s Cache.
+    Verhindert Mehrfach-Calls wenn mehrere Bots gleichzeitig Events lesen.
+    """
+    now = time.time()
+    with _events_cache_lock:
+        cached = _events_cache.get(match_id)
+        if cached and now - cached["ts"] < EVENTS_CACHE_TTL:
+            return cached["data"]
+    data = ls_get_events(match_id)
+    with _events_cache_lock:
+        _events_cache[match_id] = {"data": data, "ts": now}
+    return data
+
+def cache_invalidieren(match_id: str):
+    """
+    Entfernt ein Spiel aus Stats- und Events-Cache.
+    Wird aufgerufen sobald ein Spiel als FT erkannt wird –
+    damit die Auswertung immer frische Enddaten bekommt.
+    """
+    with _stats_cache_lock:
+        _stats_cache.pop(match_id, None)
+    with _events_cache_lock:
+        _events_cache.pop(match_id, None)
+
+def cache_aufraumen():
+    """Entfernt abgelaufene Einträge aus Stats- und Events-Cache (läuft stündlich)."""
+    now = time.time()
+    with _stats_cache_lock:
+        abgelaufen = [k for k, v in _stats_cache.items() if now - v["ts"] > STATS_CACHE_TTL * 10]
+        for k in abgelaufen:
+            del _stats_cache[k]
+    with _events_cache_lock:
+        abgelaufen = [k for k, v in _events_cache.items() if now - v["ts"] > EVENTS_CACHE_TTL * 10]
+        for k in abgelaufen:
+            del _events_cache[k]
+    if abgelaufen:
+        print(f"  [Cache] {len(abgelaufen)} abgelaufene Einträge bereinigt")
 
 def get_quote(home, away, typ):
     """Holt die BESTE Quote aus allen verfügbaren Bookmakers."""
@@ -1398,13 +1498,15 @@ def kelly_einsatz_bankroll(quote: float, typ: str) -> float:
 _api_monitor = {"heute": 0, "datum": ""}
 
 def api_monitor_increment():
-    check_rate_limit_warnung() if _api_monitor.get("heute", 0) % 5000 == 0 else None
-    """Zählt jeden API-Call mit."""
+    """Zählt jeden API-Call mit und warnt bei kritischer Rate-Limit-Nähe."""
     heute_str = de_now().strftime("%Y-%m-%d")
     if _api_monitor["datum"] != heute_str:
         _api_monitor["heute"] = 0
         _api_monitor["datum"] = heute_str
     _api_monitor["heute"] += 1
+    # Alle 5000 Calls auf Rate-Limit prüfen
+    if _api_monitor["heute"] % 5000 == 0:
+        check_rate_limit_warnung()
 
 def api_monitor_bericht() -> str:
     """Gibt API-Nutzung zurück."""
@@ -1909,48 +2011,49 @@ def update_statistik(typ, gewonnen, quote, liga=None, match_id=None):
     stunde = str(de_now().hour)
     emoji  = "✅" if gewonnen else "❌"
     print(f"  [Statistik] {emoji} {typ.upper()} | Quote: {quote} | Liga: {liga}")
-    if gewonnen:
-        gewinn = round((quote - 1) * EINSATZ, 2) if quote else round(EINSATZ * 0.7, 2)
-        statistik[typ]["gewonnen"]        += 1
-        statistik[typ]["gewinn"]          += gewinn
-        wochen_statistik[typ]["gewonnen"] += 1
-        wochen_statistik[typ]["gewinn"]   += gewinn
-        stunden_statistik[stunde]["gewonnen"] += 1
-        if liga:
-            liga_statistik.setdefault(liga, {"gewonnen": 0, "verloren": 0})
-            liga_statistik[liga]["gewonnen"] += 1
-    else:
-        statistik[typ]["verloren"]        += 1
-        statistik[typ]["gewinn"]          -= EINSATZ
-        wochen_statistik[typ]["verloren"] += 1
-        wochen_statistik[typ]["gewinn"]   -= EINSATZ
-        stunden_statistik[stunde]["verloren"] += 1
-        if liga:
-            liga_statistik.setdefault(liga, {"gewonnen": 0, "verloren": 0})
-            liga_statistik[liga]["verloren"] += 1
-    if match_id:
-        signal_auswertung_aktualisieren(match_id, gewonnen)
-    # Streak aktualisieren
-    global streak_aktuell, streak_beste
-    if gewonnen:
-        streak_aktuell = max(1, streak_aktuell + 1) if streak_aktuell >= 0 else 1
-        streak_beste   = max(streak_beste, streak_aktuell)
-        if streak_aktuell >= 3:
-            send_telegram(f"🔥 <b>{streak_aktuell} Tipps in Folge gewonnen!</b> Streak läuft! 💪")
-    else:
-        streak_aktuell = min(-1, streak_aktuell - 1) if streak_aktuell <= 0 else -1
-        if streak_aktuell <= -3:
-            send_telegram(f"⚠️ <b>{abs(streak_aktuell)} Tipps in Folge verloren.</b> Einsätze prüfen!")
-    # ROI Tracking
-    if quote and quote > 1.0:
-        einsatz_wert = EINSATZ
-        roi_gewinn   = round((quote - 1) * einsatz_wert, 2) if gewonnen else -einsatz_wert
-        if "roi" not in statistik[typ]:
-            statistik[typ]["roi"] = 0.0
-        statistik[typ]["roi"] = round(statistik[typ].get("roi", 0.0) + roi_gewinn, 2)
-    # Bankroll aktualisieren
-    einsatz_wert = EINSATZ
-    bankroll_aktualisieren(gewonnen, einsatz_wert, quote)
+    with _statistik_lock:  # Thread-safe: verhindert Race Conditions bei gleichzeitigen Auswertungen
+        if gewonnen:
+            gewinn = round((quote - 1) * EINSATZ, 2) if quote else round(EINSATZ * 0.7, 2)
+            statistik[typ]["gewonnen"]        += 1
+            statistik[typ]["gewinn"]          += gewinn
+            wochen_statistik[typ]["gewonnen"] += 1
+            wochen_statistik[typ]["gewinn"]   += gewinn
+            stunden_statistik[stunde]["gewonnen"] += 1
+            if liga:
+                liga_statistik.setdefault(liga, {"gewonnen": 0, "verloren": 0})
+                liga_statistik[liga]["gewonnen"] += 1
+        else:
+            statistik[typ]["verloren"]        += 1
+            statistik[typ]["gewinn"]          -= EINSATZ
+            wochen_statistik[typ]["verloren"] += 1
+            wochen_statistik[typ]["gewinn"]   -= EINSATZ
+            stunden_statistik[stunde]["verloren"] += 1
+            if liga:
+                liga_statistik.setdefault(liga, {"gewonnen": 0, "verloren": 0})
+                liga_statistik[liga]["verloren"] += 1
+        if match_id:
+            signal_auswertung_aktualisieren(match_id, gewonnen)
+        # Streak aktualisieren
+        global streak_aktuell, streak_beste
+        if gewonnen:
+            streak_aktuell = max(1, streak_aktuell + 1) if streak_aktuell >= 0 else 1
+            streak_beste   = max(streak_beste, streak_aktuell)
+            if streak_aktuell >= 3:
+                send_telegram(f"🔥 <b>{streak_aktuell} Tipps in Folge gewonnen!</b> Streak läuft! 💪")
+        else:
+            streak_aktuell = min(-1, streak_aktuell - 1) if streak_aktuell <= 0 else -1
+            if streak_aktuell <= -3:
+                send_telegram(f"⚠️ <b>{abs(streak_aktuell)} Tipps in Folge verloren.</b> Einsätze prüfen!")
+        # ROI Tracking
+        if quote and quote > 1.0:
+            einsatz_wert = EINSATZ
+            roi_gewinn   = round((quote - 1) * einsatz_wert, 2) if gewonnen else -einsatz_wert
+            if "roi" not in statistik[typ]:
+                statistik[typ]["roi"] = 0.0
+            statistik[typ]["roi"] = round(statistik[typ].get("roi", 0.0) + roi_gewinn, 2)
+    # Fix Bug 2: bankroll_aktualisieren hier entfernt.
+    # bot_nachschau ruft bankroll_aktualisieren mit dem echten Einsatz auf.
+    # Vorher wurde die Bankroll doppelt aktualisiert (einmal hier, einmal in bot_nachschau).
     statistik_speichern()
 
 def claude_verloren_analyse(home: str, away: str, typ: str, details: str):
@@ -2609,7 +2712,8 @@ def auswertung_hz1tore(spiel):
             # Fallback: Tore via Events zählen (nur Minute <= 45)
             hz1_tore_events = _hole_hz1_tore_via_events(match_id)
             if hz1_tore_events >= 0:
-                ht = f"{hz1_tore_events} - 0 (Events)"
+                # Fix Bug 3: "(Events)" im Score-String bricht parse_score → int-Fehler
+                ht = f"{hz1_tore_events} - 0"
                 print(f"  [Auswertung] Hz1Tore: Events-Fallback → {hz1_tore_events} Tore in HZ1")
             else:
                 print(f"  [Auswertung] Hz1Tore: kein HZ1-Score für {home} vs {away} – übersprungen")
@@ -2735,6 +2839,12 @@ def bot_auswertung_und_berichte():
             # ── Fallback: zu alte offene Signale bereinigen ───────
             auswertung_fallback_check()
 
+            # ── Cache aufräumen (stündlich) ───────────────────────
+            if not hasattr(bot_auswertung_und_berichte, "_letzter_cleanup") or \
+                    time.time() - bot_auswertung_und_berichte._letzter_cleanup > 3600:
+                cache_aufraumen()
+                bot_auswertung_und_berichte._letzter_cleanup = time.time()
+
         except Exception as e:
             print(f"  [Auswertung-Bot] Fehler: {e}")
         time.sleep(120)
@@ -2770,87 +2880,88 @@ def bot_ecken():
                 if corners > MAX_CORNERS:
                     print(f"  [Ecken-Bot] {home} vs {away} | Zu viele Ecken: {corners} > {MAX_CORNERS}")
                     continue
-                if corners <= MAX_CORNERS:
-                    if not tipp_erlaubt(match_id, "Ecken-Bot"):
-                        continue
-                    # Liga-Filter + Whitelist
-                    if not liga_erlaubt(comp):
-                        continue
-                    if not whitelist_check(comp, home, away):
-                        continue
-                    # Quoten-Details (beste Quote + Bookmaker-Anzahl)
-                    qd      = get_quote_details(home, away)
-                    quote   = qd["quote"]
-                    bm_anz  = qd["bookmaker_anzahl"]
-                    # Mindest-Liquidität: mind. MIN_BOOKMAKER_ANZAHL Bookmaker
-                    if bm_anz > 0 and bm_anz < MIN_BOOKMAKER_ANZAHL:
-                        print(f"  [Ecken-Bot] Zu wenig Bookmaker ({bm_anz}) – übersprungen")
-                        continue
-                    if quote and quote < MIN_QUOTE:
-                        print(f"  [Ecken-Bot] Quote zu niedrig: {quote} – übersprungen")
-                        continue
-                    # Kein Skip wenn keine Quote vorhanden – Signal trotzdem senden
-                    # Gegentipp-Schutz
-                    if not gegentipp_check(match_id, "ecken", "unter", "Ecken-Bot"):
-                        continue
-                    # Wetter-Anpassung
-                    schlecht = schlechtes_wetter(country)
-                    wetter_bonus = 1 if schlecht else 0
-                    grenze = corners * 2 + 1 + wetter_bonus
-                    # Ecken-Durchschnitt Check
-                    if not ecken_tipp_sinnvoll(game, grenze):
-                        print(f"  [Ecken-Bot] Durchschnitt passt nicht – übersprungen")
-                        continue
-                    # Standings-Analyse
-                    league_id = str((game.get("competition") or {}).get("id", ""))
-                    home_id   = str((game.get("home") or {}).get("id", ""))
-                    away_id   = str((game.get("away") or {}).get("id", ""))
-                    analyse   = baue_analyse_text(home, away, home_id, away_id, league_id, {
-                        "📐 Ecken HZ1": f"{corners} ({corners_home}|{corners_away})",
-                        "🎯 Grenze":    f"Unter {grenze} gesamt",
-                    })
-                    konfidenz = berechne_konfidenz("ecken", comp, quote,
-                        wetter_schlecht=schlecht, bookmaker_anzahl=bm_anz)
-                    # Claude Review
-                    cl_ok, cl_text = claude_tipp_review(home, away, "ecken", analyse)
-                    if not cl_ok:
-                        konfidenz = max(1, konfidenz - 2)
-                    einsatz = kelly_einsatz_bankroll(quote, "ecken") if quote else EINSATZ
-                    ke      = konfidenz_emoji(konfidenz)
-                    ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
-                    cl_line    = f"\n🤖 Claude: <b>{cl_text}</b>" if cl_text else ""
-                    odds_vgl   = get_odds_vergleich(home, away)
-                    msg     = (f"📐 <b>Ecken Tipp!</b> {ke} Konfidenz: <b>{konfidenz}/10</b>\n"
-                               f"━━━━━━━━━━━━━━━━━━━━\n"
-                               f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
-                               f"📊 Stand: <b>{score}</b>\n"
-                               f"━━━━━━━━━━━━━━━━━━━━\n"
-                               f"{analyse}\n"
-                               f"━━━━━━━━━━━━━━━━━━━━\n"
-                               f"📐 Ecken: 🔵 {corners_home} | 🔴 {corners_away} | Gesamt: {corners}\n"
-                               f"🎯 Tipp: Unter <b>{grenze}</b> Ecken gesamt{ql}{odds_vgl}{cl_line}\n"
-                               f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
-                    send_telegram(msg)
-                    send_discord_embed(DISCORD_WEBHOOK_ECKEN,
-                        discord_ecken_tipp(home, away, comp, country, score,
-                                           corners_home, corners_away, corners, grenze, quote))
+                # Fix Bug 8: redundante 'if corners <= MAX_CORNERS' entfernt
+                if not tipp_erlaubt(match_id, "Ecken-Bot"):
+                    continue
+                # Liga-Filter + Whitelist
+                if not liga_erlaubt(comp):
+                    continue
+                if not whitelist_check(comp, home, away):
+                    continue
+                # Quoten-Details (beste Quote + Bookmaker-Anzahl)
+                qd      = get_quote_details(home, away)
+                quote   = qd["quote"]
+                bm_anz  = qd["bookmaker_anzahl"]
+                # Mindest-Liquidität: mind. MIN_BOOKMAKER_ANZAHL Bookmaker
+                if bm_anz > 0 and bm_anz < MIN_BOOKMAKER_ANZAHL:
+                    print(f"  [Ecken-Bot] Zu wenig Bookmaker ({bm_anz}) – übersprungen")
+                    continue
+                if quote and quote < MIN_QUOTE:
+                    print(f"  [Ecken-Bot] Quote zu niedrig: {quote} – übersprungen")
+                    continue
+                # Kein Skip wenn keine Quote vorhanden – Signal trotzdem senden
+                # Gegentipp-Schutz
+                if not gegentipp_check(match_id, "ecken", "unter", "Ecken-Bot"):
+                    continue
+                # Wetter-Anpassung
+                schlecht = schlechtes_wetter(country)
+                wetter_bonus = 1 if schlecht else 0
+                grenze = corners * 2 + 1 + wetter_bonus
+                # Ecken-Durchschnitt Check
+                if not ecken_tipp_sinnvoll(game, grenze):
+                    print(f"  [Ecken-Bot] Durchschnitt passt nicht – übersprungen")
+                    continue
+                # Standings-Analyse
+                league_id = str((game.get("competition") or {}).get("id", ""))
+                home_id   = str((game.get("home") or {}).get("id", ""))
+                away_id   = str((game.get("away") or {}).get("id", ""))
+                analyse   = baue_analyse_text(home, away, home_id, away_id, league_id, {
+                    "📐 Ecken HZ1": f"{corners} ({corners_home}|{corners_away})",
+                    "🎯 Grenze":    f"Unter {grenze} gesamt",
+                })
+                konfidenz = berechne_konfidenz("ecken", comp, quote,
+                    wetter_schlecht=schlecht, bookmaker_anzahl=bm_anz)
+                # Claude Review
+                cl_ok, cl_text = claude_tipp_review(home, away, "ecken", analyse)
+                if not cl_ok:
+                    konfidenz = max(1, konfidenz - 2)
+                einsatz = kelly_einsatz_bankroll(quote, "ecken") if quote else EINSATZ
+                ke      = konfidenz_emoji(konfidenz)
+                ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
+                cl_line    = f"\n🤖 Claude: <b>{cl_text}</b>" if cl_text else ""
+                odds_vgl   = get_odds_vergleich(home, away)
+                # Fix Bug 4: Markt-Check VOR dem Senden – sonst wird Nachricht
+                # verschickt aber nie ausgewertet weil beobachtung_hinzufuegen fehlt
+                if not prüfe_ecken_verfuegbar(home, away):
                     notified_ecken.add(match_id)
-                    multi_bonus = multi_signal_check(match_id, "Ecken-Bot")
-                    konfidenz   = min(10, konfidenz + multi_bonus)
-                    # Ecken-Markt bei Bookmarkern verfügbar?
-                    if not prüfe_ecken_verfuegbar(home, away):
-                        notified_ecken.add(match_id)
-                        continue
-                    beobachtung_hinzufuegen(match_id, {
-                        "typ": "ecken", "match_id": match_id,
-                        "home": home, "away": away, "hz1_ecken": corners,
-                        "quote": quote, "einsatz": einsatz, "liga": comp,
-                        "webhook": DISCORD_WEBHOOK_ECKEN,
-                        "signal_zeit": time.time(), "bot": "Ecken-Bot"
-                    })
-                    signal_eintragen(match_id, "ecken", home, away, comp, corners, grenze, quote, einsatz)
-                    gegentipp_registrieren(match_id, "ecken", "unter", "Ecken-Bot")
-                    print(f"  [Ecken-Bot] OK: {home} vs {away} | K:{konfidenz}/10 | Claude:{'✅' if cl_ok else '⚠️'}")
+                    continue
+                msg     = (f"📐 <b>Ecken Tipp!</b> {ke} Konfidenz: <b>{konfidenz}/10</b>\n"
+                           f"━━━━━━━━━━━━━━━━━━━━\n"
+                           f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
+                           f"📊 Stand: <b>{score}</b>\n"
+                           f"━━━━━━━━━━━━━━━━━━━━\n"
+                           f"{analyse}\n"
+                           f"━━━━━━━━━━━━━━━━━━━━\n"
+                           f"📐 Ecken: 🔵 {corners_home} | 🔴 {corners_away} | Gesamt: {corners}\n"
+                           f"🎯 Tipp: Unter <b>{grenze}</b> Ecken gesamt{ql}{odds_vgl}{cl_line}\n"
+                           f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
+                send_telegram(msg)
+                send_discord_embed(DISCORD_WEBHOOK_ECKEN,
+                    discord_ecken_tipp(home, away, comp, country, score,
+                                       corners_home, corners_away, corners, grenze, quote))
+                notified_ecken.add(match_id)
+                multi_bonus = multi_signal_check(match_id, "Ecken-Bot")
+                konfidenz   = min(10, konfidenz + multi_bonus)
+                beobachtung_hinzufuegen(match_id, {
+                    "typ": "ecken", "match_id": match_id,
+                    "home": home, "away": away, "hz1_ecken": corners,
+                    "quote": quote, "einsatz": einsatz, "liga": comp,
+                    "webhook": DISCORD_WEBHOOK_ECKEN,
+                    "signal_zeit": time.time(), "bot": "Ecken-Bot"
+                })
+                signal_eintragen(match_id, "ecken", home, away, comp, corners, grenze, quote, einsatz)
+                gegentipp_registrieren(match_id, "ecken", "unter", "Ecken-Bot")
+                print(f"  [Ecken-Bot] OK: {home} vs {away} | K:{konfidenz}/10 | Claude:{'✅' if cl_ok else '⚠️'}")
                 time.sleep(0.5)
             bot_fehler_reset("Ecken-Bot")
         except Exception as e:
@@ -2972,7 +3083,8 @@ def bot_karten():
                     beobachtung_hinzufuegen(match_id, {
                         "typ": "karten", "match_id": match_id,
                         "home": home, "away": away, "karten_anzahl": len(karten),
-                        "quote": quote, "webhook": DISCORD_WEBHOOK_KARTEN, "signal_zeit": time.time(), "bot": "Karten-Bot"
+                        "quote": quote, "einsatz": einsatz, "liga": comp,
+                        "webhook": DISCORD_WEBHOOK_KARTEN, "signal_zeit": time.time(), "bot": "Karten-Bot"
                     })
                     print(f"  [Karten-Bot] OK: {home} vs {away} ({len(karten)} Karten)")
                 time.sleep(0.5)
@@ -3043,7 +3155,8 @@ def bot_torwart():
                 beobachtung_hinzufuegen(match_id, {
                     "typ": "torwart", "match_id": match_id,
                     "home": home, "away": away,
-                    "quote": quote, "webhook": DISCORD_WEBHOOK_TORWART, "signal_zeit": time.time(), "bot": "Torwart-Bot"
+                    "quote": quote, "einsatz": einsatz, "liga": comp,
+                    "webhook": DISCORD_WEBHOOK_TORWART, "signal_zeit": time.time(), "bot": "Torwart-Bot"
                     })
                 print(f"  [Torwart-Bot] OK: {home} vs {away} | {shots_ges} Schüsse")
                 time.sleep(0.5)
@@ -3130,7 +3243,8 @@ def bot_druck():
                     "typ": "druck", "match_id": match_id,
                     "home": home, "away": away, "druck_team": druck_team,
                     "score_signal": score,
-                    "quote": quote, "webhook": DISCORD_WEBHOOK_DRUCK, "signal_zeit": time.time(), "bot": "Druck-Bot"
+                    "quote": quote, "einsatz": einsatz, "liga": comp,
+                    "webhook": DISCORD_WEBHOOK_DRUCK, "signal_zeit": time.time(), "bot": "Druck-Bot"
                     })
                 print(f"  [Druck-Bot] OK: {home} vs {away} | {druck_team} dominiert ({ecken_stark}:{ecken_schwach} Ecken)")
                 time.sleep(0.5)
@@ -3212,7 +3326,8 @@ def bot_comeback():
                     "typ": "comeback", "match_id": match_id,
                     "home": home, "away": away, "rueckliegend": rueckliegend,
                     "score_signal": score_str,
-                    "quote": quote, "webhook": DISCORD_WEBHOOK_COMEBACK, "signal_zeit": time.time(), "bot": "Comeback-Bot", "competition": comp
+                    "quote": quote, "einsatz": einsatz, "liga": comp,
+                    "webhook": DISCORD_WEBHOOK_COMEBACK, "signal_zeit": time.time(), "bot": "Comeback-Bot", "competition": comp
                     })
                 print(f"  [Comeback-Bot] OK: {home} vs {away} | {rueckliegend} liegt zurück aber dominiert")
                 time.sleep(0.5)
@@ -3362,7 +3477,8 @@ def bot_rotkarte():
                     "home": home, "away": away,
                     "ueberzahl_team": ueberzahl_team,
                     "score_signal": score,
-                    "quote": quote, "webhook": DISCORD_WEBHOOK_ROTKARTE, "signal_zeit": time.time(), "bot": "Rotkarte-Bot"
+                    "quote": quote, "einsatz": einsatz, "liga": comp,
+                    "webhook": DISCORD_WEBHOOK_ROTKARTE, "signal_zeit": time.time(), "bot": "Rotkarte-Bot"
                     })
                 print(f"  [Rotkarte-Bot] OK: {home} vs {away} | {ueberzahl_team} in Überzahl (Min. {karte_min})")
                 time.sleep(0.5)
@@ -6454,7 +6570,7 @@ def erstelle_excel_export() -> str | None:
                   "Tipp", "Quote", "Konfidenz", "EV%", "Status", "Ergebnis"]
         for i, h in enumerate(header, 1):
             cell = ws.cell(row=1, column=i, value=h)
-            cell.font = PatternFill("solid", fgColor="1F3A5F")
+            cell.fill = PatternFill("solid", fgColor="1F3A5F")  # Fix: war cell.font (falsch)
             cell.font = Font(bold=True, color="FFFFFF")
         # Daten
         grenze_ts = time.time() - 30 * 24 * 3600
@@ -10129,6 +10245,9 @@ def bot_nachschau():
                         print(f"  [Nachschau] {home} vs {away} | Noch kein Ergebnis (Versuch {versuche}/15)")
                     continue
 
+                # Spiel ist FT – Cache invalidieren damit Auswertung frische Daten bekommt
+                cache_invalidieren(match_id)
+
                 # Kurz warten – API braucht manchmal einen Moment bis Statistiken stabil sind
                 time.sleep(8)
 
@@ -10306,8 +10425,7 @@ if __name__ == "__main__":
     community_system_laden()
     rang_laden()
     discord_votes_laden()
-    vk_laden()
-    vk_laden()
+    vk_laden()  # Fix Bug 6: war doppelt aufgerufen
 
     # Dynamische Filter laden (Funktion weiter unten definiert)
     try:
