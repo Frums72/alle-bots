@@ -64,5 +64,17 @@
     "signal_zeit": 1778872824.1352417,
     "bot": "Comeback-Bot",
     "competition": "First Division A"
+  },
+  "711539_torwart": {
+    "typ": "torwart",
+    "match_id": "711539",
+    "home": "CD Castellon",
+    "away": "Cadiz",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Segunda Division",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1778873185.9901638,
+    "bot": "Torwart-Bot"
   }
 }
