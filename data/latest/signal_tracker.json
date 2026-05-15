@@ -94,5 +94,20 @@
     "status": "offen",
     "versuche": 0,
     "letzter_versuch": 0
+  },
+  "711552_torflut": {
+    "typ": "torflut",
+    "match_id": "711552",
+    "home": "Hamilton Academical",
+    "away": "Clyde",
+    "hz1_tore": 4,
+    "grenze": 6,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778873594.0028167,
+    "bot": "Torflut-Bot",
+    "status": "offen",
+    "versuche": 0,
+    "letzter_versuch": 0
   }
 }
