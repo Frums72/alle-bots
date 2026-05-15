@@ -76,5 +76,17 @@
     "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
     "signal_zeit": 1778873186.7380388,
     "bot": "Torwart-Bot"
+  },
+  "711548_torwart": {
+    "typ": "torwart",
+    "match_id": "711548",
+    "home": "Bohemian FC",
+    "away": "Drogheda United",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Premier Division",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1778873432.3520112,
+    "bot": "Torwart-Bot"
   }
 }
