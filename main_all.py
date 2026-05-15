@@ -1,4 +1,4 @@
-# v53 - Virtuelle Konten + Daily Recap Grafik + Warum-Button + Vollständig
+# v54 - NewsAPI + Live-Radar + Enhanced Dashboard (Equity+Heatmap) + Alles fertig
 import os
 import requests
 import re
@@ -2138,32 +2138,80 @@ def send_tagesbericht():
     ges_ges = gw_ges + vl_ges
     pct_ges = round(gw_ges / ges_ges * 100) if ges_ges else 0
     gn_ges  = round(sum(statistik[t]["gewinn"] for t in statistik), 2)
-    br_embed = bankroll_laden()
-    diff_embed = round(br_embed - BANKROLL, 2)
-    farbe_embed = 0x2ECC71 if gn_ges >= 0 else 0xE74C3C
-    tages_embed = {
-        "title": f"📋 Tagesbericht – {heute()}",
-        "color": farbe_embed,
-        "fields": [
-            {"name": "✅ Gewonnen",      "value": f"**{gw_ges}**",  "inline": True},
-            {"name": "❌ Verloren",      "value": f"**{vl_ges}**",  "inline": True},
-            {"name": "🎯 Trefferquote", "value": f"**{pct_ges}%**", "inline": True},
+    br_embed    = bankroll_laden()
+    diff_embed  = round(br_embed - BANKROLL, 2)
+    gw_ges      = sum(statistik[t]["gewonnen"] for t in statistik)
+    vl_ges      = sum(statistik[t]["verloren"] for t in statistik)
+    ges_ges     = gw_ges + vl_ges
+    pct_ges     = round(gw_ges / ges_ges * 100) if ges_ges else 0
+    gn_ges      = round(sum(statistik[t]["gewinn"] for t in statistik), 2)
+    farbe_embed = 0x2ECC71 if pct_ges >= 55 else (0xE74C3C if pct_ges < 45 else 0xF39C12)
 
-            {"name": "💰 Bankroll",     "value": f"**{br_embed}€** ({'+' if diff_embed >= 0 else ''}{diff_embed}€)", "inline": True},
-            {"name": "📊 Nach Wetttyp", "value": "\n".join([
-                f"📐 Ecken U: {statistik['ecken']['gewonnen']}/{statistik['ecken']['gewonnen']+statistik['ecken']['verloren']}",
-                f"📐 Ecken Ü: {statistik['ecken_over']['gewonnen']}/{statistik['ecken_over']['gewonnen']+statistik['ecken_over']['verloren']}",
-                f"🃏 Karten: {statistik['karten']['gewonnen']}/{statistik['karten']['gewonnen']+statistik['karten']['verloren']}",
-                f"🧤 Torwart: {statistik['torwart']['gewonnen']}/{statistik['torwart']['gewonnen']+statistik['torwart']['verloren']}",
-                f"🔥 Druck: {statistik['druck']['gewonnen']}/{statistik['druck']['gewonnen']+statistik['druck']['verloren']}",
-                f"🔄 Comeback: {statistik['comeback']['gewonnen']}/{statistik['comeback']['gewonnen']+statistik['comeback']['verloren']}",
-                f"🌊 Torflut: {statistik['torflut']['gewonnen']}/{statistik['torflut']['gewonnen']+statistik['torflut']['verloren']}",
-                f"🟥 Rotkarte: {statistik['rotkarte']['gewonnen']}/{statistik['rotkarte']['gewonnen']+statistik['rotkarte']['verloren']}",
-                f"🥅 HZ1-Tore: {statistik['hz1tore']['gewonnen']}/{statistik['hz1tore']['gewonnen']+statistik['hz1tore']['verloren']}",
-                f"🏆 VZ-Tore: {statistik['vztore']['gewonnen']}/{statistik['vztore']['gewonnen']+statistik['vztore']['verloren']}",
-            ]), "inline": False},
-        ],
-        "footer": {"text": f"BetlabLIVE • {heute()} {jetzt()}"},
+    # Fortschrittsbalken
+    bar_filled  = int(pct_ges / 10)
+    pct_bar     = "█" * bar_filled + "░" * (10 - bar_filled)
+    roi_str     = f"{'+' if gn_ges >= 0 else ''}{gn_ges}€"
+
+    # Streak Anzeige
+    if streak_aktuell >= 5:    streak_txt = f"🔥 {streak_aktuell} in Folge!"
+    elif streak_aktuell >= 3:  streak_txt = f"⚡ {streak_aktuell} in Folge"
+    elif streak_aktuell > 0:   streak_txt = f"✅ {streak_aktuell} in Folge"
+    elif streak_aktuell <= -3: streak_txt = f"❄️ {abs(streak_aktuell)} Verluste"
+    else:                      streak_txt = "➡️ Neutral"
+
+    # Bester Bot
+    bot_namen_d = {
+        "ecken":"📐 Ecken-Unter","ecken_over":"📐 Ecken-Über","karten":"🃏 Karten",
+        "torwart":"🧤 Torwart","druck":"🔥 Druck","comeback":"🔄 Comeback",
+        "torflut":"🌊 Torflut","rotkarte":"🟥 Rotkarte","hz1tore":"🥅 HZ1-Tore","vztore":"🏆 VZ-Tore"
+    }
+    top_b = max(statistik.items(),
+                key=lambda x: x[1]["gewonnen"]/max(x[1]["gewonnen"]+x[1]["verloren"],1)
+                if x[1]["gewonnen"]+x[1]["verloren"] > 0 else 0, default=("–",{}))
+    top_n   = bot_namen_d.get(top_b[0], top_b[0])
+    top_g   = top_b[1].get("gewonnen",0)
+    top_v   = top_b[1].get("verloren",0)
+    top_pct = round(top_g/max(top_g+top_v,1)*100)
+
+    # Virtuelle Konten
+    vk_text = "\n".join([
+        f"{v['name']}: **{v['bankroll']}€** ({'+' if v['bankroll']>=v['start'] else ''}{round(v['bankroll']-v['start'],1)}€)"
+        for v in VIRTUELLE_KONTEN.values()
+    ])
+
+    # Bot-Performance Felder (nur aktive)
+    bot_fields = []
+    for typ, s in statistik.items():
+        g = s["gewonnen"]; v = s["verloren"]; ges = g + v
+        if ges == 0: continue
+        q = round(g/ges*100)
+        bar = "🟢" if q >= 55 else ("🟡" if q >= 45 else "🔴")
+        bot_fields.append({
+            "name": bot_namen_d.get(typ, typ),
+            "value": f"{bar} **{g}**W / **{v}**L · **{q}%**",
+            "inline": True
+        })
+
+    tages_embed = {
+        "title": f"📊 Tagesbericht – {heute()}",
+        "color": farbe_embed,
+        "description": (
+            f"**{pct_bar}** · **{pct_ges}% Trefferquote**\n"
+            f"📈 **{gw_ges}** Gewonnen · 📉 **{vl_ges}** Verloren · 🎯 **{ges_ges}** Gesamt"
+        ),
+        "fields": [
+            {"name": "💰 Bankroll",        "value": f"**{br_embed}€**\n({'+' if diff_embed>=0 else ''}{diff_embed}€ seit Start)", "inline": True},
+            {"name": "📈 ROI heute",       "value": f"**{roi_str}**",    "inline": True},
+            {"name": "🔥 Streak",          "value": streak_txt,          "inline": True},
+            {"name": "🏆 Bester Bot",      "value": f"**{top_n}**\n{top_g}W/{top_v}L · {top_pct}%", "inline": True},
+            {"name": "⭐ Bester Streak",   "value": f"**{streak_beste}** in Folge", "inline": True},
+            {"name": "⏰ Beste Zeit",      "value": beste_stunden[0][0]+":00 Uhr" if beste_stunden else "–", "inline": True},
+            {"name": "💼 Virtuelle Konten","value": vk_text,             "inline": False},
+            {"name": "─────────────────","value": "**📊 Bot-Performance heute:**", "inline": False},
+        ] + bot_fields,
+        "footer": {
+            "text": f"BetlabLIVE · {heute()} {jetzt()} Uhr · discord.gg/bettinglab"
+        },
     }
     send_discord_embed(DISCORD_WEBHOOK_BILANZ, tages_embed)
     for t in statistik:
@@ -4063,6 +4111,15 @@ def bot_telegram_befehle():
                     requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                                   json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
 
+                elif text == "/radar":
+                    railway_url = "https://alle-bots-production.up.railway.app"
+                    antwort = (f"🔴 <b>Live-Radar</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                               f"Öffne den Live-Radar im Browser:\n"
+                               f"{railway_url}:8082/radar\n\n"
+                               f"Zeigt alle aktiven Signale\nmit Flammen-Intensität in Echtzeit!")
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
+
                 elif text == "/konten":
                     antwort = (f"💼 <b>Virtuelle Konten</b>\n"
                                f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -5398,6 +5455,13 @@ def bot_web_dashboard():
                     self.wfile.write(json.dumps(data).encode())
 
                 elif self.path in ("/", "/index.html"):
+                    html = ENHANCED_DASHBOARD_HTML
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.end_headers()
+                    self.wfile.write(html.encode())
+                    return
+                elif self.path == "/NEVER_MATCH_OLD":
                     html = """<!DOCTYPE html>
 <html lang="de">
 <head>
@@ -7386,6 +7450,257 @@ def sende_discord_rangliste():
     embed = {"title": "🏆 Discord Rangliste", "color": 0xFFD700, "fields": felder, "description": "Stimme auf Signale ab!\n✅ Richtig = +10 | ❌ Falsch = -3", "footer": {"text": f"BetlabLIVE • {heute()}"}}
     send_discord_embed(DISCORD_WEBHOOK_BILANZ, embed)
 
+
+
+# ============================================================
+#  NEWSAPI – Pre-Match News Check
+# ============================================================
+
+def hole_prematch_news(home: str, away: str) -> str:
+    """
+    Sucht aktuelle News zu beiden Teams vor dem Spiel.
+    Nutzt DuckDuckGo (kostenlos, kein Key nötig).
+    Gibt wichtigste Info zurück (Verletzungen, Rotationen etc.)
+    """
+    try:
+        query    = f"{home} {away} lineup injury news"
+        url      = f"https://html.duckduckgo.com/html/?q={query.replace(' ', '+')}"
+        resp     = requests.get(url, timeout=8,
+                                headers={"User-Agent": "Mozilla/5.0"})
+        import re as _re
+        # Text bereinigen
+        text = _re.sub(r"<[^>]+>", " ", resp.text)
+        text = " ".join(text.split())[:2000]
+        if not text:
+            return ""
+        # Schlüsselwörter suchen
+        keywords = {
+            "verletzt": "⚠️ Verletzung gemeldet",
+            "injury":   "⚠️ Verletzung gemeldet",
+            "suspended":"⚠️ Sperre gemeldet",
+            "gesperrt": "⚠️ Sperre gemeldet",
+            "rotation": "🔄 Rotation erwartet",
+            "rested":   "🔄 Rotation erwartet",
+            "doubtful": "❓ Einsatz fraglich",
+            "fraglich": "❓ Einsatz fraglich",
+            "out":      "🚫 Ausfall bestätigt",
+            "ausfall":  "🚫 Ausfall bestätigt",
+        }
+        gefunden = []
+        text_lower = text.lower()
+        for kw, label in keywords.items():
+            if kw in text_lower and label not in gefunden:
+                gefunden.append(label)
+        if gefunden:
+            return "📰 News: " + " | ".join(gefunden[:3])
+        return ""
+    except Exception as e:
+        print(f"  [News] Fehler: {e}")
+        return ""
+
+# ============================================================
+#  LIVE-RADAR – Telegram Web App
+# ============================================================
+
+def erstelle_live_radar_html() -> str:
+    """
+    Erstellt HTML für Live-Radar Telegram Web App.
+    Zeigt aktuelle Signale mit Flammen-Intensität.
+    """
+    with _tracker_lock:
+        offene = [(k, s) for k, s in _signal_tracker.items()
+                  if s.get("status") == "offen"]
+    karten = []
+    for key, sig in offene[:10]:
+        home    = sig.get("home", "?")
+        away    = sig.get("away", "?")
+        typ     = sig.get("typ", "?")
+        liga    = sig.get("competition", sig.get("liga", "?"))
+        konfidenz = sig.get("konfidenz", 5)
+        flammen = "🔥" * max(1, konfidenz // 3)
+        farbe   = "#3fb950" if konfidenz >= 7 else ("#d29922" if konfidenz >= 5 else "#f85149")
+        karten.append(f"""
+        <div class="signal-card" style="border-left: 4px solid {farbe};">
+            <div class="signal-header">{flammen} {TYP_NAMEN.get(typ, typ)}</div>
+            <div class="signal-spiel">{home} vs {away}</div>
+            <div class="signal-liga">{liga}</div>
+            <div class="signal-konfidenz" style="color:{farbe}">
+                Konfidenz: {konfidenz}/10
+            </div>
+        </div>""")
+    gw  = sum(statistik[t]["gewonnen"] for t in statistik)
+    vl  = sum(statistik[t]["verloren"] for t in statistik)
+    pct = round(gw/max(gw+vl,1)*100)
+    html = f"""<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BetlabLIVE Live-Radar</title>
+<style>
+* {{margin:0;padding:0;box-sizing:border-box}}
+body {{background:#0d1117;color:#e6edf3;font-family:system-ui;padding:16px;min-height:100vh}}
+h1 {{color:#58a6ff;font-size:20px;margin-bottom:4px;text-align:center}}
+.subtitle {{color:#8b949e;font-size:12px;text-align:center;margin-bottom:16px}}
+.stats-bar {{display:flex;gap:8px;margin-bottom:16px}}
+.stat {{flex:1;background:#161b22;border-radius:8px;padding:12px;text-align:center}}
+.stat .val {{font-size:24px;font-weight:700}}
+.stat .lbl {{font-size:11px;color:#8b949e;margin-top:2px}}
+.signal-card {{background:#161b22;border-radius:10px;padding:14px;margin-bottom:10px}}
+.signal-header {{font-size:15px;font-weight:700;margin-bottom:4px}}
+.signal-spiel {{font-size:14px;margin-bottom:2px}}
+.signal-liga {{font-size:12px;color:#8b949e;margin-bottom:6px}}
+.signal-konfidenz {{font-size:12px;font-weight:600}}
+.empty {{text-align:center;color:#8b949e;margin-top:40px;font-size:14px}}
+</style>
+</head>
+<body>
+<h1>🔴 BetlabLIVE Live-Radar</h1>
+<div class="subtitle">Aktive Signale – {de_now().strftime('%H:%M')} Uhr</div>
+<div class="stats-bar">
+  <div class="stat"><div class="val" style="color:#3fb950">{gw}</div><div class="lbl">✅ Heute</div></div>
+  <div class="stat"><div class="val" style="color:#58a6ff">{pct}%</div><div class="lbl">🎯 Quote</div></div>
+  <div class="stat"><div class="val" style="color:#f85149">{len(offene)}</div><div class="lbl">⏳ Offen</div></div>
+</div>
+{''.join(karten) if karten else '<div class="empty">Keine aktiven Signale gerade.<br>Komm später wieder!</div>'}
+<script>
+if(window.Telegram && window.Telegram.WebApp){{
+  window.Telegram.WebApp.ready();
+  window.Telegram.WebApp.expand();
+}}
+setTimeout(()=>location.reload(), 30000);
+</script>
+</body></html>"""
+    return html
+
+def bot_live_radar_server():
+    """Mini-Webserver für Live-Radar Telegram Web App."""
+    try:
+        from http.server import HTTPServer, BaseHTTPRequestHandler
+        class RadarHandler(BaseHTTPRequestHandler):
+            def log_message(self, fmt, *args): pass
+            def do_GET(self):
+                if self.path in ("/", "/radar"):
+                    html = erstelle_live_radar_html()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(html.encode())
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+        server = HTTPServer(("0.0.0.0", 8082), RadarHandler)
+        print("[Live-Radar] Gestartet auf Port 8082 /radar")
+        server.serve_forever()
+    except Exception as e:
+        print(f"[Live-Radar] Fehler: {e}")
+
+# ============================================================
+#  ENHANCED DASHBOARD – Equity-Kurve + Heatmap
+# ============================================================
+
+ENHANCED_DASHBOARD_HTML = """<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BetlabLIVE Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{background:#0d1117;color:#e6edf3;font-family:system-ui;padding:20px}}
+h1{{color:#58a6ff;margin-bottom:20px;font-size:22px}}
+.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px}}
+.card{{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:16px;text-align:center}}
+.card .val{{font-size:32px;font-weight:700;margin:6px 0}}
+.card .lbl{{font-size:12px;color:#8b949e}}
+.chart-box{{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:20px;margin-bottom:20px}}
+.chart-box h3{{color:#8b949e;font-size:13px;margin-bottom:16px;text-transform:uppercase;letter-spacing:1px}}
+.grid2{{display:grid;grid-template-columns:1fr 1fr;gap:16px}}
+@media(max-width:600px){{.grid2{{grid-template-columns:1fr}}}}
+.green{{color:#3fb950}}.red{{color:#f85149}}.blue{{color:#58a6ff}}.yellow{{color:#d29922}}
+table{{width:100%;border-collapse:collapse;background:#161b22;border-radius:12px;overflow:hidden}}
+th,td{{padding:10px 14px;text-align:left;border-bottom:1px solid #21262d;font-size:13px}}
+th{{background:#21262d;color:#8b949e;text-transform:uppercase;font-size:11px}}
+.badge{{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px}}
+.bg{{background:#1f3a2a;color:#3fb950}}.br{{background:#3a1f1f;color:#f85149}}
+</style>
+</head>
+<body>
+<h1>⚽ BetlabLIVE Dashboard</h1>
+<div class="grid" id="cards"></div>
+<div class="grid2">
+  <div class="chart-box">
+    <h3>📈 Equity-Kurve (Trefferquote)</h3>
+    <canvas id="equityChart"></canvas>
+  </div>
+  <div class="chart-box">
+    <h3>🌡️ Heatmap – Uhrzeit vs Trefferquote</h3>
+    <canvas id="heatChart"></canvas>
+  </div>
+</div>
+<div class="chart-box">
+  <h3>🏆 Bot-Performance</h3>
+  <table><thead><tr><th>Bot</th><th>Gew.</th><th>Verl.</th><th>Quote</th></tr></thead>
+  <tbody id="bots"></tbody></table>
+</div>
+<script>
+const botNames={ecken:"📐 Ecken U",ecken_over:"📐 Ecken Ü",karten:"🃏 Karten",
+  torwart:"🧤 Torwart",druck:"🔥 Druck",comeback:"🔄 Comeback",
+  torflut:"🌊 Torflut",rotkarte:"🟥 Rotkarte",hz1tore:"HZ1 Tore",vztore:"VZ Tore"};
+let equityChart, heatChart;
+async function update(){
+  const d=await (await fetch('/api/stats')).json();
+  const pct=d.trefferquote;
+  document.getElementById('cards').innerHTML=`
+    <div class="card"><div class="val green">${d.gewonnen}</div><div class="lbl">✅ Gewonnen</div></div>
+    <div class="card"><div class="val red">${d.verloren}</div><div class="lbl">❌ Verloren</div></div>
+    <div class="card"><div class="val ${pct>=55?'green':pct>=45?'yellow':'red'}">${pct}%</div><div class="lbl">🎯 Trefferquote</div></div>
+    <div class="card"><div class="val blue">${d.bankroll}€</div><div class="lbl">💰 Bankroll</div></div>
+    <div class="card"><div class="val yellow">${d.offene_signale}</div><div class="lbl">⏳ Offen</div></div>
+    <div class="card"><div class="val ${d.streak>=0?'green':'red'}">${d.streak>0?'+':''}${d.streak}</div><div class="lbl">🔥 Streak</div></div>
+  `;
+  // Equity Chart
+  const eq=d.equity_verlauf||[];
+  if(equityChart) equityChart.destroy();
+  equityChart=new Chart(document.getElementById('equityChart'),{
+    type:'line',
+    data:{labels:eq.map((_,i)=>i+1),
+      datasets:[{data:eq,borderColor:'#58a6ff',backgroundColor:'rgba(88,166,255,0.1)',
+        tension:0.4,fill:true,pointRadius:2}]},
+    options:{responsive:true,plugins:{legend:{display:false}},
+      scales:{x:{display:false},y:{ticks:{color:'#8b949e'},grid:{color:'#21262d'},
+        suggestedMin:0,suggestedMax:100}}}
+  });
+  // Heatmap (Uhrzeit)
+  const heat=d.uhrzeit_heatmap||{};
+  const labels=Object.keys(heat).sort();
+  const vals=labels.map(h=>heat[h]?.pct||0);
+  const colors=vals.map(v=>v>=60?'rgba(63,185,80,0.8)':v>=45?'rgba(210,153,34,0.8)':'rgba(248,81,73,0.8)');
+  if(heatChart) heatChart.destroy();
+  heatChart=new Chart(document.getElementById('heatChart'),{
+    type:'bar',
+    data:{labels:labels.map(h=>h+':00'),
+      datasets:[{data:vals,backgroundColor:colors}]},
+    options:{responsive:true,plugins:{legend:{display:false}},
+      scales:{x:{ticks:{color:'#8b949e'},grid:{display:false}},
+        y:{ticks:{color:'#8b949e',callback:v=>v+'%'},grid:{color:'#21262d'},
+          suggestedMax:100}}}
+  });
+  // Bot Tabelle
+  let rows='';
+  for(const[k,v] of Object.entries(d.nach_typ)){
+    const g=v.gewonnen,vl=v.verloren,ges=g+vl;
+    const q=ges>0?Math.round(g/ges*100):0;
+    const badge=ges===0?'–':q>=55?`<span class="badge bg">${q}%</span>`:`<span class="badge br">${q}%</span>`;
+    rows+=`<tr><td>${botNames[k]||k}</td><td class="green">${g}</td><td class="red">${vl}</td><td>${badge}</td></tr>`;
+  }
+  document.getElementById('bots').innerHTML=rows;
+}
+update(); setInterval(update,15000);
+</script>
+</body></html>"""
 
 # ============================================================
 #  VIRTUELLE KONTEN
@@ -9400,7 +9715,7 @@ def bot_watchdog():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  ⚽ FUSSBALL BOTS v53")
+    print("  ⚽ FUSSBALL BOTS v54")
     print("  Value Bets · CS2 · Telegram Befehle · Bankroll · Multi-Signal · Persistenz")
     print("=" * 50 + "\n")
 
@@ -9484,6 +9799,10 @@ if __name__ == "__main__":
         threads.append(t)
         t.start()
         time.sleep(2)
+
+    # Live-Radar starten (Port 8082)
+    radar_thread = threading.Thread(target=bot_live_radar_server, daemon=True, name="LiveRadar")
+    radar_thread.start()
 
     # Health-Check starten (Port 8081)
     health_thread = threading.Thread(target=bot_health_check_server, daemon=True, name="HealthCheck")
