@@ -1521,11 +1521,12 @@ def multi_signal_check(match_id: str, aktueller_bot: str) -> int:
     Gibt Konfidenz-Bonus zurück wenn bereits ein anderer Bot
     dieses Spiel beobachtet – mehrere Bots = stärkeres Signal.
     """
-    if match_id in beobachtete_spiele:
-        erster_bot = beobachtete_spiele[match_id].get("bot", "")
-        if erster_bot and erster_bot != aktueller_bot:
-            print(f"  [Multi-Signal] {match_id}: {erster_bot} + {aktueller_bot} → +{MULTI_SIGNAL_BONUS} Konfidenz")
-            return MULTI_SIGNAL_BONUS
+    if match_id in beobachtete_spiele_multi:
+        for typ, s in beobachtete_spiele_multi[match_id].items():
+            erster_bot = s.get("bot", "")
+            if erster_bot and erster_bot != aktueller_bot:
+                print(f"  [Multi-Signal] {match_id}: {erster_bot} + {aktueller_bot} → +{MULTI_SIGNAL_BONUS} Konfidenz")
+                return MULTI_SIGNAL_BONUS
     return 0
 
 # ── Auswertungs-Fallback ─────────────────────────────────────
@@ -1585,7 +1586,8 @@ def kombi_signal_check(match_id: str):
         return
     for kombi_typen, kombi_name in KOMBI_SIGNAL_TYPEN.items():
         if kombi_typen.issubset(typen):
-            spiel     = beobachtete_spiele[match_id]
+            # Erstes verfügbares Spiel-Dict für home/away
+            spiel     = next(iter(beobachtete_spiele_multi[match_id].values()))
             home      = spiel.get("home", "?")
             away      = spiel.get("away", "?")
             alle_tipps = []
@@ -2406,17 +2408,16 @@ def _hole_hz1_tore_via_events(match_id: str) -> int:
     except Exception:
         return -1
 
-def auswertung_ecken(spiel):
+def auswertung_ecken(spiel, ft_result=None):
     match_id  = spiel["match_id"]
     hz1_ecken = spiel["hz1_ecken"]
     grenze    = hz1_ecken * 2 + 1
     home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
     liga = spiel.get("competition", spiel.get("liga", ""))
     try:
-        # Triple-Verifikation für FT-Bestätigung
-        result = ls_get_match_result(match_id, home, away, liga)
+        result = ft_result or ls_get_match_result(match_id, home, away, liga)
         if not result:
-            return None  # Noch kein verlässliches Ergebnis
+            return None
         stats       = get_statistiken(match_id)
         total_ecken = stats["corners_home"] + stats["corners_away"]
         if total_ecken == 0 and hz1_ecken > 0:
@@ -2434,14 +2435,14 @@ def auswertung_ecken(spiel):
         print(f"  [Auswertung] Ecken Fehler: {e}")
         return None
 
-def auswertung_ecken_over(spiel):
+def auswertung_ecken_over(spiel, ft_result=None):
     match_id  = spiel["match_id"]
     hz1_ecken = spiel["hz1_ecken"]
     GRENZE    = 14
     home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
     liga = spiel.get("competition", spiel.get("liga", ""))
     try:
-        result = ls_get_match_result(match_id, home, away, liga)
+        result = ft_result or ls_get_match_result(match_id, home, away, liga)
         if not result:
             return None
         stats       = get_statistiken(match_id)
@@ -2460,14 +2461,14 @@ def auswertung_ecken_over(spiel):
         print(f"  [Auswertung] Ecken-Über Fehler: {e}")
         return None
 
-def auswertung_karten(spiel):
+def auswertung_karten(spiel, ft_result=None):
     match_id   = spiel["match_id"]
     karten_hz1 = spiel["karten_anzahl"]
     GRENZE     = 5
     home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
     liga = spiel.get("competition", spiel.get("liga", ""))
     try:
-        result = ls_get_match_result(match_id, home, away, liga)
+        result = ft_result or ls_get_match_result(match_id, home, away, liga)
         if not result:
             return None
         events   = get_events(match_id)
@@ -2484,12 +2485,12 @@ def auswertung_karten(spiel):
         print(f"  [Auswertung] Karten Fehler: {e}")
         return None
 
-def auswertung_torwart(spiel):
+def auswertung_torwart(spiel, ft_result=None):
     match_id = spiel["match_id"]
     home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
     liga = spiel.get("competition", spiel.get("liga", ""))
     try:
-        result = ls_get_match_result(match_id, home, away, liga)
+        result = ft_result or ls_get_match_result(match_id, home, away, liga)
         if not result:
             return None
         score    = result.get("score", "")
@@ -2517,7 +2518,7 @@ def auswertung_torwart(spiel):
         print(f"  [Auswertung] Torwart Fehler: {e}")
         return None
 
-def auswertung_druck(spiel):
+def auswertung_druck(spiel, ft_result=None):
     match_id     = spiel["match_id"]
     druck_team   = spiel["druck_team"]
     score_signal = spiel.get("score_signal", "")
@@ -2525,7 +2526,7 @@ def auswertung_druck(spiel):
     h_sig, a_sig = parse_score(score_signal) if score_signal else (0, 0)
     liga = spiel.get("competition", spiel.get("liga", ""))
     try:
-        result = ls_get_match_result(match_id, home, away, liga)
+        result = ft_result or ls_get_match_result(match_id, home, away, liga)
         if not result:
             return None
         score = result.get("score", "")
@@ -2565,7 +2566,7 @@ def auswertung_druck(spiel):
         print(f"  [Auswertung] Druck Fehler: {e}")
         return None
 
-def auswertung_comeback(spiel):
+def auswertung_comeback(spiel, ft_result=None):
     match_id     = spiel["match_id"]
     rueckliegend = spiel["rueckliegend"]
     home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
@@ -2574,7 +2575,7 @@ def auswertung_comeback(spiel):
     h_sig, a_sig = parse_score(score_signal) if score_signal else (0, 0)
     liga = spiel.get("competition", spiel.get("liga", ""))
     try:
-        result = ls_get_match_result(match_id, home, away, liga)
+        result = ft_result or ls_get_match_result(match_id, home, away, liga)
         if not result:
             return None
         score = result.get("score", "")
@@ -2618,14 +2619,14 @@ def auswertung_comeback(spiel):
         print(f"  [Auswertung] Comeback Fehler: {e}")
         return None
 
-def auswertung_torflut(spiel):
+def auswertung_torflut(spiel, ft_result=None):
     match_id  = spiel["match_id"]
     grenze    = spiel["grenze"]
     hz1_tore  = spiel["hz1_tore"]
     home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
     liga = spiel.get("competition", spiel.get("liga", ""))
     try:
-        result = ls_get_match_result(match_id, home, away, liga)
+        result = ft_result or ls_get_match_result(match_id, home, away, liga)
         if not result:
             return None
         score = result.get("score", "")
@@ -2654,14 +2655,14 @@ def auswertung_torflut(spiel):
         print(f"  [Auswertung] Torflut Fehler: {e}")
         return None
 
-def auswertung_rotkarte(spiel):
+def auswertung_rotkarte(spiel, ft_result=None):
     match_id      = spiel["match_id"]
     ueberzahl_team = spiel["ueberzahl_team"]
     score_signal  = spiel["score_signal"]
     home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
     try:
         liga = spiel.get("competition", spiel.get("liga", ""))
-        result = ls_get_match_result(match_id, home, away, liga)
+        result = ft_result or ls_get_match_result(match_id, home, away, liga)
         if not result:
             return None
         score = result.get("score", "")
@@ -2692,14 +2693,14 @@ def auswertung_rotkarte(spiel):
         print(f"  [Auswertung] Rote Karte Fehler: {e}")
         return None
 
-def auswertung_hz1tore(spiel):
+def auswertung_hz1tore(spiel, ft_result=None):
     match_id  = spiel["match_id"]
     richtung  = spiel["richtung"]
     linie     = spiel["linie"]
     home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
     liga = spiel.get("competition", spiel.get("liga", ""))
     try:
-        result = ls_get_match_result(match_id, home, away, liga)
+        result = ft_result or ls_get_match_result(match_id, home, away, liga)
         if not result:
             return None
         ht    = result.get("ht_score", "")
@@ -2737,14 +2738,14 @@ def auswertung_hz1tore(spiel):
         print(f"  [Auswertung] HZ1-Tore Fehler: {e}")
         return None
 
-def auswertung_vztore(spiel):
+def auswertung_vztore(spiel, ft_result=None):
     match_id  = spiel["match_id"]
     richtung  = spiel["richtung"]
     linie     = spiel["linie"]
     home, away, quote = spiel["home"], spiel["away"], spiel.get("quote")
     liga = spiel.get("competition", spiel.get("liga", ""))
     try:
-        result = ls_get_match_result(match_id, home, away, liga)
+        result = ft_result or ls_get_match_result(match_id, home, away, liga)
         if not result:
             return None
         score    = result.get("score", "")
@@ -10092,11 +10093,11 @@ def ls_get_match_result(match_id: str, home: str = "",
     # ── Quelle 1: livescore-api ──────────────────────────────────
     try:
         match    = ls_get_single_match(match_id)
-        status   = str(match.get("status", "") or "")
-        time_val = str(match.get("time", "") or "")
+        status   = str(match.get("status", "") or "").upper().strip()
+        time_val = str(match.get("time", "") or "").upper().strip()
         score    = (match.get("scores") or {}).get("score", "")
         ht_score = (match.get("scores") or {}).get("ht_score", "") or ""
-        if time_val.upper() in ("FT", "FULL TIME", "AET"):
+        if time_val in ("FT", "FULL TIME", "AET"):
             status = "FT"
         if status in FT_STATI and score:
             # Fix Bug B: 0-0 nicht mehr als "unsicher" blockieren,
@@ -10251,7 +10252,7 @@ def bot_nachschau():
                 # Kurz warten – API braucht manchmal einen Moment bis Statistiken stabil sind
                 time.sleep(8)
 
-                # Auswertungsfunktion aufrufen
+                # Auswertungsfunktion aufrufen – result bereits bekannt, kein zweiter API-Call
                 auswert_fn = AUSWERTUNG_FNS.get(typ)
                 if not auswert_fn:
                     print(f"  [Nachschau] Unbekannter Typ '{typ}' – übersprungen")
@@ -10260,7 +10261,7 @@ def bot_nachschau():
 
                 msg = None
                 try:
-                    msg = auswert_fn(sig)
+                    msg = auswert_fn(sig, ft_result=result)
                 except Exception as e:
                     print(f"  [Nachschau] Auswertungs-Fehler {home} vs {away} ({typ}): {e}")
 
