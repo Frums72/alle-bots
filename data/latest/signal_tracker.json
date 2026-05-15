@@ -10,9 +10,13 @@
     "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
     "signal_zeit": 1778872607.590476,
     "bot": "Torwart-Bot",
-    "status": "offen",
-    "versuche": 1,
-    "letzter_versuch": 1778873833.7573361
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1778880004.9146526,
+    "konfidenz_original": 6,
+    "konfidenz": 1,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-15 23:20"
   },
   "711522_torwart": {
     "typ": "torwart",
@@ -25,9 +29,13 @@
     "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
     "signal_zeit": 1778872609.5874503,
     "bot": "Torwart-Bot",
-    "status": "offen",
-    "versuche": 1,
-    "letzter_versuch": 1778873836.4438827
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1778880011.5415604,
+    "konfidenz_original": 6,
+    "konfidenz": 1,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-15 23:20"
   },
   "711528_torflut": {
     "typ": "torflut",
@@ -40,9 +48,13 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1778872612.9593782,
     "bot": "Torflut-Bot",
-    "status": "offen",
-    "versuche": 1,
-    "letzter_versuch": 1778873896.5539827
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1778880013.8418448,
+    "konfidenz_original": 6,
+    "konfidenz": 1,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-15 23:20"
   },
   "711500_comeback": {
     "typ": "comeback",
@@ -58,9 +70,13 @@
     "signal_zeit": 1778872746.2416298,
     "bot": "Comeback-Bot",
     "competition": "Liga I",
-    "status": "offen",
-    "versuche": 1,
-    "letzter_versuch": 1778873899.1173897
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1778880015.887249,
+    "konfidenz_original": 6,
+    "konfidenz": 1,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-15 23:20"
   },
   "711543_comeback": {
     "typ": "comeback",
@@ -76,9 +92,13 @@
     "signal_zeit": 1778872824.1360345,
     "bot": "Comeback-Bot",
     "competition": "First Division A",
-    "status": "offen",
-    "versuche": 1,
-    "letzter_versuch": 1778873901.3437796
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1778880020.9675972,
+    "konfidenz_original": 6,
+    "konfidenz": 1,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-15 23:20"
   },
   "711539_torwart": {
     "typ": "torwart",
@@ -91,9 +111,13 @@
     "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
     "signal_zeit": 1778873185.905919,
     "bot": "Torwart-Bot",
-    "status": "offen",
-    "versuche": 1,
-    "letzter_versuch": 1778873956.4364767
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1778880023.158031,
+    "konfidenz_original": 6,
+    "konfidenz": 1,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-15 23:20"
   },
   "711552_torflut": {
     "typ": "torflut",
@@ -106,9 +130,13 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1778873596.9902558,
     "bot": "Torflut-Bot",
-    "status": "offen",
-    "versuche": 1,
-    "letzter_versuch": 1778873958.9659464
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1778880025.4020407,
+    "konfidenz_original": 6,
+    "konfidenz": 1,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-15 23:20"
   },
   "711547_torflut": {
     "typ": "torflut",
@@ -121,9 +149,13 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1778873616.6548882,
     "bot": "Torflut-Bot",
-    "status": "offen",
-    "versuche": 1,
-    "letzter_versuch": 1778873964.8213797
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1778880027.360125,
+    "konfidenz_original": 6,
+    "konfidenz": 1,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-15 23:20"
   },
   "711553_torwart": {
     "typ": "torwart",
@@ -136,9 +168,13 @@
     "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
     "signal_zeit": 1778873833.388995,
     "bot": "Torwart-Bot",
-    "status": "offen",
-    "versuche": 1,
-    "letzter_versuch": 1778874020.437972
+    "status": "ausgewertet",
+    "versuche": 10,
+    "letzter_versuch": 1778879156.5212557,
+    "konfidenz_original": 6,
+    "konfidenz": 3,
+    "gewonnen": true,
+    "ausgewertet_um": "2026-05-15 23:06"
   },
   "711555_torwart": {
     "typ": "torwart",
@@ -151,9 +187,13 @@
     "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
     "signal_zeit": 1778876489.0381389,
     "bot": "Torwart-Bot",
-    "status": "offen",
-    "versuche": 0,
-    "letzter_versuch": 0
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1778880318.561691,
+    "konfidenz_original": 6,
+    "konfidenz": 4,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-15 23:25"
   },
   "711556_torwart": {
     "typ": "torwart",
@@ -166,8 +206,69 @@
     "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
     "signal_zeit": 1778876901.1701012,
     "bot": "Torwart-Bot",
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1778880321.8579674,
+    "konfidenz_original": 6,
+    "konfidenz": 5,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-15 23:25"
+  },
+  "711554_druck": {
+    "typ": "druck",
+    "match_id": "711554",
+    "home": "Cordoba",
+    "away": "Albacete",
+    "druck_team": "Cordoba",
+    "score_signal": "1 - 2",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Segunda Division",
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778877943.4454296,
+    "bot": "Druck-Bot",
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1778880890.151118,
+    "konfidenz_original": 6,
+    "konfidenz": 5,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-15 23:34"
+  },
+  "711560_ecken": {
+    "typ": "ecken",
+    "match_id": "711560",
+    "home": "FC Cajamarca",
+    "away": "Sporting Cristal",
+    "hz1_ecken": 5,
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Primera Division",
+    "webhook": "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4",
+    "signal_zeit": 1778878346.3567333,
+    "bot": "Ecken-Bot",
     "status": "offen",
-    "versuche": 0,
-    "letzter_versuch": 0
+    "versuche": 13,
+    "letzter_versuch": 1778880892.5679812,
+    "konfidenz_original": 6,
+    "konfidenz": 6
+  },
+  "711562_ecken": {
+    "typ": "ecken",
+    "match_id": "711562",
+    "home": "Rubio Nu",
+    "away": "Nacional Asuncion",
+    "hz1_ecken": 5,
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Division Profesional",
+    "webhook": "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4",
+    "signal_zeit": 1778878469.7216063,
+    "bot": "Ecken-Bot",
+    "status": "offen",
+    "versuche": 12,
+    "letzter_versuch": 1778880895.2082553,
+    "konfidenz_original": 6,
+    "konfidenz": 6
   }
 }
