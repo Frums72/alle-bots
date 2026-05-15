@@ -478,7 +478,9 @@ def _notified_sets_github_push():
         pass  # Stiller Fehler – nächstes Mal wird es erneut versucht
 
 def notified_sets_laden():
-    """Lädt notified Sets beim Start – kein Doppel-Signal nach Neustart."""
+    """Lädt notified Sets beim Start – kein Doppel-Signal nach Neustart.
+    Nur Sets die weniger als 30 Minuten alt sind werden geladen –
+    verhindert dass eine Spam-Session alle Signale dauerhaft blockiert."""
     import json, os
     global notified_ecken, notified_ecken_over, notified_karten, notified_torwart
     global notified_druck, notified_comeback, notified_torflut, notified_rotkarte
@@ -493,6 +495,17 @@ def notified_sets_laden():
         if data.get("gespeichert", "")[:10] != de_now().strftime("%Y-%m-%d"):
             print(f"  [Notified] Sets von gestern – nicht geladen")
             return
+        # Nur laden wenn weniger als 30 Minuten alt – verhindert Spam-Session-Sperren
+        try:
+            gespeichert_dt = datetime.strptime(
+                data.get("gespeichert", ""), "%Y-%m-%d %H:%M"
+            ).replace(tzinfo=timezone.utc)
+            alter_min = (datetime.now(timezone.utc) - gespeichert_dt).total_seconds() / 60
+            if alter_min > 30:
+                print(f"  [Notified] Sets {alter_min:.0f} Min alt – zu alt, starte frisch")
+                return
+        except Exception:
+            pass
         notified_ecken      = set(data.get("ecken",      []))
         notified_ecken_over = set(data.get("ecken_over", []))
         notified_karten     = set(data.get("karten",     []))
@@ -511,7 +524,7 @@ def notified_sets_laden():
             notified_torwart, notified_druck, notified_comeback, notified_torflut,
             notified_rotkarte, notified_hz1tore, notified_vztore,
             notified_xg, notified_cs2, notified_sharp])
-        print(f"  [Notified] {total} Match-IDs geladen – kein Doppel-Signal nach Neustart ✅")
+        print(f"  [Notified] {total} Match-IDs geladen (Alter: {alter_min:.0f} Min) ✅")
     except Exception as e:
         print(f"  [Notified] Ladefehler: {e}")
 
