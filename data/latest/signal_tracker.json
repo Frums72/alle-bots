@@ -79,5 +79,20 @@
     "status": "offen",
     "versuche": 0,
     "letzter_versuch": 0
+  },
+  "711539_torwart": {
+    "typ": "torwart",
+    "match_id": "711539",
+    "home": "CD Castellon",
+    "away": "Cadiz",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Segunda Division",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1778873185.905919,
+    "bot": "Torwart-Bot",
+    "status": "offen",
+    "versuche": 0,
+    "letzter_versuch": 0
   }
 }
