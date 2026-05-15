@@ -451,31 +451,24 @@ def notified_sets_speichern():
         print(f"  [Notified] Speicherfehler: {e}")
 
 def _notified_sets_github_push():
-    """Pusht nur notified_sets.json sofort auf GitHub (im Hintergrund)."""
-    import json, base64, os
+    """Pusht nur notified_sets.json sofort in den data-backup Branch (im Hintergrund)."""
+    import base64, os
     if not GITHUB_TOKEN or not os.path.exists(NOTIFIED_DATEI):
         return
     try:
         headers = {
             "Authorization": f"token {GITHUB_TOKEN}",
-            "Accept": "application/vnd.github.v3+json",
+            "Accept":        "application/vnd.github.v3+json",
         }
         with open(NOTIFIED_DATEI, "rb") as f:
             inhalt = base64.b64encode(f.read()).decode()
-        pfad    = f"{GITHUB_DATA_PFAD}/{NOTIFIED_DATEI}"
-        api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{pfad}"
-        # Bestehende Datei-SHA holen
-        r = requests.get(api_url, headers=headers, timeout=8)
-        sha = r.json().get("sha") if r.status_code == 200 else None
-        payload = {
-            "message": f"notified-sets {de_now().strftime('%H:%M')} [skip ci]",
-            "content": inhalt,
-        }
-        if sha:
-            payload["sha"] = sha
-        requests.put(api_url, headers=headers, json=payload, timeout=10)
+        resp = _github_push_datei(NOTIFIED_DATEI, inhalt, headers)
+        if resp.status_code not in (200, 201):
+            # Bei Conflict: erneut mit frischer SHA
+            resp2 = _github_push_datei(NOTIFIED_DATEI, inhalt, headers)
+            _ = resp2  # Fehler wird still ignoriert
     except Exception:
-        pass  # Stiller Fehler – nächstes Mal wird es erneut versucht
+        pass
 
 def notified_sets_laden():
     """Lädt notified Sets beim Start – kein Doppel-Signal nach Neustart.
@@ -1745,11 +1738,31 @@ PERSISTENZ_DATEIEN = [
     "whitelist.json", "community_tipps.json", "admins.json",
     "bekannte_user.json", "manuell_tipps.json", "ab_test.json",
 ]
-GITHUB_DATA_PFAD = "data/latest"  # Fester Pfad in Repo → immer überschrieben
+GITHUB_DATA_PFAD   = "data/latest"
+# Eigener Branch für Daten – Railway beobachtet nur main → KEIN Auto-Deploy durch Backups
+GITHUB_DATA_BRANCH = os.environ.get("GITHUB_DATA_BRANCH", "data-backup")
+
+def _github_push_datei(datei: str, inhalt_b64: str, headers: dict, sha: str = None):
+    """Hilfsfunktion: pusht eine Datei in den data-backup Branch."""
+    pfad    = f"{GITHUB_DATA_PFAD}/{datei}"
+    api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{pfad}"
+    # SHA holen falls nicht übergeben
+    if sha is None:
+        r = requests.get(api_url, headers=headers,
+                         params={"ref": GITHUB_DATA_BRANCH}, timeout=10)
+        sha = r.json().get("sha") if r.status_code == 200 else None
+    payload = {
+        "message": f"backup {de_now().strftime('%H:%M')}",
+        "content": inhalt_b64,
+        "branch":  GITHUB_DATA_BRANCH,  # ← data-backup Branch, nicht main!
+    }
+    if sha:
+        payload["sha"] = sha
+    return requests.put(api_url, headers=headers, json=payload, timeout=15)
 
 def github_backup():
-    """Pusht ALLE Datendateien auf GitHub (fester Pfad → wird überschrieben)."""
-    import json, base64, os
+    """Pusht ALLE Datendateien in den data-backup Branch (Railway deployt nur main)."""
+    import base64, os
     if not GITHUB_TOKEN or GITHUB_TOKEN.startswith("GITHUB"):
         print("  [Backup] Kein GitHub Token konfiguriert")
         return
@@ -1757,6 +1770,27 @@ def github_backup():
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json",
     }
+    # data-backup Branch anlegen falls er noch nicht existiert
+    try:
+        ref_url = f"https://api.github.com/repos/{GITHUB_REPO}/git/refs/heads/{GITHUB_DATA_BRANCH}"
+        if requests.get(ref_url, headers=headers, timeout=8).status_code == 404:
+            # Branch von main abzweigen
+            main = requests.get(
+                f"https://api.github.com/repos/{GITHUB_REPO}/git/refs/heads/main",
+                headers=headers, timeout=8
+            ).json()
+            sha_main = main.get("object", {}).get("sha", "")
+            if sha_main:
+                requests.post(
+                    f"https://api.github.com/repos/{GITHUB_REPO}/git/refs",
+                    headers=headers,
+                    json={"ref": f"refs/heads/{GITHUB_DATA_BRANCH}", "sha": sha_main},
+                    timeout=10
+                )
+                print(f"  [Backup] Branch '{GITHUB_DATA_BRANCH}' erstellt ✅")
+    except Exception as e:
+        print(f"  [Backup] Branch-Check Fehler: {e}")
+
     gesichert = 0
     for datei in PERSISTENZ_DATEIEN:
         if not os.path.exists(datei):
@@ -1764,23 +1798,10 @@ def github_backup():
         try:
             with open(datei, "rb") as f:
                 inhalt = base64.b64encode(f.read()).decode()
-            pfad    = f"{GITHUB_DATA_PFAD}/{datei}"
-            api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{pfad}"
-            sha     = None
-            check   = requests.get(api_url, headers=headers, timeout=10)
-            if check.status_code == 200:
-                sha = check.json().get("sha")
-            payload = {
-                "message": f"Data-Backup {de_now().strftime('%Y-%m-%d %H:%M')} [skip ci]",
-                "content": inhalt,
-            }
-            if sha:
-                payload["sha"] = sha
-            resp = requests.put(api_url, headers=headers,
-                                json=payload, timeout=15)
+            resp = _github_push_datei(datei, inhalt, headers)
             if resp.status_code in (200, 201):
                 gesichert += 1
-                print(f"  [Backup] ✅ {datei} → GitHub")
+                print(f"  [Backup] ✅ {datei} → {GITHUB_DATA_BRANCH}")
             else:
                 print(f"  [Backup] ❌ {datei}: {resp.status_code}")
         except Exception as e:
@@ -1811,7 +1832,8 @@ def github_restore():
         try:
             pfad    = f"{GITHUB_DATA_PFAD}/{datei}"
             api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{pfad}"
-            resp    = requests.get(api_url, headers=headers, timeout=10)
+            resp    = requests.get(api_url, headers=headers,
+                                   params={"ref": GITHUB_DATA_BRANCH}, timeout=10)
             if resp.status_code != 200:
                 print(f"  [Restore] {datei}: nicht auf GitHub ({resp.status_code})")
                 continue
@@ -1819,19 +1841,13 @@ def github_restore():
             with open(datei, "wb") as f:
                 f.write(inhalt)
             wiederhergestellt += 1
-            print(f"  [Restore] ✅ {datei} ← GitHub")
+            print(f"  [Restore] ✅ {datei} ← {GITHUB_DATA_BRANCH}")
         except Exception as e:
             print(f"  [Restore] Fehler bei {datei}: {e}")
     if wiederhergestellt > 0:
         print(f"  [Restore] {wiederhergestellt} Dateien wiederhergestellt ✅")
-        # Anti-Spam: nur einmal alle 5 Minuten senden
-        if time.time() - _github_restore_gesendet > 300:
-            _github_restore_gesendet = time.time()
-            send_telegram(f"🔄 <b>Daten wiederhergestellt!</b>\n"
-                          f"━━━━━━━━━━━━━━━━━━━━\n"
-                          f"✅ {wiederhergestellt} Dateien von GitHub geladen\n"
-                          f"📊 Statistiken, Bankroll & Signale sind wiederhergestellt\n"
-                          f"🕐 {jetzt()} Uhr")
+        # Nur ins Log, kein Telegram-Spam
+        print(f"  [Restore] ✅ {wiederhergestellt} Dateien wiederhergestellt – kein Telegram-Alarm")
     return wiederhergestellt
 
 def bot_github_backup():
@@ -6169,25 +6185,9 @@ BOT_START_ZEIT = time.time()
 _startup_alarm_gesendet = 0  # Anti-Spam Timestamp
 
 def bot_startup_alarm():
-    """Sendet Alarm wenn Bot neu startet – maximal einmal alle 3 Minuten."""
-    global _startup_alarm_gesendet
-    # Anti-Spam: bei schnellen Neustarts (z.B. Railway rolling deploy) nicht mehrfach senden
-    if time.time() - _startup_alarm_gesendet < 180:
-        print("  [Startup] Alarm bereits kürzlich gesendet – übersprungen")
-        return
-    try:
-        _startup_alarm_gesendet = time.time()
-        start_str = de_now().strftime("%d.%m.%Y %H:%M")
-        msg = (f"🔄 <b>Bot neu gestartet!</b>\n"
-               f"━━━━━━━━━━━━━━━━━━━━\n"
-               f"🕐 {start_str} Uhr\n"
-               f"✅ Alle {len(bot_definitionen)} Bots werden gestartet\n"
-               f"📊 Signal-Tracker geladen\n"
-               f"━━━━━━━━━━━━━━━━━━━━\n"
-               f"⚡ BetlabLIVE ist wieder aktiv!")
-        send_telegram(msg)
-    except Exception as e:
-        print(f"  [Startup] Alarm Fehler: {e}")
+    """Nur ins Log – kein Telegram-Spam bei jedem Neustart."""
+    start_str = de_now().strftime("%d.%m.%Y %H:%M")
+    print(f"  [Startup] BetlabLIVE gestartet um {start_str} | {len(bot_definitionen)} Bots")
 
 def bot_health_check_server():
     """
