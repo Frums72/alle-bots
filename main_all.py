@@ -4115,7 +4115,7 @@ def bot_telegram_befehle():
                     railway_url = "https://alle-bots-production.up.railway.app"
                     antwort = (f"🔴 <b>Live-Radar</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                                f"Öffne den Live-Radar im Browser:\n"
-                               f"{railway_url}:8082/radar\n\n"
+                               f"{railway_url}/radar\n\n"
                                f"Zeigt alle aktiven Signale\nmit Flammen-Intensität in Echtzeit!")
                     requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                                   json={"chat_id": chat_id, "text": antwort, "parse_mode": "HTML"}, timeout=10)
@@ -5422,17 +5422,46 @@ def bot_cs2():
 # ============================================================
 
 def bot_web_dashboard():
-    """Startet einen einfachen Webserver auf Port 8080 mit Live-Statistiken."""
+    """
+    Alles-in-einem Webserver auf Port 8080:
+    /          → Dashboard
+    /radar     → Live-Radar
+    /health    → Health-Check
+    /api/stats → API Daten
+    """
     try:
         from http.server import HTTPServer, BaseHTTPRequestHandler
         import json
 
         class DashboardHandler(BaseHTTPRequestHandler):
             def log_message(self, format, *args):
-                pass  # Keine Server-Logs
+                pass
 
             def do_GET(self):
-                if self.path == "/api/stats":
+                # ── /health ──────────────────────────────
+                if self.path == "/health":
+                    uptime_min = round((time.time() - BOT_START_ZEIT) / 60)
+                    gw = sum(statistik[t]["gewonnen"] for t in statistik)
+                    vl = sum(statistik[t]["verloren"] for t in statistik)
+                    data = {"status": "ok", "uptime_min": uptime_min,
+                            "gewonnen": gw, "verloren": vl,
+                            "offene_signale": len(tracker_get_offene())}
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps(data).encode())
+
+                # ── /radar ───────────────────────────────
+                elif self.path in ("/radar", "/radar/"):
+                    html = erstelle_live_radar_html()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.end_headers()
+                    self.wfile.write(html.encode())
+
+                # ── /api/stats ───────────────────────────
+                elif self.path == "/api/stats":
                     # JSON API für Stats
                     gw  = sum(statistik[t]["gewonnen"] for t in statistik)
                     vl  = sum(statistik[t]["verloren"] for t in statistik)
@@ -5461,7 +5490,7 @@ def bot_web_dashboard():
                     self.end_headers()
                     self.wfile.write(html.encode())
                     return
-                elif self.path == "/NEVER_MATCH_OLD":
+                elif self.path == "/NEVER_MATCH_OLD_DISABLED":
                     html = """<!DOCTYPE html>
 <html lang="de">
 <head>
