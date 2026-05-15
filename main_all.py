@@ -418,13 +418,21 @@ def notified_sets_speichern():
     import json
     try:
         data = {
-            "ecken": list(notified_ecken), "ecken_over": list(notified_ecken_over),
-            "karten": list(notified_karten), "torwart": list(notified_torwart),
-            "druck": list(notified_druck), "comeback": list(notified_comeback),
-            "torflut": list(notified_torflut), "rotkarte": list(notified_rotkarte),
-            "hz1tore": list(notified_hz1tore), "vztore": list(notified_vztore),
-            "auswertung_done": list(auswertung_done),
-            "gespeichert": de_now().strftime("%Y-%m-%d %H:%M"),
+            "ecken":          list(notified_ecken),
+            "ecken_over":     list(notified_ecken_over),
+            "karten":         list(notified_karten),
+            "torwart":        list(notified_torwart),
+            "druck":          list(notified_druck),
+            "comeback":       list(notified_comeback),
+            "torflut":        list(notified_torflut),
+            "rotkarte":       list(notified_rotkarte),
+            "hz1tore":        list(notified_hz1tore),
+            "vztore":         list(notified_vztore),
+            "auswertung_done":list(auswertung_done),
+            "xg":             list(notified_xg),
+            "cs2":            list(notified_cs2),
+            "sharp":          list(notified_sharp),
+            "gespeichert":    de_now().strftime("%Y-%m-%d %H:%M"),
         }
         with open(NOTIFIED_DATEI, "w") as f:
             json.dump(data, f)
@@ -437,6 +445,7 @@ def notified_sets_laden():
     global notified_ecken, notified_ecken_over, notified_karten, notified_torwart
     global notified_druck, notified_comeback, notified_torflut, notified_rotkarte
     global notified_hz1tore, notified_vztore, auswertung_done
+    global notified_xg, notified_cs2, notified_sharp
     if not os.path.exists(NOTIFIED_DATEI):
         return
     try:
@@ -446,20 +455,24 @@ def notified_sets_laden():
         if data.get("gespeichert", "")[:10] != de_now().strftime("%Y-%m-%d"):
             print(f"  [Notified] Sets von gestern – nicht geladen")
             return
-        notified_ecken      = set(data.get("ecken", []))
+        notified_ecken      = set(data.get("ecken",      []))
         notified_ecken_over = set(data.get("ecken_over", []))
-        notified_karten     = set(data.get("karten", []))
-        notified_torwart    = set(data.get("torwart", []))
-        notified_druck      = set(data.get("druck", []))
-        notified_comeback   = set(data.get("comeback", []))
-        notified_torflut    = set(data.get("torflut", []))
-        notified_rotkarte   = set(data.get("rotkarte", []))
-        notified_hz1tore    = set(data.get("hz1tore", []))
-        notified_vztore     = set(data.get("vztore", []))
+        notified_karten     = set(data.get("karten",     []))
+        notified_torwart    = set(data.get("torwart",    []))
+        notified_druck      = set(data.get("druck",      []))
+        notified_comeback   = set(data.get("comeback",   []))
+        notified_torflut    = set(data.get("torflut",    []))
+        notified_rotkarte   = set(data.get("rotkarte",   []))
+        notified_hz1tore    = set(data.get("hz1tore",    []))
+        notified_vztore     = set(data.get("vztore",     []))
         auswertung_done     = set(data.get("auswertung_done", []))
+        notified_xg         = set(data.get("xg",         []))
+        notified_cs2        = set(data.get("cs2",        []))
+        notified_sharp      = set(data.get("sharp",      []))
         total = sum(len(s) for s in [notified_ecken, notified_ecken_over, notified_karten,
             notified_torwart, notified_druck, notified_comeback, notified_torflut,
-            notified_rotkarte, notified_hz1tore, notified_vztore])
+            notified_rotkarte, notified_hz1tore, notified_vztore,
+            notified_xg, notified_cs2, notified_sharp])
         print(f"  [Notified] {total} Match-IDs geladen – kein Doppel-Signal nach Neustart ✅")
     except Exception as e:
         print(f"  [Notified] Ladefehler: {e}")
@@ -1707,7 +1720,7 @@ def github_backup():
             if check.status_code == 200:
                 sha = check.json().get("sha")
             payload = {
-                "message": f"Data-Backup {de_now().strftime('%Y-%m-%d %H:%M')}",
+                "message": f"Data-Backup {de_now().strftime('%Y-%m-%d %H:%M')} [skip ci]",
                 "content": inhalt,
             }
             if sha:
@@ -3060,6 +3073,8 @@ def bot_karten():
                 country = (game.get("country") or {}).get("name", "International")
                 score   = game.get("scores", {}).get("score", "?")
                 if len(karten) >= MIN_KARTEN:
+                    if not tipp_erlaubt(match_id, "Karten-Bot"):
+                        continue
                     quote  = get_quote(home, away, "karten")
                     if quote and quote < MIN_QUOTE:
                         continue
@@ -3243,6 +3258,8 @@ def bot_druck():
                 send_discord_embed(DISCORD_WEBHOOK_DRUCK,
                     discord_druck_tipp(home, away, comp, country, score, minute, druck_team,
                                        ecken_stark, ecken_schwach, fk_stark, fk_schwach, quote))
+                if not tipp_erlaubt(match_id, "Druck-Bot"):
+                    continue
                 notified_druck.add(match_id)
                 beobachtung_hinzufuegen(match_id, {
                     "typ": "druck", "match_id": match_id,
@@ -3326,6 +3343,8 @@ def bot_comeback():
                 send_discord_embed(DISCORD_WEBHOOK_COMEBACK,
                     discord_comeback_tipp(home, away, comp, country, score_str, minute,
                                           rueckliegend, fuehrend, shots_r, shots_f, poss_r, quote))
+                if not tipp_erlaubt(match_id, "Comeback-Bot"):
+                    continue
                 notified_comeback.add(match_id)
                 beobachtung_hinzufuegen(match_id, {
                     "typ": "comeback", "match_id": match_id,
@@ -3408,6 +3427,8 @@ def bot_torflut():
                 send_telegram(msg)
                 send_discord_embed(DISCORD_WEBHOOK_TORFLUT,
                     discord_torflut_tipp(home, away, comp, country, score_str, tore_hz1, grenze, quote, shots_tf, poss_th, poss_ta))
+                if not tipp_erlaubt(match_id, "Torflut-Bot"):
+                    continue
                 notified_torflut.add(match_id)
                 beobachtung_hinzufuegen(match_id, {
                     "typ": "torflut", "match_id": match_id,
@@ -3476,6 +3497,8 @@ def bot_rotkarte():
                 send_discord_embed(DISCORD_WEBHOOK_ROTKARTE,
                     discord_rotkarte_tipp(home, away, comp, country, score, minute,
                                           rote_karte_team, ueberzahl_team, spieler, quote))
+                if not tipp_erlaubt(match_id, "Rotkarte-Bot"):
+                    continue
                 notified_rotkarte.add(match_id)
                 beobachtung_hinzufuegen(match_id, {
                     "typ": "rotkarte", "match_id": match_id,
@@ -3567,6 +3590,8 @@ def bot_tore_analyse():
                         send_discord_embed(DISCORD_WEBHOOK_HZ1TORE,
                             discord_hz1tore_tipp(home, away, comp, country, richtung, linie,
                                                   ana["avg_hz1"], ana["hz1_spiele"], quote))
+                        if not tipp_erlaubt(match_id, "Tore-Bot-HZ1"):
+                            continue
                         notified_hz1tore.add(match_id)
                         beobachtung_hinzufuegen(match_id, {
                             "typ": "hz1tore", "match_id": match_id,
@@ -3606,6 +3631,8 @@ def bot_tore_analyse():
                         send_discord_embed(DISCORD_WEBHOOK_VZTORE,
                             discord_vztore_tipp(home, away, comp, country, richtung, linie,
                                                 ana["avg_vz"], ana["spiele"], quote))
+                        if not tipp_erlaubt(match_id, "Tore-Bot-VZ"):
+                            continue
                         notified_vztore.add(match_id)
                         beobachtung_hinzufuegen(match_id, {
                             "typ": "vztore", "match_id": match_id,
@@ -5258,7 +5285,7 @@ def bot_cs2():
                 if not signal:
                     continue
                 notified_cs2.add(match_id)
-                stream_url = ""
+                notified_sets_speichern()
                 for stream in (match.get("streams_list") or []):
                     if stream.get("main"):
                         stream_url = stream.get("raw_url", "")
@@ -6540,8 +6567,8 @@ def bot_sharp_money():
                 if not sharp_signals or key in notified_sharp:
                     continue
                 notified_sharp.add(key)
-                msg = (f"💼 <b>Sharp Money Signal!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
-                       f"📌 {home_t} vs {away_t}\n"
+                notified_sets_speichern()
+                msg = (f"💼 <b>Sharp Money Signal!</b>\n━━━━━━━━━━━━━━━━━━━━\n"                       f"📌 {home_t} vs {away_t}\n"
                        f"━━━━━━━━━━━━━━━━━━━━\n"
                        + "\n".join(sharp_signals) +
                        f"\n━━━━━━━━━━━━━━━━━━━━\n"
