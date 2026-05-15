@@ -5439,7 +5439,7 @@ def bot_web_dashboard():
 
             def do_GET(self):
                 # ── /health ──────────────────────────────
-                if self.path == "/health":
+                if self.path == "/health.json":
                     uptime_min = round((time.time() - BOT_START_ZEIT) / 60)
                     gw = sum(statistik[t]["gewonnen"] for t in statistik)
                     vl = sum(statistik[t]["verloren"] for t in statistik)
@@ -5451,6 +5451,13 @@ def bot_web_dashboard():
                     self.send_header("Access-Control-Allow-Origin", "*")
                     self.end_headers()
                     self.wfile.write(json.dumps(data).encode())
+
+                elif self.path == "/health":
+                    html = erstelle_health_html()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.end_headers()
+                    self.wfile.write(html.encode())
 
                 # ── /radar ───────────────────────────────
                 elif self.path in ("/radar", "/radar/"):
@@ -7532,75 +7539,349 @@ def hole_prematch_news(home: str, away: str) -> str:
 # ============================================================
 
 def erstelle_live_radar_html() -> str:
-    """
-    Erstellt HTML für Live-Radar Telegram Web App.
-    Zeigt aktuelle Signale mit Flammen-Intensität.
-    """
+    """Professionelle Live-Radar Seite."""
     with _tracker_lock:
         offene = [(k, s) for k, s in _signal_tracker.items()
                   if s.get("status") == "offen"]
-    karten = []
-    for key, sig in offene[:10]:
-        home    = sig.get("home", "?")
-        away    = sig.get("away", "?")
-        typ     = sig.get("typ", "?")
-        liga    = sig.get("competition", sig.get("liga", "?"))
-        konfidenz = sig.get("konfidenz", 5)
-        flammen = "🔥" * max(1, konfidenz // 3)
-        farbe   = "#3fb950" if konfidenz >= 7 else ("#d29922" if konfidenz >= 5 else "#f85149")
-        karten.append(f"""
-        <div class="signal-card" style="border-left: 4px solid {farbe};">
-            <div class="signal-header">{flammen} {TYP_NAMEN.get(typ, typ)}</div>
-            <div class="signal-spiel">{home} vs {away}</div>
-            <div class="signal-liga">{liga}</div>
-            <div class="signal-konfidenz" style="color:{farbe}">
-                Konfidenz: {konfidenz}/10
-            </div>
-        </div>""")
+
     gw  = sum(statistik[t]["gewonnen"] for t in statistik)
     vl  = sum(statistik[t]["verloren"] for t in statistik)
     pct = round(gw/max(gw+vl,1)*100)
-    html = f"""<!DOCTYPE html>
+
+    TYP_FARBEN = {
+        "ecken":    ("#58a6ff","📐"),
+        "ecken_over":("#a371f7","📐"),
+        "karten":   ("#d29922","🃏"),
+        "torwart":  ("#3fb950","🧤"),
+        "druck":    ("#f85149","🔥"),
+        "comeback": ("#58a6ff","🔄"),
+        "torflut":  ("#a371f7","🌊"),
+        "rotkarte": ("#f85149","🟥"),
+        "cs2":      ("#d29922","🎮"),
+        "hz1tore":  ("#3fb950","🥅"),
+        "value":    ("#d29922","💎"),
+        "xg":       ("#58a6ff","📊"),
+    }
+
+    signal_cards = ""
+    for key, sig in offene[:12]:
+        home      = sig.get("home","?")
+        away      = sig.get("away","?")
+        typ       = sig.get("typ","?")
+        liga      = sig.get("competition", sig.get("liga","?"))
+        konf      = sig.get("konfidenz", 5)
+        farbe, icon = TYP_FARBEN.get(typ, ("#8b949e","🤖"))
+        alter_min = round((time.time() - sig.get("signal_zeit", time.time())) / 60)
+        flammen   = "🔥" * max(1, min(konf//3, 3))
+        bar_w     = konf * 10
+
+        signal_cards += f"""
+        <div class="signal-card" style="border-left:3px solid {farbe}">
+          <div class="sc-top">
+            <div class="sc-type" style="color:{farbe}">{icon} {TYP_NAMEN.get(typ,typ)}</div>
+            <div class="sc-time">{alter_min}m ago</div>
+          </div>
+          <div class="sc-match">{home} <span class="vs">vs</span> {away}</div>
+          <div class="sc-liga">{liga}</div>
+          <div class="sc-footer">
+            <div class="conf-bar-bg"><div class="conf-bar" style="width:{bar_w}%;background:{farbe}"></div></div>
+            <span class="conf-val">{konf}/10</span>
+            <span class="flammen">{flammen}</span>
+          </div>
+        </div>"""
+
+    if not signal_cards:
+        signal_cards = """
+        <div class="empty-state">
+          <div class="empty-icon">📡</div>
+          <div class="empty-title">Keine aktiven Signale</div>
+          <div class="empty-sub">Der Bot analysiert gerade alle Spiele...</div>
+        </div>"""
+
+    return f"""<!DOCTYPE html>
 <html lang="de">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>BetlabLIVE Live-Radar</title>
+<meta http-equiv="refresh" content="30">
+<title>BetlabLIVE — Live Radar</title>
 <style>
-* {{margin:0;padding:0;box-sizing:border-box}}
-body {{background:#0d1117;color:#e6edf3;font-family:system-ui;padding:16px;min-height:100vh}}
-h1 {{color:#58a6ff;font-size:20px;margin-bottom:4px;text-align:center}}
-.subtitle {{color:#8b949e;font-size:12px;text-align:center;margin-bottom:16px}}
-.stats-bar {{display:flex;gap:8px;margin-bottom:16px}}
-.stat {{flex:1;background:#161b22;border-radius:8px;padding:12px;text-align:center}}
-.stat .val {{font-size:24px;font-weight:700}}
-.stat .lbl {{font-size:11px;color:#8b949e;margin-top:2px}}
-.signal-card {{background:#161b22;border-radius:10px;padding:14px;margin-bottom:10px}}
-.signal-header {{font-size:15px;font-weight:700;margin-bottom:4px}}
-.signal-spiel {{font-size:14px;margin-bottom:2px}}
-.signal-liga {{font-size:12px;color:#8b949e;margin-bottom:6px}}
-.signal-konfidenz {{font-size:12px;font-weight:600}}
-.empty {{text-align:center;color:#8b949e;margin-top:40px;font-size:14px}}
+:root{{--bg:#070b0f;--card:#0d1117;--card2:#161b22;--border:#1c2128;--text:#e6edf3;--muted:#8b949e;--green:#3fb950;--red:#f85149;--blue:#58a6ff;--yellow:#d29922;--purple:#a371f7}}
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh}}
+header{{background:linear-gradient(180deg,#0d1117 0%,rgba(13,17,23,0.95) 100%);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:99;backdrop-filter:blur(20px)}}
+.logo{{display:flex;align-items:center;gap:12px}}
+.logo-icon{{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,#f85149,#ff9a3c);display:flex;align-items:center;justify-content:center;font-size:20px}}
+.logo-text h1{{font-size:17px;font-weight:700;letter-spacing:-.3px}}
+.logo-text p{{font-size:11px;color:var(--muted);margin-top:1px}}
+.header-right{{display:flex;align-items:center;gap:12px}}
+.radar-badge{{display:flex;align-items:center;gap:6px;background:rgba(248,81,73,0.1);border:1px solid rgba(248,81,73,0.3);padding:6px 12px;border-radius:20px;font-size:12px;color:var(--red);font-weight:600}}
+.radar-dot{{width:7px;height:7px;border-radius:50%;background:var(--red);animation:pulse 1s infinite}}
+@keyframes pulse{{0%,100%{{transform:scale(1);opacity:1}}50%{{transform:scale(1.4);opacity:0.6}}}}
+.nav{{display:flex;gap:3px;background:rgba(255,255,255,0.04);border:1px solid var(--border);padding:3px;border-radius:9px}}
+.nav a{{text-decoration:none;padding:5px 12px;border-radius:7px;font-size:11px;font-weight:600;color:var(--muted);transition:.15s;display:flex;align-items:center;gap:5px}}
+.nav a:hover{{background:rgba(255,255,255,0.06);color:var(--text)}}
+.nav a.active{{background:var(--c2);color:var(--text);border:1px solid var(--border)}}
+.header-stats{{display:flex;gap:20px}}
+.hs{{text-align:center}}
+.hs-val{{font-size:16px;font-weight:700}}
+.hs-lbl{{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}}
+main{{padding:22px 24px;max-width:1200px;margin:0 auto}}
+.section-title{{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:14px;display:flex;align-items:center;gap:8px}}
+.section-title::after{{content:'';flex:1;height:1px;background:var(--border)}}
+.signals-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-bottom:24px}}
+.signal-card{{background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:16px;transition:transform .15s,border-color .15s}}
+.signal-card:hover{{transform:translateY(-2px);border-color:#30363d}}
+.sc-top{{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}}
+.sc-type{{font-size:13px;font-weight:700}}
+.sc-time{{font-size:11px;color:var(--muted);background:rgba(255,255,255,0.05);padding:3px 8px;border-radius:20px}}
+.sc-match{{font-size:15px;font-weight:600;margin-bottom:3px}}
+.vs{{color:var(--muted);font-size:12px;font-weight:400;margin:0 4px}}
+.sc-liga{{font-size:11px;color:var(--muted);margin-bottom:12px}}
+.sc-footer{{display:flex;align-items:center;gap:8px}}
+.conf-bar-bg{{flex:1;background:rgba(255,255,255,0.06);border-radius:99px;height:5px}}
+.conf-bar{{height:5px;border-radius:99px;transition:width .5s}}
+.conf-val{{font-size:11px;color:var(--muted);font-weight:600;min-width:28px}}
+.flammen{{font-size:12px}}
+.stats-row{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:22px}}
+.stat-box{{background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center}}
+.stat-val{{font-size:28px;font-weight:800;margin-bottom:3px}}
+.stat-lbl{{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}}
+.empty-state{{grid-column:1/-1;text-align:center;padding:60px 20px}}
+.empty-icon{{font-size:48px;margin-bottom:16px;opacity:.5}}
+.empty-title{{font-size:18px;font-weight:600;color:var(--muted);margin-bottom:6px}}
+.empty-sub{{font-size:13px;color:rgba(139,148,158,0.6)}}
+footer{{text-align:center;padding:16px;color:var(--muted);font-size:11px;border-top:1px solid var(--border);margin-top:8px}}
+@media(max-width:600px){{.stats-row{{grid-template-columns:1fr 1fr}}.header-stats{{display:none}}}}
 </style>
 </head>
 <body>
-<h1>🔴 BetlabLIVE Live-Radar</h1>
-<div class="subtitle">Aktive Signale – {de_now().strftime('%H:%M')} Uhr</div>
-<div class="stats-bar">
-  <div class="stat"><div class="val" style="color:#3fb950">{gw}</div><div class="lbl">✅ Heute</div></div>
-  <div class="stat"><div class="val" style="color:#58a6ff">{pct}%</div><div class="lbl">🎯 Quote</div></div>
-  <div class="stat"><div class="val" style="color:#f85149">{len(offene)}</div><div class="lbl">⏳ Offen</div></div>
-</div>
-{''.join(karten) if karten else '<div class="empty">Keine aktiven Signale gerade.<br>Komm später wieder!</div>'}
-<script>
-if(window.Telegram && window.Telegram.WebApp){{
-  window.Telegram.WebApp.ready();
-  window.Telegram.WebApp.expand();
-}}
-setTimeout(()=>location.reload(), 30000);
-</script>
-</body></html>"""
-    return html
+<header>
+  <div class="logo">
+    <div class="logo-icon">🔴</div>
+    <div class="logo-text">
+      <h1>BetlabLIVE</h1>
+      <p>Live Signal Radar</p>
+    </div>
+  </div>
+  <div class="header-stats">
+    <div class="hs"><div class="hs-val" style="color:var(--green)">{gw}</div><div class="hs-lbl">Gewonnen</div></div>
+    <div class="hs"><div class="hs-val" style="color:var(--{"green" if pct>=55 else "red"}">{pct}%</div><div class="hs-lbl">Heute</div></div>
+    <div class="hs"><div class="hs-val" style="color:var(--red)">{vl}</div><div class="hs-lbl">Verloren</div></div>
+  </div>
+  <div class="header-right" style="display:flex;align-items:center;gap:12px">
+    <div class="nav"><a href="/">📊 Dashboard</a><a href="/radar" class="active">🔴 Live Radar</a><a href="/health">✅ System Status</a></div>
+    <div class="radar-badge"><div class="radar-dot"></div>RADAR AKTIV</div>
+  </div>
+</header>
+<main>
+  <div class="stats-row">
+    <div class="stat-box">
+      <div class="stat-val" style="color:var(--red)">{len(offene)}</div>
+      <div class="stat-lbl">⏳ Offene Signale</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" style="color:var(--blue)">{gw+vl}</div>
+      <div class="stat-lbl">📊 Signale heute</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" style="color:var(--{"green" if pct>=55 else "yellow" if pct>=45 else "red"})">{pct}%</div>
+      <div class="stat-lbl">🎯 Trefferquote</div>
+    </div>
+  </div>
+  <div class="section-title">🔴 Aktive Signale ({len(offene)})</div>
+  <div class="signals-grid">
+    {signal_cards}
+  </div>
+</main>
+<footer>BetlabLIVE Analytics &nbsp;·&nbsp; discord.gg/bettinglab &nbsp;·&nbsp; Seite aktualisiert alle 30s &nbsp;·&nbsp; {de_now().strftime("%H:%M:%S")} Uhr</footer>
+</body>
+</html>"""
+
+
+def erstelle_health_html() -> str:
+    """Professionelle System Health Status Seite."""
+    import threading as _th
+    uptime_sek = time.time() - BOT_START_ZEIT
+    uptime_h   = int(uptime_sek // 3600)
+    uptime_m   = int((uptime_sek % 3600) // 60)
+    uptime_str = f"{uptime_h}h {uptime_m}m"
+    gw    = sum(statistik[t]["gewonnen"] for t in statistik)
+    vl    = sum(statistik[t]["verloren"] for t in statistik)
+    pct   = round(gw/max(gw+vl,1)*100)
+    offene = len(tracker_get_offene())
+    br    = bankroll_laden()
+
+    # Thread Status
+    threads = {t.name: t.is_alive() for t in _th.enumerate()}
+    BOT_THREADS = [
+        ("Ecken-Bot","Ecken-Bot"),("Ecken-Über-Bot","Ecken-Über-Bot"),
+        ("Karten-Bot","Karten-Bot"),("Torwart-Bot","Torwart-Bot"),
+        ("Druck-Bot","Druck-Bot"),("Comeback-Bot","Comeback-Bot"),
+        ("Torflut-Bot","Torflut-Bot"),("Rotkarte-Bot","Rotkarte-Bot"),
+        ("Value-Bot","Value-Bot"),("CS2-Bot","CS2-Bot"),
+        ("Telegram-Bot","Telegram-Befehle"),("Auswertung-Bot","Auswertung-Bot"),
+        ("Nachschau-Bot","Nachschau-Bot"),("PreMatch-Bot","PreMatch-Bot"),
+        ("Dashboard","Dashboard"),
+    ]
+    thread_rows = ""
+    alive_count = 0
+    for display, tname in BOT_THREADS:
+        alive = threads.get(tname, False)
+        if alive: alive_count += 1
+        dot_c = "#3fb950" if alive else "#f85149"
+        status_txt = "Operational" if alive else "Offline"
+        status_cls = "op" if alive else "dn"
+        thread_rows += f"""
+        <div class="service-row">
+          <div class="service-left">
+            <div class="service-dot" style="background:{dot_c}"></div>
+            <span class="service-name">{display}</span>
+          </div>
+          <span class="service-badge {status_cls}">{status_txt}</span>
+        </div>"""
+
+    overall_ok = alive_count >= len(BOT_THREADS) * 0.8
+    overall_color = "#3fb950" if overall_ok else "#f85149"
+    overall_txt   = "All Systems Operational" if overall_ok else "Partial Outage"
+
+    api_calls = _api_monitor.get("heute", 0)
+    api_limit  = 5000
+
+    return f"""<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="30">
+<title>BetlabLIVE — System Status</title>
+<style>
+:root{{--bg:#070b0f;--card:#0d1117;--card2:#161b22;--border:#1c2128;--text:#e6edf3;--muted:#8b949e;--green:#3fb950;--red:#f85149;--blue:#58a6ff;--yellow:#d29922}}
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh}}
+header{{background:#0d1117;border-bottom:1px solid var(--border);padding:16px 24px;display:flex;align-items:center;justify-content:space-between}}
+.logo{{display:flex;align-items:center;gap:12px}}
+.logo-icon{{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,#3fb950,#45d160);display:flex;align-items:center;justify-content:center;font-size:20px}}
+.logo-text h1{{font-size:17px;font-weight:700}}
+.logo-text p{{font-size:11px;color:var(--muted);margin-top:1px}}
+.ts{{font-size:12px;color:var(--muted)}}
+main{{padding:28px 24px;max-width:900px;margin:0 auto}}
+.overall-banner{{border-radius:14px;padding:22px 24px;margin-bottom:24px;display:flex;align-items:center;gap:16px;border:1px solid}}
+.overall-banner.ok{{background:rgba(63,185,80,0.06);border-color:rgba(63,185,80,0.25)}}
+.overall-banner.dn{{background:rgba(248,81,73,0.06);border-color:rgba(248,81,73,0.25)}}
+.ob-icon{{font-size:36px}}
+.ob-title{{font-size:20px;font-weight:700;margin-bottom:3px}}
+.ob-sub{{font-size:13px;color:var(--muted)}}
+.kpi-row{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}}
+.kpi{{background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;position:relative;overflow:hidden}}
+.kpi::before{{content:'';position:absolute;top:0;left:0;right:0;height:2px;border-radius:12px 12px 0 0}}
+.kpi.g::before{{background:linear-gradient(90deg,var(--green),transparent)}}
+.kpi.b::before{{background:linear-gradient(90deg,var(--blue),transparent)}}
+.kpi.y::before{{background:linear-gradient(90deg,var(--yellow),transparent)}}
+.kpi.p::before{{background:linear-gradient(90deg,#a371f7,transparent)}}
+.kpi-val{{font-size:28px;font-weight:800;margin:6px 0 3px}}
+.kpi-lbl{{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}}
+.kpi.g .kpi-val{{color:var(--green)}}.kpi.b .kpi-val{{color:var(--blue)}}
+.kpi.y .kpi-val{{color:var(--yellow)}}.kpi.p .kpi-val{{color:#a371f7}}
+.section{{background:var(--card2);border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-bottom:16px}}
+.section-hdr{{padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}}
+.section-hdr-left{{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600}}
+.count-badge{{background:rgba(255,255,255,0.06);border:1px solid var(--border);padding:2px 8px;border-radius:20px;font-size:11px;color:var(--muted)}}
+.service-row{{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-bottom:1px solid rgba(28,33,40,0.5)}}
+.service-row:last-child{{border-bottom:none}}
+.service-left{{display:flex;align-items:center;gap:10px}}
+.service-dot{{width:8px;height:8px;border-radius:50%;flex-shrink:0}}
+.service-name{{font-size:13px}}
+.service-badge{{font-size:11px;padding:3px 10px;border-radius:20px;font-weight:600}}
+.service-badge.op{{background:rgba(63,185,80,0.1);color:var(--green);border:1px solid rgba(63,185,80,0.25)}}
+.service-badge.dn{{background:rgba(248,81,73,0.1);color:var(--red);border:1px solid rgba(248,81,73,0.25)}}
+.api-bar-bg{{background:var(--border);border-radius:99px;height:6px;overflow:hidden;margin-top:8px}}
+.api-bar{{height:6px;border-radius:99px;background:linear-gradient(90deg,var(--blue),#88bfff)}}
+.metric-row{{display:flex;justify-content:space-between;align-items:flex-end;padding:14px 20px}}
+.metric-label{{font-size:12px;color:var(--muted)}}
+.metric-val{{font-size:14px;font-weight:600}}
+footer{{text-align:center;padding:16px;color:var(--muted);font-size:11px;border-top:1px solid var(--border);margin-top:8px}}
+@media(max-width:600px){{.kpi-row{{grid-template-columns:1fr 1fr}}}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">
+    <div class="logo-icon">✅</div>
+    <div class="logo-text">
+      <h1>BetlabLIVE</h1>
+      <p>System Status</p>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <nav class="nav"><a href="/">📊 Dashboard</a><a href="/radar">🔴 Live Radar</a><a href="/health" class="active">✅ System Status</a></nav>
+    <span class="ts">🕐 {{de_now().strftime("%d.%m.%Y %H:%M")}} Uhr</span>
+  </div>
+</header>
+<main>
+  <div class="overall-banner {'ok' if overall_ok else 'dn'}">
+    <div class="ob-icon">{'✅' if overall_ok else '⚠️'}</div>
+    <div>
+      <div class="ob-title" style="color:{overall_color}">{overall_txt}</div>
+      <div class="ob-sub">{alive_count} von {len(BOT_THREADS)} Komponenten aktiv &nbsp;·&nbsp; Uptime: {uptime_str}</div>
+    </div>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi g"><div class="kpi-val">{gw}</div><div class="kpi-lbl">Gewonnen heute</div></div>
+    <div class="kpi b"><div class="kpi-val">{pct}%</div><div class="kpi-lbl">Trefferquote</div></div>
+    <div class="kpi y"><div class="kpi-val">{offene}</div><div class="kpi-lbl">Offene Signale</div></div>
+    <div class="kpi p"><div class="kpi-val">{br}€</div><div class="kpi-lbl">Bankroll</div></div>
+  </div>
+
+  <div class="section">
+    <div class="section-hdr">
+      <div class="section-hdr-left">🤖 Bot-Komponenten</div>
+      <span class="count-badge">{alive_count}/{len(BOT_THREADS)} aktiv</span>
+    </div>
+    {thread_rows}
+  </div>
+
+  <div class="section">
+    <div class="section-hdr">
+      <div class="section-hdr-left">📡 API Monitor</div>
+      <span class="count-badge">{api_calls} Calls heute</span>
+    </div>
+    <div class="metric-row">
+      <div>
+        <div class="metric-label">Livescore API · heute</div>
+        <div class="api-bar-bg"><div class="api-bar" style="width:{min(api_calls/api_limit*100,100):.0f}%"></div></div>
+      </div>
+      <div style="text-align:right">
+        <div class="metric-val">{api_calls} / {api_limit}</div>
+        <div class="metric-label">{round(api_calls/api_limit*100,1)}% genutzt</div>
+      </div>
+    </div>
+    <div class="service-row">
+      <div class="service-left"><div class="service-dot" style="background:var(--green)"></div><span class="service-name">Livescore API</span></div>
+      <span class="service-badge op">Connected</span>
+    </div>
+    <div class="service-row">
+      <div class="service-left"><div class="service-dot" style="background:var(--green)"></div><span class="service-name">Football-Data.org</span></div>
+      <span class="service-badge op">Connected</span>
+    </div>
+    <div class="service-row">
+      <div class="service-left"><div class="service-dot" style="background:var(--green)"></div><span class="service-name">Telegram Bot API</span></div>
+      <span class="service-badge op">Connected</span>
+    </div>
+    <div class="service-row">
+      <div class="service-left"><div class="service-dot" style="background:var(--green)"></div><span class="service-name">Discord Webhooks</span></div>
+      <span class="service-badge op">Connected</span>
+    </div>
+    <div class="service-row">
+      <div class="service-left"><div class="service-dot" style="background:{'var(--green)' if ANTHROPIC_API_KEY else 'var(--yellow)'}"></div><span class="service-name">Claude AI (Anthropic)</span></div>
+      <span class="service-badge {'op' if ANTHROPIC_API_KEY else 'dn'}">{'Connected' if ANTHROPIC_API_KEY else 'No Key'}</span>
+    </div>
+  </div>
+</main>
+<footer>BetlabLIVE System Status &nbsp;·&nbsp; discord.gg/bettinglab &nbsp;·&nbsp; alle-bots-production.up.railway.app</footer>
+</body>
+</html>"""
 
 def bot_live_radar_server():
     """Mini-Webserver für Live-Radar Telegram Web App."""
@@ -7634,102 +7915,408 @@ ENHANCED_DASHBOARD_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>BetlabLIVE Dashboard</title>
+<title>BetlabLIVE Analytics</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <style>
-*{{margin:0;padding:0;box-sizing:border-box}}
-body{{background:#0d1117;color:#e6edf3;font-family:system-ui;padding:20px}}
-h1{{color:#58a6ff;margin-bottom:20px;font-size:22px}}
-.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px}}
-.card{{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:16px;text-align:center}}
-.card .val{{font-size:32px;font-weight:700;margin:6px 0}}
-.card .lbl{{font-size:12px;color:#8b949e}}
-.chart-box{{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:20px;margin-bottom:20px}}
-.chart-box h3{{color:#8b949e;font-size:13px;margin-bottom:16px;text-transform:uppercase;letter-spacing:1px}}
-.grid2{{display:grid;grid-template-columns:1fr 1fr;gap:16px}}
-@media(max-width:600px){{.grid2{{grid-template-columns:1fr}}}}
-.green{{color:#3fb950}}.red{{color:#f85149}}.blue{{color:#58a6ff}}.yellow{{color:#d29922}}
-table{{width:100%;border-collapse:collapse;background:#161b22;border-radius:12px;overflow:hidden}}
-th,td{{padding:10px 14px;text-align:left;border-bottom:1px solid #21262d;font-size:13px}}
-th{{background:#21262d;color:#8b949e;text-transform:uppercase;font-size:11px}}
-.badge{{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px}}
-.bg{{background:#1f3a2a;color:#3fb950}}.br{{background:#3a1f1f;color:#f85149}}
+  :root {
+    --bg:       #080c10;
+    --surface:  #0d1117;
+    --card:     #161b22;
+    --border:   #21262d;
+    --text:     #e6edf3;
+    --muted:    #8b949e;
+    --green:    #3fb950;
+    --red:      #f85149;
+    --blue:     #58a6ff;
+    --yellow:   #d29922;
+    --purple:   #a371f7;
+    --glow-g:   rgba(63,185,80,0.15);
+    --glow-r:   rgba(248,81,73,0.15);
+    --glow-b:   rgba(88,166,255,0.15);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 18px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+    backdrop-filter: blur(10px);
+  }
+  .logo { display:flex; align-items:center; gap:12px; }
+  .logo-icon {
+    width:40px; height:40px; border-radius:10px;
+    background: linear-gradient(135deg, #58a6ff, #a371f7);
+    display:flex; align-items:center; justify-content:center;
+    font-size:20px;
+  }
+  .logo h1 { font-size:18px; font-weight:700; letter-spacing:-0.5px; }
+  .logo span { font-size:11px; color:var(--muted); margin-top:2px; display:block; }
+  .header-right { display:flex; align-items:center; gap:16px; }
+  .live-badge {
+    display:flex; align-items:center; gap:6px;
+    background: rgba(63,185,80,0.1); border:1px solid rgba(63,185,80,0.3);
+    padding:6px 12px; border-radius:20px; font-size:12px; color:var(--green);
+  }
+  .live-dot { width:7px; height:7px; border-radius:50%; background:var(--green);
+    animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .time { font-size:13px; color:var(--muted); }
+
+.nav{display:flex;gap:4px;background:rgba(255,255,255,0.04);border:1px solid var(--border);padding:4px;border-radius:10px}
+.nav a{text-decoration:none;padding:6px 14px;border-radius:7px;font-size:12px;font-weight:600;color:var(--muted);transition:.15s;display:flex;align-items:center;gap:6px}
+.nav a:hover{background:rgba(255,255,255,0.06);color:var(--text)}
+.nav a.active{background:var(--card2);color:var(--text);border:1px solid var(--border)}
+
+  /* ── Layout ── */
+  main { padding: 24px 28px; max-width: 1400px; margin: 0 auto; }
+
+  /* ── KPI Cards ── */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 14px;
+    margin-bottom: 24px;
+  }
+  @media(max-width:1100px){ .kpi-grid{ grid-template-columns: repeat(3,1fr); } }
+  @media(max-width:600px) { .kpi-grid{ grid-template-columns: repeat(2,1fr); } }
+  .kpi {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 16px;
+    position: relative;
+    overflow: hidden;
+    transition: transform .2s, border-color .2s;
+  }
+  .kpi:hover { transform: translateY(-2px); border-color: #30363d; }
+  .kpi::before {
+    content:''; position:absolute; top:0; left:0; right:0; height:2px;
+    border-radius:14px 14px 0 0;
+  }
+  .kpi.g::before { background: linear-gradient(90deg,var(--green),transparent); }
+  .kpi.r::before { background: linear-gradient(90deg,var(--red),transparent); }
+  .kpi.b::before { background: linear-gradient(90deg,var(--blue),transparent); }
+  .kpi.y::before { background: linear-gradient(90deg,var(--yellow),transparent); }
+  .kpi.p::before { background: linear-gradient(90deg,var(--purple),transparent); }
+  .kpi-icon { font-size:22px; margin-bottom:10px; }
+  .kpi-val { font-size:30px; font-weight:800; line-height:1; margin-bottom:4px; }
+  .kpi-lbl { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
+  .kpi-sub { font-size:11px; margin-top:6px; }
+  .kpi.g .kpi-val { color:var(--green); }
+  .kpi.r .kpi-val { color:var(--red); }
+  .kpi.b .kpi-val { color:var(--blue); }
+  .kpi.y .kpi-val { color:var(--yellow); }
+  .kpi.p .kpi-val { color:var(--purple); }
+
+  /* ── Progress Bar ── */
+  .progress-wrap { margin-bottom: 24px; }
+  .progress-header { display:flex; justify-content:space-between; margin-bottom:8px; font-size:13px; }
+  .progress-bar-bg { background:var(--border); border-radius:99px; height:8px; overflow:hidden; }
+  .progress-bar-fill { height:100%; border-radius:99px; transition: width 1s ease;
+    background: linear-gradient(90deg, var(--green), #45d160); }
+
+  /* ── Charts Grid ── */
+  .charts-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  @media(max-width:900px){ .charts-grid{ grid-template-columns:1fr; } }
+  .chart-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+  }
+  .chart-title {
+    font-size:13px; font-weight:600; color:var(--muted);
+    text-transform:uppercase; letter-spacing:.8px; margin-bottom:16px;
+    display:flex; align-items:center; gap:8px;
+  }
+
+  /* ── Bot Table ── */
+  .table-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .table-header {
+    padding: 16px 20px;
+    font-size:13px; font-weight:600; color:var(--muted);
+    text-transform:uppercase; letter-spacing:.8px;
+    border-bottom: 1px solid var(--border);
+    display:flex; align-items:center; gap:8px;
+  }
+  table { width:100%; border-collapse:collapse; }
+  th { padding:10px 20px; text-align:left; font-size:11px; color:var(--muted);
+    text-transform:uppercase; letter-spacing:.5px; border-bottom:1px solid var(--border);
+    background: rgba(255,255,255,0.02); }
+  td { padding:12px 20px; font-size:13px; border-bottom:1px solid rgba(33,38,45,0.5); }
+  tr:last-child td { border-bottom:none; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  .badge {
+    display:inline-flex; align-items:center; gap:4px;
+    padding:3px 10px; border-radius:99px; font-size:11px; font-weight:600;
+  }
+  .badge.good { background:rgba(63,185,80,0.15); color:var(--green);
+    border:1px solid rgba(63,185,80,0.3); }
+  .badge.warn { background:rgba(210,153,34,0.15); color:var(--yellow);
+    border:1px solid rgba(210,153,34,0.3); }
+  .badge.bad  { background:rgba(248,81,73,0.15); color:var(--red);
+    border:1px solid rgba(248,81,73,0.3); }
+  .bot-name { display:flex; align-items:center; gap:10px; }
+  .bot-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+  .win-bar-wrap { width:100px; background:var(--border); border-radius:99px; height:5px; }
+  .win-bar { height:5px; border-radius:99px; }
+
+  /* ── Footer ── */
+  footer {
+    text-align:center; padding:20px; color:var(--muted);
+    font-size:12px; border-top:1px solid var(--border); margin-top:24px;
+  }
 </style>
 </head>
 <body>
-<h1>⚽ BetlabLIVE Dashboard</h1>
-<div class="grid" id="cards"></div>
-<div class="grid2">
-  <div class="chart-box">
-    <h3>📈 Equity-Kurve (Trefferquote)</h3>
-    <canvas id="equityChart"></canvas>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">⚽</div>
+    <div>
+      <h1>BetlabLIVE</h1>
+      <span>Analytics Dashboard</span>
+    </div>
   </div>
-  <div class="chart-box">
-    <h3>🌡️ Heatmap – Uhrzeit vs Trefferquote</h3>
-    <canvas id="heatChart"></canvas>
+  <div class="header-right">
+    <div class="header-right-inner" style="display:flex;align-items:center;gap:12px">
+    <div class="nav"><a href="/" class="active">📊 Dashboard</a><a href="/radar">🔴 Live Radar</a><a href="/health">✅ System Status</a></div>
+    <div class="live-badge"><div class="live-dot"></div> LIVE</div>
+    <div class="time" id="clock">--:--</div>
   </div>
-</div>
-<div class="chart-box">
-  <h3>🏆 Bot-Performance</h3>
-  <table><thead><tr><th>Bot</th><th>Gew.</th><th>Verl.</th><th>Quote</th></tr></thead>
-  <tbody id="bots"></tbody></table>
-</div>
+  </div>
+</header>
+
+<main>
+  <!-- KPI Cards -->
+  <div class="kpi-grid" id="kpis">
+    <div class="kpi g"><div class="kpi-icon">✅</div><div class="kpi-val" id="kv-gw">–</div><div class="kpi-lbl">Gewonnen</div></div>
+    <div class="kpi r"><div class="kpi-icon">❌</div><div class="kpi-val" id="kv-vl">–</div><div class="kpi-lbl">Verloren</div></div>
+    <div class="kpi b"><div class="kpi-icon">🎯</div><div class="kpi-val" id="kv-pct">–</div><div class="kpi-lbl">Trefferquote</div></div>
+    <div class="kpi y"><div class="kpi-icon">💰</div><div class="kpi-val" id="kv-br">–</div><div class="kpi-lbl">Bankroll</div></div>
+    <div class="kpi p"><div class="kpi-icon">⏳</div><div class="kpi-val" id="kv-op">–</div><div class="kpi-lbl">Offen</div></div>
+    <div class="kpi b"><div class="kpi-icon">🔥</div><div class="kpi-val" id="kv-st">–</div><div class="kpi-lbl">Streak</div></div>
+  </div>
+
+  <!-- Progress Bar -->
+  <div class="progress-wrap">
+    <div class="progress-header">
+      <span style="color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.5px">Trefferquote Ziel (55%)</span>
+      <span id="prog-label" style="font-size:12px;font-weight:600">0%</span>
+    </div>
+    <div class="progress-bar-bg">
+      <div class="progress-bar-fill" id="prog-bar" style="width:0%"></div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="charts-grid">
+    <div class="chart-card">
+      <div class="chart-title">📈 Equity-Kurve – Trefferquote Verlauf</div>
+      <canvas id="equityChart" height="90"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">🌡️ Beste Uhrzeiten</div>
+      <canvas id="heatChart" height="180"></canvas>
+    </div>
+  </div>
+
+  <!-- Bot Table -->
+  <div class="table-card">
+    <div class="table-header">🤖 Bot Performance</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Bot</th>
+          <th>Gewonnen</th>
+          <th>Verloren</th>
+          <th>Gesamt</th>
+          <th>Trefferquote</th>
+          <th>Trend</th>
+        </tr>
+      </thead>
+      <tbody id="botTable"></tbody>
+    </table>
+  </div>
+</main>
+
+<footer>
+  BetlabLIVE Analytics · discord.gg/bettinglab · Aktualisiert alle 15s · <span id="lastUpdate">–</span>
+</footer>
+
 <script>
-const botNames={ecken:"📐 Ecken U",ecken_over:"📐 Ecken Ü",karten:"🃏 Karten",
-  torwart:"🧤 Torwart",druck:"🔥 Druck",comeback:"🔄 Comeback",
-  torflut:"🌊 Torflut",rotkarte:"🟥 Rotkarte",hz1tore:"HZ1 Tore",vztore:"VZ Tore"};
-let equityChart, heatChart;
+const botMeta = {
+  ecken:     {name:"Ecken Unter",  icon:"📐", color:"#58a6ff"},
+  ecken_over:{name:"Ecken Über",   icon:"📐", color:"#a371f7"},
+  karten:    {name:"Karten",       icon:"🃏", color:"#d29922"},
+  torwart:   {name:"Torwart",      icon:"🧤", color:"#3fb950"},
+  druck:     {name:"Druck",        icon:"🔥", color:"#f85149"},
+  comeback:  {name:"Comeback",     icon:"🔄", color:"#58a6ff"},
+  torflut:   {name:"Torflut",      icon:"🌊", color:"#a371f7"},
+  rotkarte:  {name:"Rotkarte",     icon:"🟥", color:"#f85149"},
+  hz1tore:   {name:"HZ1 Tore",     icon:"🥅", color:"#3fb950"},
+  vztore:    {name:"VZ Tore",      icon:"🏆", color:"#d29922"},
+};
+
+let equityChart = null, heatChart = null;
+
+function fmt(n){ return n !== undefined ? n : '–'; }
+
+function setKPI(id, val){ const el=document.getElementById(id); if(el) el.textContent=val; }
+
 async function update(){
-  const d=await (await fetch('/api/stats')).json();
-  const pct=d.trefferquote;
-  document.getElementById('cards').innerHTML=`
-    <div class="card"><div class="val green">${d.gewonnen}</div><div class="lbl">✅ Gewonnen</div></div>
-    <div class="card"><div class="val red">${d.verloren}</div><div class="lbl">❌ Verloren</div></div>
-    <div class="card"><div class="val ${pct>=55?'green':pct>=45?'yellow':'red'}">${pct}%</div><div class="lbl">🎯 Trefferquote</div></div>
-    <div class="card"><div class="val blue">${d.bankroll}€</div><div class="lbl">💰 Bankroll</div></div>
-    <div class="card"><div class="val yellow">${d.offene_signale}</div><div class="lbl">⏳ Offen</div></div>
-    <div class="card"><div class="val ${d.streak>=0?'green':'red'}">${d.streak>0?'+':''}${d.streak}</div><div class="lbl">🔥 Streak</div></div>
-  `;
-  // Equity Chart
-  const eq=d.equity_verlauf||[];
-  if(equityChart) equityChart.destroy();
-  equityChart=new Chart(document.getElementById('equityChart'),{
-    type:'line',
-    data:{labels:eq.map((_,i)=>i+1),
-      datasets:[{data:eq,borderColor:'#58a6ff',backgroundColor:'rgba(88,166,255,0.1)',
-        tension:0.4,fill:true,pointRadius:2}]},
-    options:{responsive:true,plugins:{legend:{display:false}},
-      scales:{x:{display:false},y:{ticks:{color:'#8b949e'},grid:{color:'#21262d'},
-        suggestedMin:0,suggestedMax:100}}}
-  });
-  // Heatmap (Uhrzeit)
-  const heat=d.uhrzeit_heatmap||{};
-  const labels=Object.keys(heat).sort();
-  const vals=labels.map(h=>heat[h]?.pct||0);
-  const colors=vals.map(v=>v>=60?'rgba(63,185,80,0.8)':v>=45?'rgba(210,153,34,0.8)':'rgba(248,81,73,0.8)');
-  if(heatChart) heatChart.destroy();
-  heatChart=new Chart(document.getElementById('heatChart'),{
-    type:'bar',
-    data:{labels:labels.map(h=>h+':00'),
-      datasets:[{data:vals,backgroundColor:colors}]},
-    options:{responsive:true,plugins:{legend:{display:false}},
-      scales:{x:{ticks:{color:'#8b949e'},grid:{display:false}},
-        y:{ticks:{color:'#8b949e',callback:v=>v+'%'},grid:{color:'#21262d'},
-          suggestedMax:100}}}
-  });
-  // Bot Tabelle
-  let rows='';
-  for(const[k,v] of Object.entries(d.nach_typ)){
-    const g=v.gewonnen,vl=v.verloren,ges=g+vl;
-    const q=ges>0?Math.round(g/ges*100):0;
-    const badge=ges===0?'–':q>=55?`<span class="badge bg">${q}%</span>`:`<span class="badge br">${q}%</span>`;
-    rows+=`<tr><td>${botNames[k]||k}</td><td class="green">${g}</td><td class="red">${vl}</td><td>${badge}</td></tr>`;
-  }
-  document.getElementById('bots').innerHTML=rows;
+  try {
+    const res = await fetch('/api/stats');
+    if(!res.ok) return;
+    const d = await res.json();
+    const pct = d.trefferquote || 0;
+
+    // KPIs
+    setKPI('kv-gw', d.gewonnen ?? '–');
+    setKPI('kv-vl', d.verloren ?? '–');
+    setKPI('kv-pct', pct + '%');
+    setKPI('kv-br', (d.bankroll ?? '–') + '€');
+    setKPI('kv-op', d.offene_signale ?? '–');
+    const str = d.streak || 0;
+    setKPI('kv-st', (str > 0 ? '+' : '') + str);
+
+    // Progress bar
+    const bar = document.getElementById('prog-bar');
+    const prog = document.getElementById('prog-label');
+    if(bar){ bar.style.width = Math.min(pct, 100) + '%';
+      bar.style.background = pct >= 55 ? 'linear-gradient(90deg,#3fb950,#45d160)'
+        : pct >= 45 ? 'linear-gradient(90deg,#d29922,#e3a93a)'
+        : 'linear-gradient(90deg,#f85149,#ff7070)'; }
+    if(prog) prog.textContent = pct + '%';
+
+    // Equity Chart
+    const eq = d.equity_verlauf || [];
+    if(equityChart) equityChart.destroy();
+    equityChart = new Chart(document.getElementById('equityChart'), {
+      type: 'line',
+      data: {
+        labels: eq.map((_,i) => i+1),
+        datasets: [{
+          data: eq,
+          borderColor: '#58a6ff',
+          backgroundColor: 'rgba(88,166,255,0.08)',
+          tension: 0.4, fill: true,
+          pointRadius: eq.length > 30 ? 0 : 3,
+          pointBackgroundColor: '#58a6ff',
+          borderWidth: 2,
+        }, {
+          data: eq.map(() => 55),
+          borderColor: 'rgba(63,185,80,0.4)',
+          borderDash: [5,5], borderWidth: 1,
+          pointRadius: 0, fill: false,
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false },
+          tooltip: { callbacks: { label: c => c.parsed.y.toFixed(1) + '%' } }},
+        scales: {
+          x: { display: false },
+          y: { ticks: { color: '#8b949e', callback: v => v+'%' },
+            grid: { color: 'rgba(33,38,45,0.8)' },
+            suggestedMin: 0, suggestedMax: 100 }
+        }
+      }
+    });
+
+    // Heatmap
+    const heat = d.uhrzeit_heatmap || {};
+    const hlabels = Object.keys(heat).sort((a,b)=>+a-+b);
+    const hvals = hlabels.map(h => heat[h]?.pct || 0);
+    const hcolors = hvals.map(v =>
+      v >= 60 ? 'rgba(63,185,80,0.8)' :
+      v >= 45 ? 'rgba(210,153,34,0.8)' : 'rgba(248,81,73,0.7)');
+    if(heatChart) heatChart.destroy();
+    heatChart = new Chart(document.getElementById('heatChart'), {
+      type: 'bar',
+      data: {
+        labels: hlabels.map(h => h + ':00'),
+        datasets: [{ data: hvals, backgroundColor: hcolors, borderRadius: 4 }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false },
+          tooltip: { callbacks: { label: c => c.parsed.y + '% Trefferquote' } }},
+        scales: {
+          x: { ticks: { color: '#8b949e', font: { size: 10 } }, grid: { display: false } },
+          y: { ticks: { color: '#8b949e', callback: v => v+'%' },
+            grid: { color: 'rgba(33,38,45,0.8)' }, suggestedMax: 100 }
+        }
+      }
+    });
+
+    // Bot Table
+    let rows = '';
+    const bots = Object.entries(d.nach_typ || {})
+      .sort((a,b) => (b[1].gewonnen+b[1].verloren) - (a[1].gewonnen+a[1].verloren));
+    for(const [k, v] of bots) {
+      const g = v.gewonnen, vl = v.verloren, ges = g + vl;
+      if(ges === 0) continue;
+      const q = Math.round(g / ges * 100);
+      const meta = botMeta[k] || { name: k, icon: '🤖', color: '#8b949e' };
+      const badgeCls = q >= 55 ? 'good' : q >= 45 ? 'warn' : 'bad';
+      const barW = Math.round(q);
+      rows += `<tr>
+        <td><div class="bot-name">
+          <div class="bot-dot" style="background:${meta.color}"></div>
+          <span>${meta.icon} ${meta.name}</span>
+        </div></td>
+        <td style="color:var(--green);font-weight:600">${g}</td>
+        <td style="color:var(--red)">${vl}</td>
+        <td style="color:var(--muted)">${ges}</td>
+        <td><span class="badge ${badgeCls}">${q}%</span></td>
+        <td><div class="win-bar-wrap">
+          <div class="win-bar" style="width:${barW}%;background:${meta.color}"></div>
+        </div></td>
+      </tr>`;
+    }
+    document.getElementById('botTable').innerHTML = rows || '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px">Noch keine Daten</td></tr>';
+
+    // Last update
+    const lu = document.getElementById('lastUpdate');
+    if(lu) lu.textContent = 'Zuletzt: ' + (d.zeit || '–');
+
+  } catch(e) { console.error(e); }
 }
-update(); setInterval(update,15000);
+
+// Clock
+function tick(){
+  const t = new Date();
+  const c = document.getElementById('clock');
+  if(c) c.textContent = t.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+tick(); setInterval(tick, 1000);
+update(); setInterval(update, 15000);
 </script>
-</body></html>"""
+</body>
+</html>"""
 
 # ============================================================
 #  VIRTUELLE KONTEN
