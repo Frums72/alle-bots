@@ -11,8 +11,8 @@
     "signal_zeit": 1778872607.590476,
     "bot": "Torwart-Bot",
     "status": "offen",
-    "versuche": 0,
-    "letzter_versuch": 0
+    "versuche": 1,
+    "letzter_versuch": 1778873833.7573361
   },
   "711522_torwart": {
     "typ": "torwart",
@@ -26,8 +26,8 @@
     "signal_zeit": 1778872609.5874503,
     "bot": "Torwart-Bot",
     "status": "offen",
-    "versuche": 0,
-    "letzter_versuch": 0
+    "versuche": 1,
+    "letzter_versuch": 1778873836.4438827
   },
   "711528_torflut": {
     "typ": "torflut",
@@ -41,8 +41,8 @@
     "signal_zeit": 1778872612.9593782,
     "bot": "Torflut-Bot",
     "status": "offen",
-    "versuche": 0,
-    "letzter_versuch": 0
+    "versuche": 1,
+    "letzter_versuch": 1778873896.5539827
   },
   "711500_comeback": {
     "typ": "comeback",
@@ -59,8 +59,8 @@
     "bot": "Comeback-Bot",
     "competition": "Liga I",
     "status": "offen",
-    "versuche": 0,
-    "letzter_versuch": 0
+    "versuche": 1,
+    "letzter_versuch": 1778873899.1173897
   },
   "711543_comeback": {
     "typ": "comeback",
@@ -77,8 +77,8 @@
     "bot": "Comeback-Bot",
     "competition": "First Division A",
     "status": "offen",
-    "versuche": 0,
-    "letzter_versuch": 0
+    "versuche": 1,
+    "letzter_versuch": 1778873901.3437796
   },
   "711539_torwart": {
     "typ": "torwart",
@@ -92,8 +92,8 @@
     "signal_zeit": 1778873185.905919,
     "bot": "Torwart-Bot",
     "status": "offen",
-    "versuche": 0,
-    "letzter_versuch": 0
+    "versuche": 1,
+    "letzter_versuch": 1778873956.4364767
   },
   "711552_torflut": {
     "typ": "torflut",
@@ -107,8 +107,8 @@
     "signal_zeit": 1778873596.9902558,
     "bot": "Torflut-Bot",
     "status": "offen",
-    "versuche": 0,
-    "letzter_versuch": 0
+    "versuche": 1,
+    "letzter_versuch": 1778873958.9659464
   },
   "711547_torflut": {
     "typ": "torflut",
@@ -122,7 +122,22 @@
     "signal_zeit": 1778873616.6548882,
     "bot": "Torflut-Bot",
     "status": "offen",
-    "versuche": 0,
-    "letzter_versuch": 0
+    "versuche": 1,
+    "letzter_versuch": 1778873964.8213797
+  },
+  "711553_torwart": {
+    "typ": "torwart",
+    "match_id": "711553",
+    "home": "Aston Villa",
+    "away": "Liverpool",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Premier League",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1778873833.388995,
+    "bot": "Torwart-Bot",
+    "status": "offen",
+    "versuche": 1,
+    "letzter_versuch": 1778874020.437972
   }
 }
