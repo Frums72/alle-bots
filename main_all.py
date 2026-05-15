@@ -1428,41 +1428,49 @@ def multi_signal_check(match_id: str, aktueller_bot: str) -> int:
 
 # ── Auswertungs-Fallback ─────────────────────────────────────
 def auswertung_fallback_check():
-    """Entfernt Spiele aus beobachtete_spiele die zu lange keine Auswertung hatten."""
+    """
+    Bereinigt den Signal-Tracker: Signale die nach MAX_BEOBACHTUNG_STUNDEN
+    noch nicht ausgewertet wurden werden als 'abgelaufen' markiert.
+    Arbeitet auf _signal_tracker (einzige Auswertungs-Wahrheitsquelle).
+    """
     jetzt_ts = time.time()
-    zu_entfernen = []
-    for match_id, spiel in list(beobachtete_spiele.items()):
-        if match_id in auswertung_done:
-            zu_entfernen.append(match_id)
-            continue
-        signal_zeit = spiel.get("signal_zeit", jetzt_ts)
-        stunden = (jetzt_ts - signal_zeit) / 3600
-        if stunden > MAX_BEOBACHTUNG_STUNDEN:
-            zu_entfernen.append(match_id)
-            print(f"  [Fallback] {spiel.get('home','?')} vs {spiel.get('away','?')} "
-                  f"nach {stunden:.1f}h entfernt ({spiel.get('typ','')})")
-    for mid in zu_entfernen:
-        beobachtete_spiele.pop(mid, None)
-    if zu_entfernen:
-        beobachtete_spiele_speichern()
-        print(f"  [Fallback] {len(zu_entfernen)} Spiele aus Beobachtung entfernt")
+    with _tracker_lock:
+        for key, sig in list(_signal_tracker.items()):
+            if sig.get("status") != "offen":
+                continue
+            signal_zeit = sig.get("signal_zeit", jetzt_ts)
+            stunden = (jetzt_ts - signal_zeit) / 3600
+            if stunden > MAX_BEOBACHTUNG_STUNDEN:
+                _signal_tracker[key]["status"] = "abgelaufen"
+                print(f"  [Fallback] {sig.get('home','?')} vs {sig.get('away','?')} "
+                      f"({sig.get('typ','')}) nach {stunden:.1f}h abgelaufen")
 
 # ── Doppelt-Signal Schutz (verbessert) ───────────────────────
 beobachtete_spiele_multi = {}  # match_id → {typ: spiel_data} – mehrere Tipps pro Spiel
 
 def beobachtung_hinzufuegen(match_id: str, spiel: dict):
-    """Fügt Spiel zur Beobachtung hinzu – mehrere Typen pro Spiel möglich."""
+    """
+    Fügt Spiel zur Beobachtung hinzu.
+    Jeder Bot-Typ wird separat gespeichert – kein gegenseitiges Überschreiben mehr.
+    Einzige Auswertungs-Wahrheitsquelle ist _signal_tracker (bot_nachschau).
+    """
     typ = spiel.get("typ", "unbekannt")
+
+    # Multi-Dict: match_id → {typ: spiel_data}
     if match_id not in beobachtete_spiele_multi:
         beobachtete_spiele_multi[match_id] = {}
     beobachtete_spiele_multi[match_id][typ] = spiel
-    # Hauptdict für Kompatibilität weiterhin befüllen
-    beobachtete_spiele[match_id] = spiel
+
+    # Kompatibilitäts-Dict mit match_id_typ Key – kein Überschreiben bei mehreren Typen
+    beobachtete_spiele[f"{match_id}_{typ}"] = spiel
     beobachtete_spiele_speichern()
-    # Im Signal-Tracker registrieren für robuste Auswertung
+
+    # Signal-Tracker ist die einzige Auswertungs-Quelle
     tracker_signal_hinzufuegen(match_id, spiel)
+
     # Notified Sets persistieren
     notified_sets_speichern()
+
     # Kombi-Signal prüfen
     kombi_signal_check(match_id)
 
@@ -2683,199 +2691,53 @@ def ist_spiel_fertig(status: str, time_val: str = "") -> bool:
 FT_STATI = FT_STATI_SET
 
 def bot_auswertung_und_berichte():
-    """Tagesbericht, Wochenbericht und direkte FT-Erkennung."""
-    print("[Auswertung-Bot] Gestartet | Direkte FT-Erkennung alle 2 Min.")
+    """
+    Sendet Tages-, Wochen- und Monatsberichte.
+    Die Spiel-Auswertung übernimmt ausschließlich bot_nachschau
+    über den _signal_tracker (lückenlos, alle Typen pro Spiel).
+    """
+    print("[Auswertung-Bot] Gestartet | Nur noch Berichte – Auswertung via bot_nachschau")
     tagesbericht_gesendet  = None
-    wochenbericht_gesendet = None
-    monatsbericht_gesendet = None
-    leerer_status          = {}
-    ft_bestaetigung        = {}   # Fix Bug 5: fehlende Variable ergänzt
-    auswertung_done        = set()
-    letzter_wochenbericht  = de_now().isocalendar()[1]  # Fix Bug 4: fehlende Initialisierung
-
-    AUSWERTUNG_FNS = {              # Fix Bug 2: AUSWERTUNG_FNS in diese Funktion verschoben
-        "ecken":      auswertung_ecken,
-        "ecken_over": auswertung_ecken_over,
-        "karten":     auswertung_karten,
-        "torwart":    auswertung_torwart,
-        "druck":      auswertung_druck,
-        "comeback":   auswertung_comeback,
-        "torflut":    auswertung_torflut,
-        "rotkarte":   auswertung_rotkarte,
-        "hz1tore":    auswertung_hz1tore,
-        "vztore":     auswertung_vztore,
-    }
+    letzter_wochenbericht  = de_now().isocalendar()[1]
 
     while True:
         try:
             now = de_now()
-            # Tagesbericht
+
+            # ── Tagesbericht ─────────────────────────────────────
             if now.hour == TAGESBERICHT_UHRZEIT and tagesbericht_gesendet != now.date():
                 send_tagesbericht()
                 sende_daily_recap()
                 tagesbericht_gesendet = now.date()
-            # Wochenbericht (Montag)
+
+            # ── Wochenbericht (Montag) ────────────────────────────
             aktuelle_woche = now.isocalendar()[1]
             if now.weekday() == 0 and aktuelle_woche != letzter_wochenbericht:
                 send_wochenbericht()
                 letzter_wochenbericht = aktuelle_woche
-            # Monatsbericht (1. des Monats)
+
+            # ── Monatsbericht (1. des Monats, 09:00) ─────────────
             if now.day == 1 and now.hour == 9 and now.minute < 3:
                 monatsbericht_key = f"{now.year}-{now.month}"
-                if not hasattr(bot_auswertung_und_berichte, "_letzter_monat") or                    bot_auswertung_und_berichte._letzter_monat != monatsbericht_key:
+                if not hasattr(bot_auswertung_und_berichte, "_letzter_monat") or \
+                        bot_auswertung_und_berichte._letzter_monat != monatsbericht_key:
                     bot_auswertung_und_berichte._letzter_monat = monatsbericht_key
                     send_monatsbericht()
-                    # PDF Monatsbericht
                     import calendar
-                    lm_name = (de_now().replace(day=1) - timedelta(days=1)).strftime("%B %Y")
-                    pdf_pfad = erstelle_monatsbericht_pdf()
+                    lm_name   = (de_now().replace(day=1) - timedelta(days=1)).strftime("%B %Y")
+                    pdf_pfad  = erstelle_monatsbericht_pdf()
                     if pdf_pfad:
                         sende_pdf_telegram(pdf_pfad, lm_name)
-                    # Performance Chart
                     chart_pfad = erstelle_performance_chart()
                     if chart_pfad:
                         sende_chart_telegram(chart_pfad)
 
-            # Fallback: zu alte Beobachtungen entfernen
+            # ── Fallback: zu alte offene Signale bereinigen ───────
             auswertung_fallback_check()
-
-            # Live-Liste einmal laden – für alle Spiele verwenden
-            try:
-                alle_live = get_live_matches()
-                live_ids  = {str(m.get("id")) for m in alle_live}
-            except Exception as e:
-                print(f"  [Auswertung] Live-Liste Fehler: {e}")
-                live_ids = set()
-
-            # FT-Erkennung: Live-Liste + Single-Match kombiniert
-            for match_id, spiel in list(beobachtete_spiele.items()):
-                if match_id in auswertung_done:
-                    continue
-
-                home_str = spiel.get("home", "?")
-                away_str = spiel.get("away", "?")
-
-                # Mindest-Wartezeit prüfen (vor API-Call um Anfragen zu sparen)
-                signal_zeit = spiel.get("signal_zeit", 0)
-                minuten_seit_signal = (time.time() - signal_zeit) / 60 if signal_zeit else 999
-                min_warte_check = {
-                    "ecken": 50, "torflut": 50, "hz1tore": 35,
-                    "vztore": 75, "karten": 75, "torwart": 30,
-                    "comeback": 25, "druck": 25, "rotkarte": 20, "ecken_over": 20,
-                }.get(spiel.get("typ", ""), 25)
-                if signal_zeit > 0 and minuten_seit_signal < min_warte_check:
-                    continue
-
-                # Methode 1: Nicht in Live-Liste?
-                nicht_live = match_id not in live_ids
-
-                # Methode 2: Single-Match Status prüfen
-                status = ""
-                minute = 0
-                try:
-                    match    = ls_get_single_match(match_id)
-                    status   = str(match.get("status", "") or "")
-                    time_val = str(match.get("time", "") or "")
-                    minute   = _safe_int(time_val) if time_val.isdigit() else 0
-                    if time_val.upper() in ("FT", "FULL TIME", "AET"):
-                        status = "FT"
-                except Exception as e:
-                    # API-Fehler → leerer_status erhöhen
-                    leerer_status[match_id] = leerer_status.get(match_id, 0) + 1
-                    print(f"  [Auswertung] API-Fehler {home_str} vs {away_str} ({leerer_status[match_id]}x): {e}")
-
-                status_ft = status in FT_STATI
-
-                # Leerer Status zählen
-                if status == "" and minute == 0 and not status_ft:
-                    leerer_status[match_id] = leerer_status.get(match_id, 0) + 1
-                    print(f"  [Auswertung] {home_str} vs {away_str} | Kein Status ({leerer_status[match_id]}x)")
-                elif status and status not in FT_STATI:
-                    print(f"  [Auswertung] {home_str} vs {away_str} | {status} | {minute}'")
-                    if nicht_live:
-                        print(f"  [Auswertung] Nicht in Live-Liste aber Status={status} – zähle")
-                    else:
-                        leerer_status.pop(match_id, None)
-                        ft_bestaetigung.pop(match_id, None)
-                        continue
-
-                # FT erkennen wenn: Status FT, ODER (nicht live + 2x kein Status)
-                # Robuste FT-Erkennung  (Fix Bug 3: spiel_live → match)
-                status_raw = str(match.get("status", "") if match else "")
-                time_raw   = str(match.get("time",   "") if match else "")
-                ist_fertig = (ist_spiel_fertig(status_raw, time_raw) or
-                              (nicht_live and leerer_status.get(match_id, 0) >= 2))
-
-                if not ist_fertig:
-                    continue
-
-                # Spiel beendet – SOFORT auswerten (kein Timer)!
-                print(f"  [Auswertung] ✅ Werte aus: {home_str} vs {away_str}")
-                time.sleep(10)
-
-                typ        = spiel["typ"]
-                webhook    = spiel["webhook"]
-                auswert_fn = AUSWERTUNG_FNS.get(typ)
-                msg        = auswert_fn(spiel) if auswert_fn else None
-
-                if msg:
-                    send_telegram(msg)
-                    gewonnen = "GEWONNEN" in msg
-                    if typ in ("ecken", "ecken_over"):
-                        hz1    = spiel.get("hz1_ecken", 0)
-                        grenze = hz1 * 2 + 1 if typ == "ecken" else 14
-                        m_e    = re.search(r"Tatsächlich.*?(\d+)", msg)
-                        total  = m_e.group(1) if m_e else "?"
-                        details = {"📐 Ecken HZ1": f"**{hz1}**",
-                                   "🎯 Tipp": f"{'Unter' if typ == 'ecken' else 'Über'} **{grenze}** Ecken",
-                                   "📈 Endstand": f"**{total}** Ecken gesamt"}
-                    elif typ == "karten":
-                        m_k    = re.search(r"Tatsächlich.*?(\d+)", msg)
-                        total  = m_k.group(1) if m_k else "?"
-                        details = {"🃏 Karten Signal": f"**{spiel.get('karten_anzahl','?')}**",
-                                   "🎯 Tipp": "Über **5** Karten",
-                                   "📈 Endstand": f"**{total}** Karten"}
-                    elif typ == "torwart":
-                        m_s    = re.search(r"Endstand.*?(\d+ - \d+)", msg)
-                        details = {"🎯 Tipp": "Mind. **1 Tor**",
-                                   "📈 Endstand": f"**{m_s.group(1) if m_s else '?'}**"}
-                    elif typ == "druck":
-                        details = {"🔥 Druck-Team": f"**{spiel.get('druck_team','?')}**",
-                                   "📈 Ergebnis": "✅ Tor" if gewonnen else "❌ Kein Tor"}
-                    elif typ == "comeback":
-                        m_s    = re.search(r"Endstand.*?(\d+ - \d+)", msg)
-                        details = {"🔄 Rückliegend": f"**{spiel.get('rueckliegend','?')}**",
-                                   "🎯 Tipp": "Beide Teams treffen",
-                                   "📈 Endstand": f"**{m_s.group(1) if m_s else '?'}**"}
-                    elif typ == "torflut":
-                        m_s    = re.search(r"Endstand.*?(\d+ - \d+)", msg)
-                        details = {"⚽ Tore HZ1": f"**{spiel.get('hz1_tore','?')}**",
-                                   "🎯 Tipp": f"Über **{spiel.get('grenze','?')}** Tore",
-                                   "📈 Endstand": f"**{m_s.group(1) if m_s else '?'}**"}
-                    elif typ == "rotkarte":
-                        details = {"💪 Überzahl": f"**{spiel.get('ueberzahl_team','?')}**",
-                                   "📊 Stand Signal": f"**{spiel.get('score_signal','?')}**"}
-                    elif typ in ("hz1tore", "vztore"):
-                        details = {"🎯 Tipp": f"**{spiel.get('richtung','?').capitalize()} {spiel.get('linie','?')}** Tore",
-                                   "📈 Ergebnis": "✅ Gewonnen" if gewonnen else "❌ Verloren"}
-                    else:
-                        details = {"📊 Typ": f"**{typ.upper()}**"}
-                    embed = discord_auswertung(typ, home_str, away_str, gewonnen, details)
-                    send_discord_embed(webhook, embed)
-                    print(f"  [Auswertung] ✅ Gesendet: {home_str} vs {away_str} ({typ})")
-                    if not gewonnen:
-                        threading.Thread(target=claude_verloren_analyse,
-                            args=(home_str, away_str, typ, msg), daemon=True).start()
-                    auswertung_done.add(match_id)
-                else:
-                    ft_bestaetigung.pop(match_id, None)
-                    print(f"  [Auswertung] ⚠️ Kein Ergebnis für {home_str} vs {away_str} – retry")
-                leerer_status.pop(match_id, None)
-                ft_bestaetigung.pop(match_id, None)
 
         except Exception as e:
             print(f"  [Auswertung-Bot] Fehler: {e}")
-        time.sleep(120)  # Alle 2 Minuten prüfen
+        time.sleep(120)
 
 # ============================================================
 #  FUSSBALL BOTS (Bestehend)
@@ -9997,25 +9859,32 @@ def fd_suche_spiel(home: str, away: str, liga: str = "") -> dict | None:
     if not FOOTBALLDATA_KEY:
         return None
     try:
-        headers = {"X-Auth-Token": FOOTBALLDATA_KEY}
-        # Versuche über Competition ID
-        liga_id = FD_LIGA_IDS.get(liga)
+        headers   = {"X-Auth-Token": FOOTBALLDATA_KEY}
+        # Fix Bug D: Datumsfilter auf heute begrenzen – verhindert Treffer aus alten Spielen
+        heute     = de_now().strftime("%Y-%m-%d")
+        liga_id   = FD_LIGA_IDS.get(liga)
         urls_zu_prüfen = []
         if liga_id:
-            urls_zu_prüfen.append(f"{FD_BASE}/competitions/{liga_id}/matches?status=FINISHED")
-        urls_zu_prüfen.append(f"{FD_BASE}/matches?status=FINISHED")
+            urls_zu_prüfen.append(
+                f"{FD_BASE}/competitions/{liga_id}/matches?status=FINISHED&dateFrom={heute}&dateTo={heute}"
+            )
+        urls_zu_prüfen.append(
+            f"{FD_BASE}/matches?status=FINISHED&dateFrom={heute}&dateTo={heute}"
+        )
         for url in urls_zu_prüfen:
             try:
                 resp = requests.get(url, headers=headers, timeout=8)
                 if resp.status_code != 200:
                     continue
                 for match in resp.json().get("matches", []):
-                    h = (match.get("homeTeam") or {}).get("shortName", "") or                         (match.get("homeTeam") or {}).get("name", "")
-                    a = (match.get("awayTeam") or {}).get("shortName", "") or                         (match.get("awayTeam") or {}).get("name", "")
-                    # Unscharfer Vergleich: mind. 4 Buchstaben übereinstimmend
+                    h = (match.get("homeTeam") or {}).get("shortName", "") or \
+                        (match.get("homeTeam") or {}).get("name", "")
+                    a = (match.get("awayTeam") or {}).get("shortName", "") or \
+                        (match.get("awayTeam") or {}).get("name", "")
                     home_short = home[:5].lower()
                     away_short  = away[:5].lower()
-                    if (home_short in h.lower() or h.lower()[:5] in home.lower()) and                        (away_short in a.lower() or a.lower()[:5] in away.lower()):
+                    if (home_short in h.lower() or h.lower()[:5] in home.lower()) and \
+                       (away_short in a.lower() or a.lower()[:5] in away.lower()):
                         score = match.get("score", {})
                         full  = score.get("fullTime", {})
                         half  = score.get("halfTime", {})
@@ -10040,25 +9909,51 @@ def fd_suche_spiel(home: str, away: str, liga: str = "") -> dict | None:
     return None
 
 def thesportsdb_suche_spiel(home: str, away: str) -> dict | None:
-    """Sucht Spielergebnis auf TheSportsDB (kostenlos, kein Key)."""
+    """
+    Sucht Spielergebnis auf TheSportsDB.
+    Fix Bug C: Nutzt Team-Suche + letzte Ergebnisse statt liveevents,
+    da liveevents nur laufende Spiele enthält und abgeschlossene sofort verschwinden.
+    """
     try:
-        # TheSportsDB Live Events
+        # Schritt 1: Team-ID des Heimteams suchen
         resp = requests.get(
-            "https://www.thesportsdb.com/api/v1/json/3/liveevents.php",
-            timeout=8
+            f"https://www.thesportsdb.com/api/v1/json/3/searchteams.php",
+            params={"t": home}, timeout=8
         )
         if resp.status_code != 200:
             return None
-        for ev in (resp.json().get("events") or []):
+        teams = (resp.json().get("teams") or [])
+        # Fußball-Teams filtern und bestes Match finden
+        team_id = None
+        for t in teams:
+            if t.get("strSport", "").lower() == "soccer":
+                if home[:5].lower() in t.get("strTeam", "").lower():
+                    team_id = t.get("idTeam")
+                    break
+        if not team_id:
+            return None
+
+        # Schritt 2: Letzte Ergebnisse des Teams abrufen
+        resp2 = requests.get(
+            f"https://www.thesportsdb.com/api/v1/json/3/eventslast.php",
+            params={"id": team_id}, timeout=8
+        )
+        if resp2.status_code != 200:
+            return None
+        events = (resp2.json().get("results") or [])
+        heute  = de_now().strftime("%Y-%m-%d")
+        for ev in events:
             if ev.get("strSport", "").lower() != "soccer":
+                continue
+            # Nur heutige Spiele
+            if ev.get("dateEvent", "") != heute:
                 continue
             h_name = ev.get("strHomeTeam", "").lower()
             a_name = ev.get("strAwayTeam", "").lower()
             if home[:5].lower() in h_name and away[:5].lower() in a_name:
                 h_score = ev.get("intHomeScore")
                 a_score = ev.get("intAwayScore")
-                status  = ev.get("strStatus", "").lower()
-                if status in ("ft", "finished", "aet") and h_score is not None:
+                if h_score is not None and a_score is not None:
                     return {
                         "status": "FT",
                         "score": f"{h_score} - {a_score}",
@@ -10076,6 +9971,7 @@ def ls_get_match_result(match_id: str, home: str = "",
     Erst wenn 2 von 3 übereinstimmen → sicheres Ergebnis.
     """
     ergebnisse = {}  # quelle → score
+    ht_score   = ""  # Fix Bug A: immer definiert, auch wenn Quelle 1 fehlschlägt
 
     # ── Quelle 1: livescore-api ──────────────────────────────────
     try:
@@ -10083,14 +9979,14 @@ def ls_get_match_result(match_id: str, home: str = "",
         status   = str(match.get("status", "") or "")
         time_val = str(match.get("time", "") or "")
         score    = (match.get("scores") or {}).get("score", "")
-        ht_score = (match.get("scores") or {}).get("ht_score", "")
+        ht_score = (match.get("scores") or {}).get("ht_score", "") or ""
         if time_val.upper() in ("FT", "FULL TIME", "AET"):
             status = "FT"
-        if status in FT_STATI and score and score != "0 - 0":
+        if status in FT_STATI and score:
+            # Fix Bug B: 0-0 nicht mehr als "unsicher" blockieren,
+            # sondern normal in ergebnisse aufnehmen
             ergebnisse["livescore"] = score
             print(f"  [Triple] Quelle 1 livescore-api: {score} ✅")
-        elif status in FT_STATI:
-            ergebnisse["livescore_ft"] = "0 - 0"  # FT aber 0-0 → unsicher
     except Exception as e:
         print(f"  [Triple] Livescore Fehler: {e}")
 
@@ -10100,13 +9996,15 @@ def ls_get_match_result(match_id: str, home: str = "",
             fd_result = fd_suche_spiel(home, away, liga)
             if fd_result:
                 ergebnisse["football_data"] = fd_result["score"]
-                ht_score = fd_result.get("ht_score", ht_score)
+                ht_score = fd_result.get("ht_score", "") or ht_score  # Fix Bug A: sicherer Fallback
                 print(f"  [Triple] Quelle 2 football-data.org: {fd_result['score']} ✅")
         except Exception as e:
             print(f"  [Triple] football-data Fehler: {e}")
 
     # ── Quelle 3: TheSportsDB ────────────────────────────────────
-    if home and away and len(ergebnisse) < 2:
+    # Fix Bug C: nur aufrufen wenn wir noch keine 2 bestätigten Quellen haben
+    sichere_bisher = {k: v for k, v in ergebnisse.items()}
+    if home and away and len(sichere_bisher) < 2:
         try:
             tsdb = thesportsdb_suche_spiel(home, away)
             if tsdb:
@@ -10116,17 +10014,23 @@ def ls_get_match_result(match_id: str, home: str = "",
             print(f"  [Triple] TheSportsDB Fehler: {e}")
 
     # ── Quelle 4: Events Fallback ────────────────────────────────
-    if not ergebnisse:
+    # Fix Bug B: nicht mehr nur bei leerem ergebnisse, sondern auch wenn
+    # noch keine 2 Quellen übereinstimmen (deckt auch 0-0 Fälle ab)
+    sichere = {k: v for k, v in ergebnisse.items()}
+    from collections import Counter
+    zaehler_bisher = Counter(sichere.values())
+    bestaetigt     = zaehler_bisher.most_common(1)[0][1] if zaehler_bisher else 0
+    if bestaetigt < 2:
         try:
             live     = get_live_matches()
             live_ids = {str(m.get("id")) for m in live}
             if match_id not in live_ids:
                 events   = ls_get_events(match_id)
-                tore_h   = len([e for e in events if e.get("event") in ("Goal","goal")
+                tore_h   = len([e for e in events if e.get("event") in ("Goal", "goal")
                                  and e.get("home_away") == "home"])
-                tore_a   = len([e for e in events if e.get("event") in ("Goal","goal")
+                tore_a   = len([e for e in events if e.get("event") in ("Goal", "goal")
                                  and e.get("home_away") == "away"])
-                if events:
+                if events:  # Events vorhanden → Spiel ist abgeschlossen
                     ev_score = f"{tore_h} - {tore_a}"
                     ergebnisse["events"] = ev_score
                     print(f"  [Triple] Quelle 4 Events: {ev_score} ✅")
@@ -10138,45 +10042,35 @@ def ls_get_match_result(match_id: str, home: str = "",
         print(f"  [Triple] ❌ Keine Quelle hat Ergebnis geliefert")
         return None
 
-    # Scores zählen (ohne unsichere 0-0 FT-Markierung)
-    sichere = {k: v for k, v in ergebnisse.items() if k != "livescore_ft"}
-
-    if not sichere:
-        print(f"  [Triple] ⚠️ Nur unsichere 0-0 Meldung – warte auf Bestätigung")
-        return None
-
-    # Wenn mindestens 2 Quellen dasselbe Ergebnis liefern
     from collections import Counter
-    zaehler = Counter(sichere.values())
+    zaehler = Counter(ergebnisse.values())
     bestes  = zaehler.most_common(1)[0]
     bester_score, anzahl = bestes
 
     if anzahl >= 2:
-        print(f"  [Triple] ✅ BESTÄTIGT ({anzahl}/3 Quellen): {bester_score}")
+        print(f"  [Triple] ✅ BESTÄTIGT ({anzahl}/{len(ergebnisse)} Quellen): {bester_score}")
         return {"status": "FT", "score": bester_score,
-                "ht_score": ht_score, "quelle": f"triple_verified ({anzahl}/3)",
+                "ht_score": ht_score, "quelle": f"triple_verified ({anzahl}/{len(ergebnisse)})",
                 "alle_quellen": ergebnisse}
-    elif len(sichere) == 1:
-        # Nur eine Quelle – trotzdem verwenden wenn nicht 0-0
-        einziger_score = list(sichere.values())[0]
-        if einziger_score != "0 - 0":
-            print(f"  [Triple] ⚠️ Nur 1 Quelle: {einziger_score} – verwende trotzdem")
-            return {"status": "FT", "score": einziger_score,
-                    "ht_score": ht_score, "quelle": "single_source",
-                    "alle_quellen": ergebnisse}
+    elif len(ergebnisse) == 1:
+        einziger_score = list(ergebnisse.values())[0]
+        print(f"  [Triple] ⚠️ Nur 1 Quelle: {einziger_score} – verwende trotzdem")
+        return {"status": "FT", "score": einziger_score,
+                "ht_score": ht_score, "quelle": "single_source",
+                "alle_quellen": ergebnisse}
     else:
-        # Quellen widersprechen sich
-        print(f"  [Triple] ⚠️ Quellen uneinig: {sichere} – warte auf mehr Daten")
+        print(f"  [Triple] ⚠️ Quellen uneinig: {ergebnisse} – warte auf mehr Daten")
 
     return None
 
 def bot_nachschau():
     """
-    Dedizierter Nachschau-Bot: prüft alle offenen Signale
-    alle 3 Minuten und wertet ab sobald das Spiel fertig ist.
-    Viel aggressiver als der normale Auswertungs-Bot.
+    EINZIGER Auswertungs-Bot.
+    Prüft alle offenen Signale im _signal_tracker alle 90 Sekunden.
+    Wertet aus sobald ls_get_match_result ein bestätigtes FT-Ergebnis liefert.
+    Kein doppeltes Auswerten möglich, da jeder Key (match_id_typ) einmalig ist.
     """
-    print("[Nachschau-Bot] Gestartet | Prüft offene Signale alle 3 Min")
+    print("[Nachschau-Bot] Gestartet | Einziger Evaluator | Prüft alle 90s")
 
     AUSWERTUNG_FNS = {
         "ecken":      auswertung_ecken,
@@ -10191,14 +10085,6 @@ def bot_nachschau():
         "vztore":     auswertung_vztore,
     }
 
-    # MIN_WARTE auf 0 – sofort auswerten wenn FT erkannt
-    # Keine Zeitabhängigkeit mehr – nur Status zählt
-    MIN_WARTE = {
-        "ecken": 0, "torflut": 0, "hz1tore": 0,
-        "vztore": 0, "karten": 0, "torwart": 0,
-        "comeback": 0, "druck": 0, "rotkarte": 0, "ecken_over": 0,
-    }
-
     while True:
         try:
             wende_konfidenz_decay_an()
@@ -10207,49 +10093,49 @@ def bot_nachschau():
                 print(f"[{jetzt()}] [Nachschau-Bot] {len(offene)} offene Signale prüfen")
 
             for key, sig in offene:
-                match_id  = sig.get("match_id", "")
-                typ       = sig.get("typ", "")
-                home      = sig.get("home", "?")
-                away      = sig.get("away", "?")
+                match_id = sig.get("match_id", "")
+                typ      = sig.get("typ", "")
+                home     = sig.get("home", "?")
+                away     = sig.get("away", "?")
+                webhook  = sig.get("webhook", "")
 
-                # Mindest-Wartezeit einhalten
-                signal_zeit = sig.get("signal_zeit", 0)
-                min_seit    = (time.time() - signal_zeit) / 60
-                min_warte   = MIN_WARTE.get(typ, 25)
-                if min_seit < min_warte:
-                    print(f"  [Nachschau] {home} vs {away} | Warte noch {min_warte-min_seit:.0f} Min")
-                    continue
-
-                # Nicht öfter als alle 4 Minuten versuchen
+                # Nicht öfter als alle 3 Minuten versuchen
                 letzter = sig.get("letzter_versuch", 0)
-                if time.time() - letzter < 240:
+                if time.time() - letzter < 180:
                     continue
 
                 # Versuchszähler erhöhen
                 with _tracker_lock:
                     if key in _signal_tracker:
-                        _signal_tracker[key]["versuche"] += 1
+                        _signal_tracker[key]["versuche"]       += 1
                         _signal_tracker[key]["letzter_versuch"] = time.time()
 
-                print(f"  [Nachschau] Prüfe: {home} vs {away} ({typ}) | Versuch #{sig.get('versuche',0)+1}")
+                versuche = sig.get("versuche", 0) + 1
+                print(f"  [Nachschau] Prüfe: {home} vs {away} ({typ}) | Versuch #{versuche}")
 
-                # Ergebnis holen
+                # Ergebnis über Triple-Verifikation holen
                 result = ls_get_match_result(
                     match_id,
-                    home=sig.get("home", ""),
-                    away=sig.get("away", ""),
+                    home=home,
+                    away=away,
                     liga=sig.get("competition", sig.get("liga", ""))
                 )
                 if not result:
-                    print(f"  [Nachschau] {home} vs {away} | Noch kein Ergebnis")
+                    # Nach 15 Versuchen (~45 Min) aufgeben
+                    if versuche >= 15:
+                        print(f"  [Nachschau] ❌ Aufgegeben nach {versuche} Versuchen: {home} vs {away} ({typ})")
+                        tracker_ausgewertet_markieren(key, False)
+                    else:
+                        print(f"  [Nachschau] {home} vs {away} | Noch kein Ergebnis (Versuch {versuche}/15)")
                     continue
 
-                # Kurz warten für stabile Daten
+                # Kurz warten – API braucht manchmal einen Moment bis Statistiken stabil sind
                 time.sleep(8)
 
-                # Auswertung durchführen
+                # Auswertungsfunktion aufrufen
                 auswert_fn = AUSWERTUNG_FNS.get(typ)
                 if not auswert_fn:
+                    print(f"  [Nachschau] Unbekannter Typ '{typ}' – übersprungen")
                     tracker_ausgewertet_markieren(key, False)
                     continue
 
@@ -10257,45 +10143,118 @@ def bot_nachschau():
                 try:
                     msg = auswert_fn(sig)
                 except Exception as e:
-                    print(f"  [Nachschau] Auswertungs-Fehler {home} vs {away}: {e}")
+                    print(f"  [Nachschau] Auswertungs-Fehler {home} vs {away} ({typ}): {e}")
 
                 if not msg:
-                    # Nach 5 Versuchen aufgeben
-                    if sig.get("versuche", 0) >= 5:
-                        print(f"  [Nachschau] ❌ Aufgegeben nach 5 Versuchen: {home} vs {away}")
+                    if versuche >= 15:
+                        print(f"  [Nachschau] ❌ Kein Auswertungs-Ergebnis nach {versuche} Versuchen: {home} vs {away}")
                         tracker_ausgewertet_markieren(key, False)
                     continue
 
-                # Ergebnis senden
+                # ── Ergebnis verarbeiten ──────────────────────────
                 gewonnen = "GEWONNEN" in msg
+                emoji    = "✅" if gewonnen else "❌"
+
+                # Telegram
                 send_telegram(msg)
 
-                # Discord Embed
-                webhook = sig.get("webhook", "")
-                emoji   = "✅" if gewonnen else "❌"
-                details = {"📊 Typ": f"**{typ.upper()}**",
-                           "⚽ Spiel": f"**{home} vs {away}**"}
+                # Typ-spezifische Discord-Embed-Details
+                if typ in ("ecken", "ecken_over"):
+                    hz1    = sig.get("hz1_ecken", 0)
+                    grenze = hz1 * 2 + 1 if typ == "ecken" else 14
+                    m_e    = re.search(r"Tatsächlich.*?(\d+)", msg)
+                    total  = m_e.group(1) if m_e else "?"
+                    details = {
+                        "📐 Ecken bei Signal": f"**{hz1}**",
+                        "🎯 Tipp": f"{'Unter' if typ == 'ecken' else 'Über'} **{grenze}** Ecken",
+                        "📈 Endstand": f"**{total}** Ecken gesamt",
+                    }
+                elif typ == "karten":
+                    m_k   = re.search(r"Tatsächlich.*?(\d+)", msg)
+                    total = m_k.group(1) if m_k else "?"
+                    details = {
+                        "🃏 Karten bei Signal": f"**{sig.get('karten_anzahl','?')}**",
+                        "🎯 Tipp": "Über **5** Karten",
+                        "📈 Endstand": f"**{total}** Karten",
+                    }
+                elif typ == "torwart":
+                    m_s = re.search(r"Endstand.*?(\d+ - \d+)", msg)
+                    details = {
+                        "🎯 Tipp": "Mind. **1 Tor**",
+                        "📈 Endstand": f"**{m_s.group(1) if m_s else '?'}**",
+                    }
+                elif typ == "druck":
+                    details = {
+                        "🔥 Druck-Team": f"**{sig.get('druck_team','?')}**",
+                        "📊 Stand bei Signal": f"**{sig.get('score_signal','?')}**",
+                        "📈 Ergebnis": f"{emoji} Tor erzielt" if gewonnen else "❌ Kein Tor",
+                    }
+                elif typ == "comeback":
+                    m_s = re.search(r"Endstand.*?(\d+ - \d+)", msg)
+                    details = {
+                        "🔄 Rückliegend": f"**{sig.get('rueckliegend','?')}**",
+                        "🎯 Tipp": "Beide Teams treffen",
+                        "📈 Endstand": f"**{m_s.group(1) if m_s else '?'}**",
+                    }
+                elif typ == "torflut":
+                    m_s = re.search(r"Endstand.*?(\d+ - \d+)", msg)
+                    details = {
+                        "⚽ Tore HZ1": f"**{sig.get('hz1_tore','?')}**",
+                        "🎯 Tipp": f"Über **{sig.get('grenze','?')}** Tore gesamt",
+                        "📈 Endstand": f"**{m_s.group(1) if m_s else '?'}**",
+                    }
+                elif typ == "rotkarte":
+                    details = {
+                        "💪 Überzahl-Team": f"**{sig.get('ueberzahl_team','?')}**",
+                        "📊 Stand bei Signal": f"**{sig.get('score_signal','?')}**",
+                        "📈 Ergebnis": f"{emoji} Tor nach Karte" if gewonnen else "❌ Kein Tor",
+                    }
+                elif typ in ("hz1tore", "vztore"):
+                    label = "HZ1" if typ == "hz1tore" else "Vollzeit"
+                    details = {
+                        "🎯 Tipp": f"**{sig.get('richtung','?').capitalize()} {sig.get('linie','?')}** Tore ({label})",
+                        "📈 Ergebnis": f"{emoji} {'Gewonnen' if gewonnen else 'Verloren'}",
+                    }
+                else:
+                    details = {
+                        "📊 Typ": f"**{typ.upper()}**",
+                        "⚽ Spiel": f"**{home} vs {away}**",
+                    }
+
+                # Discord Embed senden
                 embed = discord_auswertung(typ, home, away, gewonnen, details)
                 send_discord_embed(webhook, embed)
 
+                # Bankroll aktualisieren
+                try:
+                    einsatz = sig.get("einsatz", EINSATZ)
+                    quote   = sig.get("quote")
+                    bankroll_aktualisieren(gewonnen, einsatz, quote)
+                except Exception as e:
+                    print(f"  [Nachschau] Bankroll-Fehler: {e}")
+
+                # Tracker, Streak, Votes, Verlustanalyse
                 tracker_ausgewertet_markieren(key, gewonnen)
                 check_streak_alarm()
                 discord_vote_auswerten(key, gewonnen)
                 vk_update(typ, gewonnen, sig.get("quote", 1.85))
-                print(f"  [Nachschau] ✅ Ausgewertet: {home} vs {away} ({typ}) → {'GEWONNEN' if gewonnen else 'VERLOREN'}")
 
-                # Claude Verlust-Analyse
                 if not gewonnen:
-                    threading.Thread(target=claude_verloren_analyse,
-                        args=(home, away, typ, msg), daemon=True).start()
+                    threading.Thread(
+                        target=claude_verloren_analyse,
+                        args=(home, away, typ, msg), daemon=True
+                    ).start()
 
-                time.sleep(1)
+                print(f"  [Nachschau] {emoji} Ausgewertet: {home} vs {away} ({typ}) → "
+                      f"{'GEWONNEN' if gewonnen else 'VERLOREN'}")
+
+                time.sleep(1)  # kurze Pause zwischen Auswertungen
 
             tracker_speichern()
             bot_fehler_reset("Nachschau-Bot")
         except Exception as e:
             bot_fehler_melden("Nachschau-Bot", e)
-        time.sleep(90)  # Alle 90 Sekunden – aggressiver für schnelle Auswertung
+        time.sleep(90)
 
 def bot_watchdog():
     """Überwacht alle Bot-Threads und startet sie neu falls sie abstürzen."""
