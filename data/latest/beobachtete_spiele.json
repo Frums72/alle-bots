@@ -101,5 +101,17 @@
     "webhook": "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4",
     "signal_zeit": 1778873454.8600256,
     "bot": "Ecken-\u00dcber-Bot"
+  },
+  "711552_torflut": {
+    "typ": "torflut",
+    "match_id": "711552",
+    "home": "Hamilton Academical",
+    "away": "Clyde",
+    "hz1_tore": 4,
+    "grenze": 6,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778873594.0023606,
+    "bot": "Torflut-Bot"
   }
 }
