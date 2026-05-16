@@ -1269,5 +1269,78 @@
     "webhook": "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4",
     "signal_zeit": 1778960066.8036432,
     "bot": "Ecken-Bot"
+  },
+  "712076_torwart": {
+    "typ": "torwart",
+    "match_id": "712076",
+    "home": "CSD Macara",
+    "away": "Independiente del Valle",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Liga Pro",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1778960492.3839579,
+    "bot": "Torwart-Bot"
+  },
+  "712089_ecken_over": {
+    "typ": "ecken_over",
+    "match_id": "712089",
+    "home": "Sao Bernardo",
+    "away": "America MG",
+    "hz1_ecken": 7,
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Serie B",
+    "webhook": "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4",
+    "signal_zeit": 1778960823.9922943,
+    "bot": "Ecken-\u00dcber-Bot"
+  },
+  "712084_torflut": {
+    "typ": "torflut",
+    "match_id": "712084",
+    "home": "UD Ibiza Eivissa",
+    "away": "Cartagena",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778961017.7279317,
+    "bot": "Torflut-Bot"
+  },
+  "712074_torflut": {
+    "typ": "torflut",
+    "match_id": "712074",
+    "home": "Universitario de Vinto",
+    "away": "Bolivar",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778961090.4241104,
+    "bot": "Torflut-Bot"
+  },
+  "712086_torflut": {
+    "typ": "torflut",
+    "match_id": "712086",
+    "home": "Alcorcon",
+    "away": "Marbella",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778961273.6593568,
+    "bot": "Torflut-Bot"
+  },
+  "712090_torflut": {
+    "typ": "torflut",
+    "match_id": "712090",
+    "home": "Operario PR",
+    "away": "N\u00e1utico",
+    "hz1_tore": 3,
+    "grenze": 6,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778961371.4835365,
+    "bot": "Torflut-Bot"
   }
 }
