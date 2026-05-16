@@ -1402,5 +1402,42 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1778970346.978713,
     "bot": "Torflut-Bot"
+  },
+  "712164_torwart": {
+    "typ": "torwart",
+    "match_id": "712164",
+    "home": "Tolima",
+    "away": "Atl\u00e9tico Nacional",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Primera A",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1778973638.8600283,
+    "bot": "Torwart-Bot"
+  },
+  "712159_torflut": {
+    "typ": "torflut",
+    "match_id": "712159",
+    "home": "Floresta",
+    "away": "Amazonas FC",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778973684.363298,
+    "bot": "Torflut-Bot"
+  },
+  "712157_ecken": {
+    "typ": "ecken",
+    "match_id": "712157",
+    "home": "River Plate",
+    "away": "Rosario Central",
+    "hz1_ecken": 5,
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Liga Professional",
+    "webhook": "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4",
+    "signal_zeit": 1778974433.440042,
+    "bot": "Ecken-Bot"
   }
 }
