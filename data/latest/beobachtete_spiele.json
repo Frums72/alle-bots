@@ -237,5 +237,44 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1778910684.708495,
     "bot": "Torflut-Bot"
+  },
+  "711616_comeback": {
+    "typ": "comeback",
+    "match_id": "711616",
+    "home": "Yokohama F.Marinos",
+    "away": "Kashiwa Reysol",
+    "rueckliegend": "Yokohama F.Marinos",
+    "score_signal": "0 - 1",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "J. League",
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778921159.8708897,
+    "bot": "Comeback-Bot",
+    "competition": "J. League"
+  },
+  "711629_torflut": {
+    "typ": "torflut",
+    "match_id": "711629",
+    "home": "Velke Hamry",
+    "away": "TJ Jiskra Usti Nad Orlici",
+    "hz1_tore": 4,
+    "grenze": 6,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778923114.4850998,
+    "bot": "Torflut-Bot"
+  },
+  "711627_torflut": {
+    "typ": "torflut",
+    "match_id": "711627",
+    "home": "Dynamo Ceske Budejovice II",
+    "away": "Kraluv Dvur",
+    "hz1_tore": 5,
+    "grenze": 7,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778923177.4731777,
+    "bot": "Torflut-Bot"
   }
 }
