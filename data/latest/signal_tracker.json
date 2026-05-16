@@ -372,5 +372,39 @@
     "konfidenz": 6,
     "gewonnen": false,
     "ausgewertet_um": "2026-05-16 12:01"
+  },
+  "711633_torflut": {
+    "typ": "torflut",
+    "match_id": "711633",
+    "home": "Arsenal Tula",
+    "away": "Rodina",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778928768.0221035,
+    "bot": "Torflut-Bot",
+    "status": "offen",
+    "versuche": 13,
+    "letzter_versuch": 1778931235.2404175,
+    "konfidenz_original": 6,
+    "konfidenz": 6
+  },
+  "711635_torflut": {
+    "typ": "torflut",
+    "match_id": "711635",
+    "home": "FC Chelyabinsk",
+    "away": "Shinnik Yaroslavl",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778928770.0948203,
+    "bot": "Torflut-Bot",
+    "status": "offen",
+    "versuche": 13,
+    "letzter_versuch": 1778931240.821461,
+    "konfidenz_original": 6,
+    "konfidenz": 6
   }
 }
