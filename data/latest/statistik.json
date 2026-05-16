@@ -16,9 +16,9 @@
       "gewinn": 0.0
     },
     "torwart": {
-      "gewonnen": 1,
+      "gewonnen": 2,
       "verloren": 0,
-      "gewinn": 7.0
+      "gewinn": 14.0
     },
     "druck": {
       "gewonnen": 0,
@@ -26,9 +26,9 @@
       "gewinn": 0.0
     },
     "comeback": {
-      "gewonnen": 0,
+      "gewonnen": 1,
       "verloren": 0,
-      "gewinn": 0.0
+      "gewinn": 7.0
     },
     "torflut": {
       "gewonnen": 0,
@@ -68,9 +68,9 @@
       "gewinn": 0.0
     },
     "torwart": {
-      "gewonnen": 2,
+      "gewonnen": 3,
       "verloren": 0,
-      "gewinn": 14.0
+      "gewinn": 21.0
     },
     "druck": {
       "gewonnen": 0,
@@ -78,9 +78,9 @@
       "gewinn": 0.0
     },
     "comeback": {
-      "gewonnen": 0,
+      "gewonnen": 1,
       "verloren": 0,
-      "gewinn": 0.0
+      "gewinn": 7.0
     },
     "torflut": {
       "gewonnen": 0,
@@ -173,7 +173,7 @@
       "verloren": 0
     },
     "17": {
-      "gewonnen": 1,
+      "gewonnen": 3,
       "verloren": 0
     },
     "18": {
