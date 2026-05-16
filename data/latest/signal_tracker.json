@@ -444,11 +444,13 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1778932105.851919,
     "bot": "Torflut-Bot",
-    "status": "offen",
-    "versuche": 11,
-    "letzter_versuch": 1778934779.3412898,
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1778935510.820815,
     "konfidenz_original": 6,
-    "konfidenz": 6
+    "konfidenz": 5,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-16 14:45"
   },
   "711659_torflut": {
     "typ": "torflut",
@@ -461,11 +463,13 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1778932286.6112914,
     "bot": "Torflut-Bot",
-    "status": "offen",
-    "versuche": 11,
-    "letzter_versuch": 1778934810.7894511,
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1778935517.4178474,
     "konfidenz_original": 6,
-    "konfidenz": 6
+    "konfidenz": 5,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-16 14:45"
   },
   "711677_comeback": {
     "typ": "comeback",
@@ -481,9 +485,13 @@
     "signal_zeit": 1778933164.0550313,
     "bot": "Comeback-Bot",
     "competition": "Indian Super League",
-    "status": "offen",
-    "versuche": 7,
-    "letzter_versuch": 1778934840.7336195
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1778936396.3399537,
+    "konfidenz_original": 6,
+    "konfidenz": 5,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-16 15:00"
   },
   "711675_comeback": {
     "typ": "comeback",
@@ -499,9 +507,13 @@
     "signal_zeit": 1778933756.028782,
     "bot": "Comeback-Bot",
     "competition": "Premiership",
-    "status": "offen",
-    "versuche": 5,
-    "letzter_versuch": 1778934852.968749
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1778936945.5280037,
+    "konfidenz_original": 6,
+    "konfidenz": 5,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-16 15:09"
   },
   "711669_torflut": {
     "typ": "torflut",
@@ -514,9 +526,13 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1778933988.003992,
     "bot": "Torflut-Bot",
-    "status": "offen",
-    "versuche": 4,
-    "letzter_versuch": 1778934896.0661829
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1778937157.9139037,
+    "konfidenz_original": 6,
+    "konfidenz": 5,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-16 15:12"
   },
   "711668_torflut": {
     "typ": "torflut",
@@ -529,9 +545,13 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1778934181.2243743,
     "bot": "Torflut-Bot",
-    "status": "offen",
-    "versuche": 4,
-    "letzter_versuch": 1778934900.3498409
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1778937256.7167761,
+    "konfidenz_original": 6,
+    "konfidenz": 5,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-16 15:14"
   },
   "711674_torflut": {
     "typ": "torflut",
@@ -544,8 +564,67 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1778934189.480042,
     "bot": "Torflut-Bot",
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1778937280.9415932,
+    "konfidenz_original": 6,
+    "konfidenz": 5,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-16 15:14"
+  },
+  "711686_comeback": {
+    "typ": "comeback",
+    "match_id": "711686",
+    "home": "Real Sociedad B",
+    "away": "Mirand\u00e9s",
+    "rueckliegend": "Real Sociedad B",
+    "score_signal": "0 - 1",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Segunda Division",
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778935416.0430038,
+    "bot": "Comeback-Bot",
+    "competition": "Segunda Division",
     "status": "offen",
-    "versuche": 4,
-    "letzter_versuch": 1778934903.2052917
+    "versuche": 13,
+    "letzter_versuch": 1778938468.9783869,
+    "konfidenz_original": 6,
+    "konfidenz": 5
+  },
+  "711679_torflut": {
+    "typ": "torflut",
+    "match_id": "711679",
+    "home": "Middelfart",
+    "away": "HB Koege",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778935661.2077963,
+    "bot": "Torflut-Bot",
+    "status": "offen",
+    "versuche": 12,
+    "letzter_versuch": 1778938507.7678504,
+    "konfidenz_original": 6,
+    "konfidenz": 5
+  },
+  "711710_comeback": {
+    "typ": "comeback",
+    "match_id": "711710",
+    "home": "Motor Lublin",
+    "away": "Cracovia",
+    "rueckliegend": "Motor Lublin",
+    "score_signal": "0 - 1",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Ekstraklasa",
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778937615.1756172,
+    "bot": "Comeback-Bot",
+    "competition": "Ekstraklasa",
+    "status": "offen",
+    "versuche": 5,
+    "letzter_versuch": 1778938556.0854573
   }
 }
