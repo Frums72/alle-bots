@@ -225,5 +225,17 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1778892691.3265643,
     "bot": "Torflut-Bot"
+  },
+  "711594_torflut": {
+    "typ": "torflut",
+    "match_id": "711594",
+    "home": "Chuncheon Citizen FC",
+    "away": "Jeonbuk Motors II",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778910684.708495,
+    "bot": "Torflut-Bot"
   }
 }
