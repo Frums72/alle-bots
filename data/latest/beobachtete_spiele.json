@@ -1378,5 +1378,29 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1778964731.459192,
     "bot": "Torflut-Bot"
+  },
+  "712150_torwart": {
+    "typ": "torwart",
+    "match_id": "712150",
+    "home": "Goias",
+    "away": "Botafogo SP",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Serie B",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1778969546.8105218,
+    "bot": "Torwart-Bot"
+  },
+  "712144_torflut": {
+    "typ": "torflut",
+    "match_id": "712144",
+    "home": "Club Atletico Penarol",
+    "away": "Liverpool FC",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778970346.978713,
+    "bot": "Torflut-Bot"
   }
 }
