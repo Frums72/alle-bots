@@ -1979,11 +1979,13 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1778964514.5665503,
     "bot": "Torflut-Bot",
-    "status": "offen",
-    "versuche": 9,
-    "letzter_versuch": 1778967425.584815,
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1778968545.4073904,
     "konfidenz_original": 6,
-    "konfidenz": 5
+    "konfidenz": 4,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-16 23:55"
   },
   "712120_torflut": {
     "typ": "torflut",
@@ -1996,11 +1998,13 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1778964625.7457569,
     "bot": "Torflut-Bot",
-    "status": "offen",
-    "versuche": 9,
-    "letzter_versuch": 1778967435.043769,
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1778968547.472318,
     "konfidenz_original": 6,
-    "konfidenz": 5
+    "konfidenz": 4,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-16 23:55"
   },
   "712123_torflut": {
     "typ": "torflut",
@@ -2013,10 +2017,42 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1778964731.460784,
     "bot": "Torflut-Bot",
-    "status": "offen",
-    "versuche": 9,
-    "letzter_versuch": 1778967443.8303435,
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1778968549.3797176,
     "konfidenz_original": 6,
-    "konfidenz": 6
+    "konfidenz": 4,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-16 23:55"
+  },
+  "712150_torwart": {
+    "typ": "torwart",
+    "match_id": "712150",
+    "home": "Goias",
+    "away": "Botafogo SP",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Serie B",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1778969546.8118422,
+    "bot": "Torwart-Bot",
+    "status": "offen",
+    "versuche": 8,
+    "letzter_versuch": 1778970960.8657224
+  },
+  "712144_torflut": {
+    "typ": "torflut",
+    "match_id": "712144",
+    "home": "Club Atletico Penarol",
+    "away": "Liverpool FC",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778970346.9800832,
+    "bot": "Torflut-Bot",
+    "status": "offen",
+    "versuche": 4,
+    "letzter_versuch": 1778970968.9379227
   }
 }
