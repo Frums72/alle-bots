@@ -293,5 +293,24 @@
     "konfidenz": 6,
     "gewonnen": false,
     "ausgewertet_um": "2026-05-16 03:31"
+  },
+  "711594_torflut": {
+    "typ": "torflut",
+    "match_id": "711594",
+    "home": "Chuncheon Citizen FC",
+    "away": "Jeonbuk Motors II",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778910684.7092733,
+    "bot": "Torflut-Bot",
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1778913112.6338913,
+    "konfidenz_original": 6,
+    "konfidenz": 6,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-16 08:31"
   }
 }
