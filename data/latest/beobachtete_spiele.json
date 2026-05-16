@@ -982,5 +982,91 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1778948867.8277075,
     "bot": "Torflut-Bot"
+  },
+  "711918_torwart": {
+    "typ": "torwart",
+    "match_id": "711918",
+    "home": "Republic of Ireland",
+    "away": "Grenada",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "National Teams Friendlies",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1778949474.1373875,
+    "bot": "Torwart-Bot"
+  },
+  "711851_ecken": {
+    "typ": "ecken",
+    "match_id": "711851",
+    "home": "BW Linz",
+    "away": "Grazer AK",
+    "hz1_ecken": 5,
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Bundesliga",
+    "webhook": "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4",
+    "signal_zeit": 1778949847.805541,
+    "bot": "Ecken-Bot"
+  },
+  "711936_ecken_over": {
+    "typ": "ecken_over",
+    "match_id": "711936",
+    "home": "FC Zuerich",
+    "away": "Servette",
+    "hz1_ecken": 9,
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Super League",
+    "webhook": "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4",
+    "signal_zeit": 1778950087.8942492,
+    "bot": "Ecken-\u00dcber-Bot"
+  },
+  "711928_torflut": {
+    "typ": "torflut",
+    "match_id": "711928",
+    "home": "FK Arda Kurdzhali",
+    "away": "Lokomotiv Plovdiv",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778950169.778862,
+    "bot": "Torflut-Bot"
+  },
+  "711940_torflut": {
+    "typ": "torflut",
+    "match_id": "711940",
+    "home": "Velez Mostar",
+    "away": "Rudar Prijedor",
+    "hz1_tore": 5,
+    "grenze": 7,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778950287.896502,
+    "bot": "Torflut-Bot"
+  },
+  "711894_torwart": {
+    "typ": "torwart",
+    "match_id": "711894",
+    "home": "Wisla Plock",
+    "away": "Gornik Zabrze",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Ekstraklasa",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1778950305.1538491,
+    "bot": "Torwart-Bot"
+  },
+  "711954_torwart": {
+    "typ": "torwart",
+    "match_id": "711954",
+    "home": "Asteras Tripolis",
+    "away": "Kifisia",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Super League",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1778951488.2975092,
+    "bot": "Torwart-Bot"
   }
 }
