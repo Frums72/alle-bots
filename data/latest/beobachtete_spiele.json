@@ -1342,5 +1342,41 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1778961371.4835365,
     "bot": "Torflut-Bot"
+  },
+  "712134_torflut": {
+    "typ": "torflut",
+    "match_id": "712134",
+    "home": "AD Comerciantes",
+    "away": "Binacional",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778964514.5648248,
+    "bot": "Torflut-Bot"
+  },
+  "712120_torflut": {
+    "typ": "torflut",
+    "match_id": "712120",
+    "home": "Ypiranga Erechim",
+    "away": "Maring\u00e1 PR",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778964625.7443693,
+    "bot": "Torflut-Bot"
+  },
+  "712123_torflut": {
+    "typ": "torflut",
+    "match_id": "712123",
+    "home": "Moto Club MA",
+    "away": "IAPE MA",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778964731.459192,
+    "bot": "Torflut-Bot"
   }
 }
