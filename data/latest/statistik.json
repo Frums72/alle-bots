@@ -68,9 +68,9 @@
       "gewinn": 0.0
     },
     "torwart": {
-      "gewonnen": 1,
+      "gewonnen": 2,
       "verloren": 0,
-      "gewinn": 7.0
+      "gewinn": 14.0
     },
     "druck": {
       "gewonnen": 0,
@@ -173,7 +173,7 @@
       "verloren": 0
     },
     "17": {
-      "gewonnen": 0,
+      "gewonnen": 1,
       "verloren": 0
     },
     "18": {
