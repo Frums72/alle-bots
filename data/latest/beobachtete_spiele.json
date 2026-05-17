@@ -1439,5 +1439,17 @@
     "webhook": "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4",
     "signal_zeit": 1778974433.440042,
     "bot": "Ecken-Bot"
+  },
+  "712178_torwart": {
+    "typ": "torwart",
+    "match_id": "712178",
+    "home": "Cuiab\u00e1",
+    "away": "Novorizontino",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Serie B",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1778975815.1865208,
+    "bot": "Torwart-Bot"
   }
 }
