@@ -2328,11 +2328,13 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1779008535.5927079,
     "bot": "Torflut-Bot",
-    "status": "offen",
-    "versuche": 12,
-    "letzter_versuch": 1779010677.3283005,
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1779011066.1183376,
     "konfidenz_original": 6,
-    "konfidenz": 6
+    "konfidenz": 6,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-17 11:44"
   },
   "712681_torflut": {
     "typ": "torflut",
@@ -2345,11 +2347,13 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1779008597.1707313,
     "bot": "Torflut-Bot",
-    "status": "offen",
-    "versuche": 11,
-    "letzter_versuch": 1779010581.8159661,
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1779011163.4706793,
     "konfidenz_original": 6,
-    "konfidenz": 6
+    "konfidenz": 6,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-17 11:46"
   },
   "712680_torflut": {
     "typ": "torflut",
@@ -2362,11 +2366,13 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1779008779.9700093,
     "bot": "Torflut-Bot",
-    "status": "offen",
-    "versuche": 10,
-    "letzter_versuch": 1779010584.7143722,
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1779011355.2492857,
     "konfidenz_original": 6,
-    "konfidenz": 6
+    "konfidenz": 6,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-17 11:49"
   },
   "712676_torflut": {
     "typ": "torflut",
@@ -2379,9 +2385,13 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1779008901.9776824,
     "bot": "Torflut-Bot",
-    "status": "offen",
-    "versuche": 10,
-    "letzter_versuch": 1779010679.378617
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1779011448.3811598,
+    "konfidenz_original": 6,
+    "konfidenz": 6,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-17 11:50"
   },
   "712678_torflut": {
     "typ": "torflut",
@@ -2394,8 +2404,62 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1779008904.08148,
     "bot": "Torflut-Bot",
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1779011451.4018154,
+    "konfidenz_original": 6,
+    "konfidenz": 6,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-17 11:50"
+  },
+  "712684_torflut": {
+    "typ": "torflut",
+    "match_id": "712684",
+    "home": "FC Ryukyu",
+    "away": "Gainare Tottori",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1779011609.0753648,
+    "bot": "Torflut-Bot",
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1779014064.36871,
+    "konfidenz_original": 6,
+    "konfidenz": 6,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-17 12:34"
+  },
+  "712685_ecken_over": {
+    "typ": "ecken_over",
+    "match_id": "712685",
+    "home": "Como",
+    "away": "Parma Calcio 1913",
+    "hz1_ecken": 7,
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Serie A",
+    "webhook": "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4",
+    "signal_zeit": 1779013379.9446502,
+    "bot": "Ecken-\u00dcber-Bot",
     "status": "offen",
-    "versuche": 10,
-    "letzter_versuch": 1779010681.442242
+    "versuche": 5,
+    "letzter_versuch": 1779014176.845644
+  },
+  "712690_torwart": {
+    "typ": "torwart",
+    "match_id": "712690",
+    "home": "Kawasaki Frontale",
+    "away": "Machida Zelvia",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "J. League",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1779013828.8854227,
+    "bot": "Torwart-Bot",
+    "status": "offen",
+    "versuche": 3,
+    "letzter_versuch": 1779014269.8146563
   }
 }
