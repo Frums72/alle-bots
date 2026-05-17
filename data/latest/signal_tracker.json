@@ -2500,11 +2500,13 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1779015217.32671,
     "bot": "Torflut-Bot",
-    "status": "offen",
-    "versuche": 11,
-    "letzter_versuch": 1779017714.015694,
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1779018409.669774,
     "konfidenz_original": 6,
-    "konfidenz": 5
+    "konfidenz": 5,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-17 13:47"
   },
   "712688_ecken": {
     "typ": "ecken",
@@ -2518,11 +2520,13 @@
     "webhook": "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4",
     "signal_zeit": 1779015519.1434214,
     "bot": "Ecken-Bot",
-    "status": "offen",
-    "versuche": 10,
-    "letzter_versuch": 1779017728.1524966,
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1779018655.6019888,
     "konfidenz_original": 6,
-    "konfidenz": 6
+    "konfidenz": 5,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-17 13:51"
   },
   "712706_torflut": {
     "typ": "torflut",
@@ -2535,11 +2539,13 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1779015884.66387,
     "bot": "Torflut-Bot",
-    "status": "offen",
-    "versuche": 8,
-    "letzter_versuch": 1779017736.759742,
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1779019084.1511326,
     "konfidenz_original": 6,
-    "konfidenz": 6
+    "konfidenz": 5,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-17 13:58"
   },
   "712707_torflut": {
     "typ": "torflut",
@@ -2552,10 +2558,27 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1779016022.2859485,
     "bot": "Torflut-Bot",
-    "status": "offen",
-    "versuche": 8,
-    "letzter_versuch": 1779017738.9420407,
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1779019179.234433,
     "konfidenz_original": 6,
-    "konfidenz": 6
+    "konfidenz": 5,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-17 14:00"
+  },
+  "712729_torflut": {
+    "typ": "torflut",
+    "match_id": "712729",
+    "home": "Paide Linnameeskond",
+    "away": "FCI Levadia",
+    "hz1_tore": 4,
+    "grenze": 6,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1779020370.67274,
+    "bot": "Torflut-Bot",
+    "status": "offen",
+    "versuche": 7,
+    "letzter_versuch": 1779021535.5847516
   }
 }
