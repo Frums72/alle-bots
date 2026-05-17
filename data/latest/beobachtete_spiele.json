@@ -2723,5 +2723,102 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1779046679.0638602,
     "bot": "Torflut-Bot"
+  },
+  "713105_ecken_over": {
+    "typ": "ecken_over",
+    "match_id": "713105",
+    "home": "Nice",
+    "away": "Metz",
+    "hz1_ecken": 7,
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Ligue 1",
+    "webhook": "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4",
+    "signal_zeit": 1779046930.750325,
+    "bot": "Ecken-\u00dcber-Bot"
+  },
+  "713152_torwart": {
+    "typ": "torwart",
+    "match_id": "713152",
+    "home": "Barcelona",
+    "away": "Real Betis",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "LaLiga Santander",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1779047160.2701535,
+    "bot": "Torwart-Bot"
+  },
+  "713118_torwart": {
+    "typ": "torwart",
+    "match_id": "713118",
+    "home": "Cobresal",
+    "away": "Universidad de Chile",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Primera Division",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1779047347.9920485,
+    "bot": "Torwart-Bot"
+  },
+  "713117_torflut": {
+    "typ": "torflut",
+    "match_id": "713117",
+    "home": "San Luis",
+    "away": "Deportes Puerto Montt",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1779047540.3000515,
+    "bot": "Torflut-Bot"
+  },
+  "713102_torflut": {
+    "typ": "torflut",
+    "match_id": "713102",
+    "home": "Lyon",
+    "away": "Lens",
+    "hz1_tore": 3,
+    "grenze": 6,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1779047655.6836576,
+    "bot": "Torflut-Bot"
+  },
+  "713112_torflut": {
+    "typ": "torflut",
+    "match_id": "713112",
+    "home": "Botafogo RJ",
+    "away": "Corinthians",
+    "hz1_tore": 3,
+    "grenze": 6,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1779047695.6601763,
+    "bot": "Torflut-Bot"
+  },
+  "713107_torflut": {
+    "typ": "torflut",
+    "match_id": "713107",
+    "home": "Strasbourg",
+    "away": "Monaco",
+    "hz1_tore": 4,
+    "grenze": 7,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1779047777.0987465,
+    "bot": "Torflut-Bot"
+  },
+  "713153_torflut": {
+    "typ": "torflut",
+    "match_id": "713153",
+    "home": "Zaragoza",
+    "away": "Sporting Gijon",
+    "hz1_tore": 3,
+    "grenze": 6,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1779048692.01956,
+    "bot": "Torflut-Bot"
   }
 }
