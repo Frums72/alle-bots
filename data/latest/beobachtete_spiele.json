@@ -1723,5 +1723,17 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1779016022.2843828,
     "bot": "Torflut-Bot"
+  },
+  "712729_torflut": {
+    "typ": "torflut",
+    "match_id": "712729",
+    "home": "Paide Linnameeskond",
+    "away": "FCI Levadia",
+    "hz1_tore": 4,
+    "grenze": 6,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1779020370.6711946,
+    "bot": "Torflut-Bot"
   }
 }
