@@ -7,8 +7,8 @@
     },
     "ecken_over": {
       "gewonnen": 1,
-      "verloren": 3,
-      "gewinn": -23.0
+      "verloren": 4,
+      "gewinn": -33.0
     },
     "karten": {
       "gewonnen": 0,
@@ -16,9 +16,9 @@
       "gewinn": 0.0
     },
     "torwart": {
-      "gewonnen": 4,
+      "gewonnen": 6,
       "verloren": 1,
-      "gewinn": 18.0
+      "gewinn": 32.0
     },
     "druck": {
       "gewonnen": 0,
@@ -26,9 +26,9 @@
       "gewinn": 0.0
     },
     "comeback": {
-      "gewonnen": 1,
+      "gewonnen": 2,
       "verloren": 0,
-      "gewinn": 7.0
+      "gewinn": 14.0
     },
     "torflut": {
       "gewonnen": 0,
@@ -59,8 +59,8 @@
     },
     "ecken_over": {
       "gewonnen": 1,
-      "verloren": 3,
-      "gewinn": -23.0
+      "verloren": 4,
+      "gewinn": -33.0
     },
     "karten": {
       "gewonnen": 0,
@@ -68,9 +68,9 @@
       "gewinn": 0.0
     },
     "torwart": {
-      "gewonnen": 8,
+      "gewonnen": 10,
       "verloren": 1,
-      "gewinn": 46.0
+      "gewinn": 60.0
     },
     "druck": {
       "gewonnen": 0,
@@ -78,9 +78,9 @@
       "gewinn": 0.0
     },
     "comeback": {
-      "gewonnen": 2,
+      "gewonnen": 3,
       "verloren": 1,
-      "gewinn": 4.0
+      "gewinn": 11.0
     },
     "torflut": {
       "gewonnen": 0,
@@ -193,12 +193,12 @@
       "verloren": 0
     },
     "22": {
-      "gewonnen": 0,
+      "gewonnen": 2,
       "verloren": 0
     },
     "23": {
-      "gewonnen": 1,
-      "verloren": 0
+      "gewonnen": 2,
+      "verloren": 1
     }
   },
   "liga_statistik": {},
