@@ -7,8 +7,8 @@
     },
     "ecken_over": {
       "gewonnen": 1,
-      "verloren": 1,
-      "gewinn": -3.0
+      "verloren": 2,
+      "gewinn": -13.0
     },
     "karten": {
       "gewonnen": 0,
@@ -16,9 +16,9 @@
       "gewinn": 0.0
     },
     "torwart": {
-      "gewonnen": 2,
+      "gewonnen": 3,
       "verloren": 1,
-      "gewinn": 4.0
+      "gewinn": 11.0
     },
     "druck": {
       "gewonnen": 0,
@@ -59,8 +59,8 @@
     },
     "ecken_over": {
       "gewonnen": 1,
-      "verloren": 1,
-      "gewinn": -3.0
+      "verloren": 2,
+      "gewinn": -13.0
     },
     "karten": {
       "gewonnen": 0,
@@ -68,9 +68,9 @@
       "gewinn": 0.0
     },
     "torwart": {
-      "gewonnen": 6,
+      "gewonnen": 7,
       "verloren": 1,
-      "gewinn": 32.0
+      "gewinn": 39.0
     },
     "druck": {
       "gewonnen": 0,
@@ -177,8 +177,8 @@
       "verloren": 0
     },
     "18": {
-      "gewonnen": 1,
-      "verloren": 1
+      "gewonnen": 2,
+      "verloren": 2
     },
     "19": {
       "gewonnen": 0,
