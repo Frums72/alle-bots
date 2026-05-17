@@ -2844,5 +2844,41 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1779052962.6846945,
     "bot": "Torflut-Bot"
+  },
+  "713187_torflut": {
+    "typ": "torflut",
+    "match_id": "713187",
+    "home": "Colo Colo",
+    "away": "Nublense",
+    "hz1_tore": 3,
+    "grenze": 6,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1779056455.7810287,
+    "bot": "Torflut-Bot"
+  },
+  "713194_torflut": {
+    "typ": "torflut",
+    "match_id": "713194",
+    "home": "Guarani",
+    "away": "Ituano",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1779056762.5081663,
+    "bot": "Torflut-Bot"
+  },
+  "713195_torwart": {
+    "typ": "torwart",
+    "match_id": "713195",
+    "home": "Inter Miami",
+    "away": "Portland Timbers",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Major League Soccer",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1779057338.185603,
+    "bot": "Torwart-Bot"
   }
 }
