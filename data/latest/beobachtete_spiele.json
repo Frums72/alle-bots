@@ -2880,5 +2880,18 @@
     "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
     "signal_zeit": 1779057338.185603,
     "bot": "Torwart-Bot"
+  },
+  "713201_ecken_over": {
+    "typ": "ecken_over",
+    "match_id": "713201",
+    "home": "Atletico PR",
+    "away": "Flamengo",
+    "hz1_ecken": 7,
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Serie A",
+    "webhook": "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4",
+    "signal_zeit": 1779059509.0033927,
+    "bot": "Ecken-\u00dcber-Bot"
   }
 }
