@@ -1451,5 +1451,46 @@
     "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
     "signal_zeit": 1778975815.1865208,
     "bot": "Torwart-Bot"
+  },
+  "712171_comeback": {
+    "typ": "comeback",
+    "match_id": "712171",
+    "home": "Charlotte FC",
+    "away": "Toronto FC",
+    "rueckliegend": "Toronto FC",
+    "score_signal": "2 - 1",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Major League Soccer",
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1778977027.1939373,
+    "bot": "Comeback-Bot",
+    "competition": "Major League Soccer"
+  },
+  "712172_ecken_over": {
+    "typ": "ecken_over",
+    "match_id": "712172",
+    "home": "DC United",
+    "away": "St. Louis City",
+    "hz1_ecken": 7,
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Major League Soccer",
+    "webhook": "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4",
+    "signal_zeit": 1778977393.3707547,
+    "bot": "Ecken-\u00dcber-Bot"
+  },
+  "712176_ecken_over": {
+    "typ": "ecken_over",
+    "match_id": "712176",
+    "home": "Orlando City",
+    "away": "Atlanta United",
+    "hz1_ecken": 7,
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Major League Soccer",
+    "webhook": "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4",
+    "signal_zeit": 1778977436.6747031,
+    "bot": "Ecken-\u00dcber-Bot"
   }
 }
