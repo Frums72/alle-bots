@@ -2290,8 +2290,12 @@
     "webhook": "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4",
     "signal_zeit": 1778999923.4828756,
     "bot": "Ecken-\u00dcber-Bot",
-    "status": "offen",
-    "versuche": 0,
-    "letzter_versuch": 0
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1779002388.425627,
+    "konfidenz_original": 6,
+    "konfidenz": 6,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-17 09:19"
   }
 }
