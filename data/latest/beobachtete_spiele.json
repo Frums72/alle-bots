@@ -2820,5 +2820,29 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1779048692.01956,
     "bot": "Torflut-Bot"
+  },
+  "713165_torflut": {
+    "typ": "torflut",
+    "match_id": "713165",
+    "home": "Sampaio Correa MA",
+    "away": "Parnahyba Sport Club",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1779051312.9483023,
+    "bot": "Torflut-Bot"
+  },
+  "713176_torflut": {
+    "typ": "torflut",
+    "match_id": "713176",
+    "home": "9 De Octubre",
+    "away": "El Nacional",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1779052962.6846945,
+    "bot": "Torflut-Bot"
   }
 }
