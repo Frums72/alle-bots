@@ -2075,8 +2075,10 @@
     "signal_zeit": 1778973638.8615894,
     "bot": "Torwart-Bot",
     "status": "offen",
-    "versuche": 5,
-    "letzter_versuch": 1778974494.737075
+    "versuche": 11,
+    "letzter_versuch": 1778975731.4591403,
+    "konfidenz_original": 6,
+    "konfidenz": 6
   },
   "712159_torflut": {
     "typ": "torflut",
@@ -2090,8 +2092,10 @@
     "signal_zeit": 1778973684.3646665,
     "bot": "Torflut-Bot",
     "status": "offen",
-    "versuche": 5,
-    "letzter_versuch": 1778974497.5074203
+    "versuche": 11,
+    "letzter_versuch": 1778975740.8122485,
+    "konfidenz_original": 6,
+    "konfidenz": 6
   },
   "712157_ecken": {
     "typ": "ecken",
@@ -2106,7 +2110,22 @@
     "signal_zeit": 1778974433.4424589,
     "bot": "Ecken-Bot",
     "status": "offen",
+    "versuche": 7,
+    "letzter_versuch": 1778975744.8738763
+  },
+  "712178_torwart": {
+    "typ": "torwart",
+    "match_id": "712178",
+    "home": "Cuiab\u00e1",
+    "away": "Novorizontino",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Serie B",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1778975815.188236,
+    "bot": "Torwart-Bot",
+    "status": "offen",
     "versuche": 1,
-    "letzter_versuch": 1778974499.4462247
+    "letzter_versuch": 1778975885.9523098
   }
 }
