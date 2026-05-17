@@ -1565,5 +1565,65 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1779006008.0697696,
     "bot": "Torflut-Bot"
+  },
+  "712679_torflut": {
+    "typ": "torflut",
+    "match_id": "712679",
+    "home": "Admira Praha",
+    "away": "FK Dukla Praha B",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1779008535.5912328,
+    "bot": "Torflut-Bot"
+  },
+  "712681_torflut": {
+    "typ": "torflut",
+    "match_id": "712681",
+    "home": "FC Slovan Liberec B",
+    "away": "FK Teplice B",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1779008597.1692846,
+    "bot": "Torflut-Bot"
+  },
+  "712680_torflut": {
+    "typ": "torflut",
+    "match_id": "712680",
+    "home": "Jablonec II",
+    "away": "FK Varnsdorf",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1779008779.9684393,
+    "bot": "Torflut-Bot"
+  },
+  "712676_torflut": {
+    "typ": "torflut",
+    "match_id": "712676",
+    "home": "SK Sigma Olomouc B",
+    "away": "MFK Vitkovice",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1779008901.975873,
+    "bot": "Torflut-Bot"
+  },
+  "712678_torflut": {
+    "typ": "torflut",
+    "match_id": "712678",
+    "home": "Zbrojovka Brno II",
+    "away": "Start Brno",
+    "hz1_tore": 5,
+    "grenze": 7,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1779008904.0800314,
+    "bot": "Torflut-Bot"
   }
 }
