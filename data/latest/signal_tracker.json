@@ -3279,7 +3279,7 @@
     "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
     "signal_zeit": 1779032266.8361146,
     "bot": "Torwart-Bot",
-    "status": "offen",
+    "status": "abgelaufen",
     "versuche": 13,
     "letzter_versuch": 1779042665.9650266,
     "konfidenz_original": 6,
@@ -3299,7 +3299,7 @@
     "signal_zeit": 1779032453.750242,
     "bot": "Comeback-Bot",
     "competition": "Premier League",
-    "status": "offen",
+    "status": "abgelaufen",
     "versuche": 13,
     "letzter_versuch": 1779042697.8999975,
     "konfidenz_original": 6,
@@ -3319,9 +3319,9 @@
     "signal_zeit": 1779032930.5502703,
     "bot": "Comeback-Bot",
     "competition": "Super League",
-    "status": "offen",
-    "versuche": 12,
-    "letzter_versuch": 1779042711.991343,
+    "status": "abgelaufen",
+    "versuche": 13,
+    "letzter_versuch": 1779043576.294574,
     "konfidenz_original": 6,
     "konfidenz": 1
   },
@@ -3339,9 +3339,9 @@
     "signal_zeit": 1779032946.2142699,
     "bot": "Comeback-Bot",
     "competition": "1st League",
-    "status": "offen",
-    "versuche": 12,
-    "letzter_versuch": 1779042759.167324,
+    "status": "abgelaufen",
+    "versuche": 13,
+    "letzter_versuch": 1779043619.2947655,
     "konfidenz_original": 6,
     "konfidenz": 1
   },
@@ -3356,9 +3356,9 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1779032964.120683,
     "bot": "Torflut-Bot",
-    "status": "offen",
-    "versuche": 12,
-    "letzter_versuch": 1779042775.3673701,
+    "status": "abgelaufen",
+    "versuche": 13,
+    "letzter_versuch": 1779043627.6394713,
     "konfidenz_original": 6,
     "konfidenz": 1
   },
@@ -3374,9 +3374,9 @@
     "webhook": "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4",
     "signal_zeit": 1779032994.2050958,
     "bot": "Ecken-Bot",
-    "status": "offen",
-    "versuche": 12,
-    "letzter_versuch": 1779042826.2248023,
+    "status": "abgelaufen",
+    "versuche": 13,
+    "letzter_versuch": 1779043674.3929818,
     "konfidenz_original": 6,
     "konfidenz": 1
   },
@@ -3391,9 +3391,9 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1779033063.5405524,
     "bot": "Torflut-Bot",
-    "status": "offen",
-    "versuche": 12,
-    "letzter_versuch": 1779042844.4071207,
+    "status": "abgelaufen",
+    "versuche": 13,
+    "letzter_versuch": 1779043698.408401,
     "konfidenz_original": 6,
     "konfidenz": 1
   },
@@ -3408,9 +3408,9 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1779033267.9845252,
     "bot": "Torflut-Bot",
-    "status": "offen",
-    "versuche": 12,
-    "letzter_versuch": 1779042880.8574286,
+    "status": "abgelaufen",
+    "versuche": 13,
+    "letzter_versuch": 1779043734.7976992,
     "konfidenz_original": 6,
     "konfidenz": 1
   },
@@ -3425,11 +3425,13 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1779033573.1325166,
     "bot": "Torflut-Bot",
-    "status": "offen",
-    "versuche": 12,
-    "letzter_versuch": 1779042890.390288,
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1779044317.2491267,
     "konfidenz_original": 6,
-    "konfidenz": 1
+    "konfidenz": 1,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-17 20:59"
   },
   "712960_torflut": {
     "typ": "torflut",
@@ -3442,11 +3444,13 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1779033613.0528088,
     "bot": "Torflut-Bot",
-    "status": "offen",
-    "versuche": 12,
-    "letzter_versuch": 1779042907.447146,
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1779044353.3835373,
     "konfidenz_original": 6,
-    "konfidenz": 1
+    "konfidenz": 1,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-17 20:59"
   },
   "712992_torwart": {
     "typ": "torwart",
@@ -3479,10 +3483,10 @@
     "signal_zeit": 1779036727.6141121,
     "bot": "Torflut-Bot",
     "status": "offen",
-    "versuche": 8,
-    "letzter_versuch": 1779042948.1997619,
+    "versuche": 13,
+    "letzter_versuch": 1779046323.1366856,
     "konfidenz_original": 6,
-    "konfidenz": 2
+    "konfidenz": 1
   },
   "712993_torflut": {
     "typ": "torflut",
@@ -3496,10 +3500,10 @@
     "signal_zeit": 1779036805.9457333,
     "bot": "Torflut-Bot",
     "status": "offen",
-    "versuche": 8,
-    "letzter_versuch": 1779042954.1560762,
+    "versuche": 13,
+    "letzter_versuch": 1779046363.629945,
     "konfidenz_original": 6,
-    "konfidenz": 2
+    "konfidenz": 1
   },
   "713009_torwart": {
     "typ": "torwart",
@@ -3513,10 +3517,10 @@
     "signal_zeit": 1779037144.9401703,
     "bot": "Torwart-Bot",
     "status": "offen",
-    "versuche": 7,
-    "letzter_versuch": 1779042960.0789459,
+    "versuche": 12,
+    "letzter_versuch": 1779046369.8100758,
     "konfidenz_original": 6,
-    "konfidenz": 2
+    "konfidenz": 1
   },
   "713002_torflut": {
     "typ": "torflut",
@@ -3530,10 +3534,10 @@
     "signal_zeit": 1779037463.880642,
     "bot": "Torflut-Bot",
     "status": "offen",
-    "versuche": 7,
-    "letzter_versuch": 1779043005.603417,
+    "versuche": 12,
+    "letzter_versuch": 1779046374.697507,
     "konfidenz_original": 6,
-    "konfidenz": 3
+    "konfidenz": 1
   },
   "713010_comeback": {
     "typ": "comeback",
@@ -3550,10 +3554,10 @@
     "bot": "Comeback-Bot",
     "competition": "Super League",
     "status": "offen",
-    "versuche": 6,
-    "letzter_versuch": 1779043013.998911,
+    "versuche": 11,
+    "letzter_versuch": 1779046419.9031065,
     "konfidenz_original": 6,
-    "konfidenz": 3
+    "konfidenz": 1
   },
   "713006_ecken_over": {
     "typ": "ecken_over",
@@ -3587,10 +3591,10 @@
     "signal_zeit": 1779038624.79351,
     "bot": "Torflut-Bot",
     "status": "offen",
-    "versuche": 4,
-    "letzter_versuch": 1779042235.3696363,
+    "versuche": 10,
+    "letzter_versuch": 1779046426.4932795,
     "konfidenz_original": 6,
-    "konfidenz": 4
+    "konfidenz": 1
   },
   "713007_torflut": {
     "typ": "torflut",
@@ -3604,10 +3608,10 @@
     "signal_zeit": 1779038731.4642212,
     "bot": "Torflut-Bot",
     "status": "offen",
-    "versuche": 4,
-    "letzter_versuch": 1779042280.326386,
+    "versuche": 10,
+    "letzter_versuch": 1779046475.978063,
     "konfidenz_original": 6,
-    "konfidenz": 4
+    "konfidenz": 1
   },
   "713011_ecken": {
     "typ": "ecken",
@@ -3622,10 +3626,10 @@
     "signal_zeit": 1779038817.899895,
     "bot": "Ecken-Bot",
     "status": "offen",
-    "versuche": 4,
-    "letzter_versuch": 1779042288.0916731,
+    "versuche": 10,
+    "letzter_versuch": 1779046489.8528073,
     "konfidenz_original": 6,
-    "konfidenz": 4
+    "konfidenz": 1
   },
   "713024_comeback": {
     "typ": "comeback",
@@ -3642,10 +3646,10 @@
     "bot": "Comeback-Bot",
     "competition": "Super Lig",
     "status": "offen",
-    "versuche": 3,
-    "letzter_versuch": 1779042338.146481,
+    "versuche": 9,
+    "letzter_versuch": 1779046494.6385043,
     "konfidenz_original": 6,
-    "konfidenz": 5
+    "konfidenz": 1
   },
   "713027_comeback": {
     "typ": "comeback",
@@ -3662,10 +3666,10 @@
     "bot": "Comeback-Bot",
     "competition": "Super Lig",
     "status": "offen",
-    "versuche": 3,
-    "letzter_versuch": 1779042346.9989908,
+    "versuche": 9,
+    "letzter_versuch": 1779046541.9037313,
     "konfidenz_original": 6,
-    "konfidenz": 5
+    "konfidenz": 1
   },
   "713031_comeback": {
     "typ": "comeback",
@@ -3682,10 +3686,10 @@
     "bot": "Comeback-Bot",
     "competition": "LaLiga Santander",
     "status": "offen",
-    "versuche": 3,
-    "letzter_versuch": 1779042393.0738099,
+    "versuche": 9,
+    "letzter_versuch": 1779046550.3108442,
     "konfidenz_original": 6,
-    "konfidenz": 5
+    "konfidenz": 1
   },
   "713026_torwart": {
     "typ": "torwart",
@@ -3699,10 +3703,10 @@
     "signal_zeit": 1779039352.32133,
     "bot": "Torwart-Bot",
     "status": "offen",
-    "versuche": 3,
-    "letzter_versuch": 1779042402.321474,
+    "versuche": 9,
+    "letzter_versuch": 1779046558.8145957,
     "konfidenz_original": 6,
-    "konfidenz": 5
+    "konfidenz": 1
   },
   "713022_ecken_over": {
     "typ": "ecken_over",
@@ -3717,10 +3721,10 @@
     "signal_zeit": 1779039352.901829,
     "bot": "Ecken-\u00dcber-Bot",
     "status": "offen",
-    "versuche": 3,
-    "letzter_versuch": 1779042410.7599561,
+    "versuche": 9,
+    "letzter_versuch": 1779046605.0930862,
     "konfidenz_original": 6,
-    "konfidenz": 5
+    "konfidenz": 1
   },
   "713028_comeback": {
     "typ": "comeback",
@@ -3737,10 +3741,10 @@
     "bot": "Comeback-Bot",
     "competition": "LaLiga Santander",
     "status": "offen",
-    "versuche": 3,
-    "letzter_versuch": 1779042457.1333554,
+    "versuche": 9,
+    "letzter_versuch": 1779046614.7193656,
     "konfidenz_original": 6,
-    "konfidenz": 5
+    "konfidenz": 1
   },
   "713033_comeback": {
     "typ": "comeback",
@@ -3757,10 +3761,10 @@
     "bot": "Comeback-Bot",
     "competition": "LaLiga Santander",
     "status": "offen",
-    "versuche": 2,
-    "letzter_versuch": 1779042463.987367,
+    "versuche": 8,
+    "letzter_versuch": 1779046663.9083066,
     "konfidenz_original": 6,
-    "konfidenz": 5
+    "konfidenz": 1
   },
   "713036_comeback": {
     "typ": "comeback",
@@ -3777,10 +3781,10 @@
     "bot": "Comeback-Bot",
     "competition": "LaLiga Santander",
     "status": "offen",
-    "versuche": 2,
-    "letzter_versuch": 1779042510.2341044,
+    "versuche": 8,
+    "letzter_versuch": 1779046672.8132398,
     "konfidenz_original": 6,
-    "konfidenz": 6
+    "konfidenz": 1
   },
   "713043_torflut": {
     "typ": "torflut",
@@ -3794,10 +3798,10 @@
     "signal_zeit": 1779040269.7103474,
     "bot": "Torflut-Bot",
     "status": "offen",
-    "versuche": 2,
-    "letzter_versuch": 1779042521.6162055,
+    "versuche": 7,
+    "letzter_versuch": 1779046052.780492,
     "konfidenz_original": 6,
-    "konfidenz": 6
+    "konfidenz": 2
   },
   "713035_torflut": {
     "typ": "torflut",
@@ -3811,10 +3815,10 @@
     "signal_zeit": 1779040396.0372977,
     "bot": "Torflut-Bot",
     "status": "offen",
-    "versuche": 2,
-    "letzter_versuch": 1779042529.4834642,
+    "versuche": 7,
+    "letzter_versuch": 1779046066.849573,
     "konfidenz_original": 6,
-    "konfidenz": 6
+    "konfidenz": 2
   },
   "713068_torwart": {
     "typ": "torwart",
@@ -3827,6 +3831,168 @@
     "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
     "signal_zeit": 1779042587.4675949,
     "bot": "Torwart-Bot",
+    "status": "offen",
+    "versuche": 5,
+    "letzter_versuch": 1779046112.3785667,
+    "konfidenz_original": 6,
+    "konfidenz": 4
+  },
+  "713055_torflut": {
+    "typ": "torflut",
+    "match_id": "713055",
+    "home": "Catanzaro",
+    "away": "Palermo",
+    "hz1_tore": 3,
+    "grenze": 5,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1779044055.963731,
+    "bot": "Torflut-Bot",
+    "status": "offen",
+    "versuche": 3,
+    "letzter_versuch": 1779046122.3429632,
+    "konfidenz_original": 6,
+    "konfidenz": 6
+  },
+  "713059_torflut": {
+    "typ": "torflut",
+    "match_id": "713059",
+    "home": "Leones del Norte",
+    "away": "Mushuc Runa SC",
+    "hz1_tore": 3,
+    "grenze": 6,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1779044356.7763653,
+    "bot": "Torflut-Bot",
+    "status": "offen",
+    "versuche": 2,
+    "letzter_versuch": 1779046129.362973,
+    "konfidenz_original": 6,
+    "konfidenz": 6
+  },
+  "713073_torwart": {
+    "typ": "torwart",
+    "match_id": "713073",
+    "home": "Deportivo Garcilaso",
+    "away": "CD UT Cajamarca",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Primera Division",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1779044417.717621,
+    "bot": "Torwart-Bot",
+    "status": "offen",
+    "versuche": 2,
+    "letzter_versuch": 1779046174.7799025,
+    "konfidenz_original": 6,
+    "konfidenz": 6
+  },
+  "713060_ecken": {
+    "typ": "ecken",
+    "match_id": "713060",
+    "home": "OFK Beograd",
+    "away": "Vojvodina",
+    "hz1_ecken": 5,
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Super Liga",
+    "webhook": "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4",
+    "signal_zeit": 1779044711.013326,
+    "bot": "Ecken-Bot",
+    "status": "offen",
+    "versuche": 2,
+    "letzter_versuch": 1779046186.8406518
+  },
+  "713099_torwart": {
+    "typ": "torwart",
+    "match_id": "713099",
+    "home": "Brest",
+    "away": "Angers",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Ligue 1",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1779045818.3264568,
+    "bot": "Torwart-Bot",
+    "status": "offen",
+    "versuche": 0,
+    "letzter_versuch": 0
+  },
+  "713106_torwart": {
+    "typ": "torwart",
+    "match_id": "713106",
+    "home": "Paris FC",
+    "away": "Paris Saint Germain",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Ligue 1",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1779045873.5129886,
+    "bot": "Torwart-Bot",
+    "status": "offen",
+    "versuche": 0,
+    "letzter_versuch": 0
+  },
+  "713091_comeback": {
+    "typ": "comeback",
+    "match_id": "713091",
+    "home": "Cagliari",
+    "away": "Torino",
+    "rueckliegend": "Cagliari",
+    "score_signal": "0 - 1",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Serie A",
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1779046178.3085074,
+    "bot": "Comeback-Bot",
+    "competition": "Serie A",
+    "status": "offen",
+    "versuche": 0,
+    "letzter_versuch": 0
+  },
+  "713111_torwart": {
+    "typ": "torwart",
+    "match_id": "713111",
+    "home": "Bahia",
+    "away": "Gremio",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Serie A",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1779046183.085781,
+    "bot": "Torwart-Bot",
+    "status": "offen",
+    "versuche": 0,
+    "letzter_versuch": 0
+  },
+  "713100_torwart": {
+    "typ": "torwart",
+    "match_id": "713100",
+    "home": "Lille",
+    "away": "Auxerre",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Ligue 1",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1779046442.4867985,
+    "bot": "Torwart-Bot",
+    "status": "offen",
+    "versuche": 0,
+    "letzter_versuch": 0
+  },
+  "713092_torflut": {
+    "typ": "torflut",
+    "match_id": "713092",
+    "home": "Sassuolo",
+    "away": "US Lecce",
+    "hz1_tore": 3,
+    "grenze": 6,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1779046679.066777,
+    "bot": "Torflut-Bot",
     "status": "offen",
     "versuche": 0,
     "letzter_versuch": 0
