@@ -4309,8 +4309,27 @@
     "webhook": "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4",
     "signal_zeit": 1779059509.0058162,
     "bot": "Ecken-\u00dcber-Bot",
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1779061955.1072292,
+    "konfidenz_original": 6,
+    "konfidenz": 6,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-18 01:52"
+  },
+  "713203_torwart": {
+    "typ": "torwart",
+    "match_id": "713203",
+    "home": "Manta FC",
+    "away": "Emelec",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Liga Pro",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1779062397.350423,
+    "bot": "Torwart-Bot",
     "status": "offen",
-    "versuche": 10,
-    "letzter_versuch": 1779061218.986094
+    "versuche": 1,
+    "letzter_versuch": 1779062409.8272476
   }
 }
