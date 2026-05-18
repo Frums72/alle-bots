@@ -4601,8 +4601,12 @@
     "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
     "signal_zeit": 1779142962.179875,
     "bot": "Torwart-Bot",
-    "status": "offen",
-    "versuche": 7,
-    "letzter_versuch": 1779144061.859296
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1779145347.5881672,
+    "konfidenz_original": 6,
+    "konfidenz": 6,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-19 01:02"
   }
 }
