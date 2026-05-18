@@ -2893,5 +2893,17 @@
     "webhook": "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4",
     "signal_zeit": 1779059509.0033927,
     "bot": "Ecken-\u00dcber-Bot"
+  },
+  "713203_torwart": {
+    "typ": "torwart",
+    "match_id": "713203",
+    "home": "Manta FC",
+    "away": "Emelec",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Liga Pro",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1779062397.3474052,
+    "bot": "Torwart-Bot"
   }
 }
