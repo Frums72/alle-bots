@@ -3068,5 +3068,17 @@
     "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
     "signal_zeit": 1779128755.7531228,
     "bot": "Torflut-Bot"
+  },
+  "713303_torwart": {
+    "typ": "torwart",
+    "match_id": "713303",
+    "home": "Ponte Preta",
+    "away": "Londrina EC",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Serie B",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1779142962.1768508,
+    "bot": "Torwart-Bot"
   }
 }
