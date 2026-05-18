@@ -4328,8 +4328,12 @@
     "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
     "signal_zeit": 1779062397.350423,
     "bot": "Torwart-Bot",
-    "status": "offen",
-    "versuche": 1,
-    "letzter_versuch": 1779062409.8272476
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1779064791.7059612,
+    "konfidenz_original": 6,
+    "konfidenz": 6,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-18 02:39"
   }
 }
