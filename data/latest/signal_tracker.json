@@ -4354,5 +4354,20 @@
     "konfidenz": 6,
     "gewonnen": false,
     "ausgewertet_um": "2026-05-18 03:42"
+  },
+  "713217_torflut": {
+    "typ": "torflut",
+    "match_id": "713217",
+    "home": "South Melbourne",
+    "away": "Sunshine Georgies",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1779099539.7542949,
+    "bot": "Torflut-Bot",
+    "status": "offen",
+    "versuche": 8,
+    "letzter_versuch": 1779100855.6060297
   }
 }
