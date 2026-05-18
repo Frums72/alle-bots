@@ -4589,5 +4589,20 @@
     "konfidenz": 5,
     "gewonnen": false,
     "ausgewertet_um": "2026-05-18 21:15"
+  },
+  "713303_torwart": {
+    "typ": "torwart",
+    "match_id": "713303",
+    "home": "Ponte Preta",
+    "away": "Londrina EC",
+    "quote": null,
+    "einsatz": 10.0,
+    "liga": "Serie B",
+    "webhook": "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1",
+    "signal_zeit": 1779142962.179875,
+    "bot": "Torwart-Bot",
+    "status": "offen",
+    "versuche": 7,
+    "letzter_versuch": 1779144061.859296
   }
 }
