@@ -4608,5 +4608,20 @@
     "konfidenz": 6,
     "gewonnen": false,
     "ausgewertet_um": "2026-05-19 01:02"
+  },
+  "713309_torflut": {
+    "typ": "torflut",
+    "match_id": "713309",
+    "home": "Cd Santa Cruz",
+    "away": "Deportes Temuco",
+    "hz1_tore": 4,
+    "grenze": 6,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1779148179.9321287,
+    "bot": "Torflut-Bot",
+    "status": "offen",
+    "versuche": 4,
+    "letzter_versuch": 1779148778.2066314
   }
 }
