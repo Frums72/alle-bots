@@ -4627,5 +4627,24 @@
     "konfidenz": 6,
     "gewonnen": false,
     "ausgewertet_um": "2026-05-19 02:30"
+  },
+  "713313_torflut": {
+    "typ": "torflut",
+    "match_id": "713313",
+    "home": "Internacional Palmira",
+    "away": "Tigres FC",
+    "hz1_tore": 3,
+    "grenze": 4,
+    "quote": null,
+    "webhook": "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1",
+    "signal_zeit": 1779151784.6329148,
+    "bot": "Torflut-Bot",
+    "status": "ausgewertet",
+    "versuche": 14,
+    "letzter_versuch": 1779154165.0494359,
+    "konfidenz_original": 6,
+    "konfidenz": 6,
+    "gewonnen": false,
+    "ausgewertet_um": "2026-05-19 03:29"
   }
 }
