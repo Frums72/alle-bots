@@ -19,31 +19,31 @@ from datetime import datetime, timezone, timedelta
 # ============================================================
 #  KONFIGURATION
 # ============================================================
-API_KEY            = os.environ.get("LS_API_KEY",      "")
-API_SECRET         = os.environ.get("LS_API_SECRET",   "")
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_TOKEN",  "")
-TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID","")
+API_KEY            = os.environ.get("LS_API_KEY",      "7UCEtoXaDWZGMJlq")
+API_SECRET         = os.environ.get("LS_API_SECRET",   "UY9aIYsT3T0vGtQOntsRSp1vm0c8KxyE")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_TOKEN",  "8706066107:AAFAQhT3k0jhTZ7ep-VWHPlskOKJVvsfucQ")
+TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID","7272001004")
 
 # ── Discord Webhooks ─────────────────────────────────────────
 # Alle Webhooks MÜSSEN als Railway-Umgebungsvariablen gesetzt sein.
 # Kein hardcoded Fallback – verhindert dass alle Signale in denselben Kanal laufen.
-DISCORD_WEBHOOK_ECKEN    = os.environ.get("DISCORD_WEBHOOK_ECKEN",    "")
-DISCORD_WEBHOOK_KARTEN   = os.environ.get("DISCORD_WEBHOOK_KARTEN",   "")
-DISCORD_WEBHOOK_TORWART  = os.environ.get("DISCORD_WEBHOOK_TORWART",  "")
-DISCORD_WEBHOOK_BILANZ   = os.environ.get("DISCORD_WEBHOOK_BILANZ",   "")
-DISCORD_WEBHOOK_DRUCK    = os.environ.get("DISCORD_WEBHOOK_DRUCK",    "")
-DISCORD_WEBHOOK_COMEBACK = os.environ.get("DISCORD_WEBHOOK_COMEBACK", "")
-DISCORD_WEBHOOK_TORFLUT  = os.environ.get("DISCORD_WEBHOOK_TORFLUT",  "")
-DISCORD_WEBHOOK_ROTKARTE = os.environ.get("DISCORD_WEBHOOK_ROTKARTE", "")
-DISCORD_WEBHOOK_HZ1TORE  = os.environ.get("DISCORD_WEBHOOK_HZ1TORE",  "")
-DISCORD_WEBHOOK_VZTORE   = os.environ.get("DISCORD_WEBHOOK_VZTORE",   "")
-DISCORD_WEBHOOK_TORE     = os.environ.get("DISCORD_WEBHOOK_TORE",     "")
-DISCORD_WEBHOOK_VALUE    = os.environ.get("DISCORD_WEBHOOK_VALUE",    "")
-DISCORD_WEBHOOK_CS2      = os.environ.get("DISCORD_WEBHOOK_CS2",      "")
+DISCORD_WEBHOOK_ECKEN    = os.environ.get("DISCORD_WEBHOOK_ECKEN",    "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4")
+DISCORD_WEBHOOK_KARTEN   = os.environ.get("DISCORD_WEBHOOK_KARTEN",   "https://discord.com/api/webhooks/1501250542788280451/BZ6r8Y2SEDPgya9skt8Gyzbsoetvq0yPY6pWG5HrUzK9moeL-RXYWAiEwWuIlEy7GBfM")
+DISCORD_WEBHOOK_TORWART  = os.environ.get("DISCORD_WEBHOOK_TORWART",  "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1")
+DISCORD_WEBHOOK_BILANZ   = os.environ.get("DISCORD_WEBHOOK_BILANZ",   "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1")
+DISCORD_WEBHOOK_DRUCK    = os.environ.get("DISCORD_WEBHOOK_DRUCK",    "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1")
+DISCORD_WEBHOOK_COMEBACK = os.environ.get("DISCORD_WEBHOOK_COMEBACK", "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1")
+DISCORD_WEBHOOK_TORFLUT  = os.environ.get("DISCORD_WEBHOOK_TORFLUT",  "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1")
+DISCORD_WEBHOOK_ROTKARTE = os.environ.get("DISCORD_WEBHOOK_ROTKARTE", "https://discord.com/api/webhooks/1501250542788280451/BZ6r8Y2SEDPgya9skt8Gyzbsoetvq0yPY6pWG5HrUzK9moeL-RXYWAiEwWuIlEy7GBfM")
+DISCORD_WEBHOOK_HZ1TORE  = os.environ.get("DISCORD_WEBHOOK_HZ1TORE",  "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1")
+DISCORD_WEBHOOK_VZTORE   = os.environ.get("DISCORD_WEBHOOK_VZTORE",   "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1")
+DISCORD_WEBHOOK_TORE     = os.environ.get("DISCORD_WEBHOOK_TORE",     "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1")
+DISCORD_WEBHOOK_VALUE    = os.environ.get("DISCORD_WEBHOOK_VALUE",    "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1")
+DISCORD_WEBHOOK_CS2      = os.environ.get("DISCORD_WEBHOOK_CS2",      "https://discord.com/api/webhooks/1504397240741924966/62oifCRnXt73yO2u4qucENYuVLAgJf7rIgRDhaTVVG8y1j_nuVc4eyyUFakqI-UGZ0tb")
 
-ODDS_API_KEY       = os.environ.get("ODDS_API_KEY",   "")
+ODDS_API_KEY       = os.environ.get("ODDS_API_KEY",   "866948de5d6c34ca51faf6bd77e0bb2a")
 PANDASCORE_API_KEY = os.environ.get("PANDASCORE_KEY", "")
-FOOTBALLDATA_KEY   = os.environ.get("FOOTBALLDATA_KEY","")
+FOOTBALLDATA_KEY   = os.environ.get("FOOTBALLDATA_KEY","e17f09662062462b850a73f857e1f974")
 ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_KEY",  "")
 CLAUDE_MAX_PRO_TAG = 3
 
