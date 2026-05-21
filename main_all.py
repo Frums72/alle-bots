@@ -19,31 +19,31 @@ from datetime import datetime, timezone, timedelta
 # ============================================================
 #  KONFIGURATION
 # ============================================================
-API_KEY            = os.environ.get("LS_API_KEY",      "7UCEtoXaDWZGMJlq")
-API_SECRET         = os.environ.get("LS_API_SECRET",   "UY9aIYsT3T0vGtQOntsRSp1vm0c8KxyE")
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_TOKEN",  "8706066107:AAFAQhT3k0jhTZ7ep-VWHPlskOKJVvsfucQ")
-TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID","7272001004")
+API_KEY            = os.environ.get("LS_API_KEY",      "")
+API_SECRET         = os.environ.get("LS_API_SECRET",   "")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_TOKEN",  "")
+TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID","")
 
 # ── Discord Webhooks ─────────────────────────────────────────
 # Alle Webhooks MÜSSEN als Railway-Umgebungsvariablen gesetzt sein.
 # Kein hardcoded Fallback – verhindert dass alle Signale in denselben Kanal laufen.
-DISCORD_WEBHOOK_ECKEN    = os.environ.get("DISCORD_WEBHOOK_ECKEN",    "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4")
-DISCORD_WEBHOOK_KARTEN   = os.environ.get("DISCORD_WEBHOOK_KARTEN",   "https://discord.com/api/webhooks/1501250542788280451/BZ6r8Y2SEDPgya9skt8Gyzbsoetvq0yPY6pWG5HrUzK9moeL-RXYWAiEwWuIlEy7GBfM")
-DISCORD_WEBHOOK_TORWART  = os.environ.get("DISCORD_WEBHOOK_TORWART",  "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1")
-DISCORD_WEBHOOK_BILANZ   = os.environ.get("DISCORD_WEBHOOK_BILANZ",   "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1")
-DISCORD_WEBHOOK_DRUCK    = os.environ.get("DISCORD_WEBHOOK_DRUCK",    "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1")
-DISCORD_WEBHOOK_COMEBACK = os.environ.get("DISCORD_WEBHOOK_COMEBACK", "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1")
-DISCORD_WEBHOOK_TORFLUT  = os.environ.get("DISCORD_WEBHOOK_TORFLUT",  "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1")
-DISCORD_WEBHOOK_ROTKARTE = os.environ.get("DISCORD_WEBHOOK_ROTKARTE", "https://discord.com/api/webhooks/1501250542788280451/BZ6r8Y2SEDPgya9skt8Gyzbsoetvq0yPY6pWG5HrUzK9moeL-RXYWAiEwWuIlEy7GBfM")
-DISCORD_WEBHOOK_HZ1TORE  = os.environ.get("DISCORD_WEBHOOK_HZ1TORE",  "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1")
-DISCORD_WEBHOOK_VZTORE   = os.environ.get("DISCORD_WEBHOOK_VZTORE",   "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1")
-DISCORD_WEBHOOK_TORE     = os.environ.get("DISCORD_WEBHOOK_TORE",     "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1")
-DISCORD_WEBHOOK_VALUE    = os.environ.get("DISCORD_WEBHOOK_VALUE",    "https://discord.com/api/webhooks/1501252266630316163/aBo4o0HDN_Fh3eVj-WEvRZlzo970OQJcO1g6vKk4gJJ6hfRxco98m0p5KXDEQ-NBEZr1")
-DISCORD_WEBHOOK_CS2      = os.environ.get("DISCORD_WEBHOOK_CS2",      "https://discord.com/api/webhooks/1504397240741924966/62oifCRnXt73yO2u4qucENYuVLAgJf7rIgRDhaTVVG8y1j_nuVc4eyyUFakqI-UGZ0tb")
+DISCORD_WEBHOOK_ECKEN    = os.environ.get("DISCORD_WEBHOOK_ECKEN",    "")
+DISCORD_WEBHOOK_KARTEN   = os.environ.get("DISCORD_WEBHOOK_KARTEN",   "")
+DISCORD_WEBHOOK_TORWART  = os.environ.get("DISCORD_WEBHOOK_TORWART",  "")
+DISCORD_WEBHOOK_BILANZ   = os.environ.get("DISCORD_WEBHOOK_BILANZ",   "")
+DISCORD_WEBHOOK_DRUCK    = os.environ.get("DISCORD_WEBHOOK_DRUCK",    "")
+DISCORD_WEBHOOK_COMEBACK = os.environ.get("DISCORD_WEBHOOK_COMEBACK", "")
+DISCORD_WEBHOOK_TORFLUT  = os.environ.get("DISCORD_WEBHOOK_TORFLUT",  "")
+DISCORD_WEBHOOK_ROTKARTE = os.environ.get("DISCORD_WEBHOOK_ROTKARTE", "")
+DISCORD_WEBHOOK_HZ1TORE  = os.environ.get("DISCORD_WEBHOOK_HZ1TORE",  "")
+DISCORD_WEBHOOK_VZTORE   = os.environ.get("DISCORD_WEBHOOK_VZTORE",   "")
+DISCORD_WEBHOOK_TORE     = os.environ.get("DISCORD_WEBHOOK_TORE",     "")
+DISCORD_WEBHOOK_VALUE    = os.environ.get("DISCORD_WEBHOOK_VALUE",    "")
+DISCORD_WEBHOOK_CS2      = os.environ.get("DISCORD_WEBHOOK_CS2",      "")
 
-ODDS_API_KEY       = os.environ.get("ODDS_API_KEY",   "866948de5d6c34ca51faf6bd77e0bb2a")
+ODDS_API_KEY       = os.environ.get("ODDS_API_KEY",   "")
 PANDASCORE_API_KEY = os.environ.get("PANDASCORE_KEY", "")
-FOOTBALLDATA_KEY   = os.environ.get("FOOTBALLDATA_KEY","e17f09662062462b850a73f857e1f974")
+FOOTBALLDATA_KEY   = os.environ.get("FOOTBALLDATA_KEY","")
 ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_KEY",  "")
 CLAUDE_MAX_PRO_TAG = 3
 
@@ -2260,6 +2260,8 @@ def bot_torwart():
                 shots_ges  = shots_home+shots_away
                 if shots_ges < MIN_SHOTS_ON_TARGET:
                     continue
+                if not signal_spam_check():
+                    continue
                 if not tipp_erlaubt(match_id,"Torwart-Bot"):
                     continue
                 saves_home = stats["saves_home"]
@@ -2292,6 +2294,7 @@ def bot_torwart():
                     "quote":quote,"einsatz":einsatz,"liga":comp,
                     "webhook":DISCORD_WEBHOOK_TORWART,"signal_zeit":time.time(),"bot":"Torwart-Bot"
                 })
+                signal_eintragen(match_id,"torwart",home,away,comp,shots_ges,1,quote,einsatz)
                 print(f"  [Torwart-Bot] ✅ {home} vs {away} | {shots_ges} Schüsse")
                 time.sleep(0.5)
             bot_fehler_reset("Torwart-Bot")
@@ -2318,6 +2321,7 @@ def bot_druck():
                     continue
                 if not signal_spam_check():
                     continue
+                # v56: SOFORT sperren VOR allen API-Calls – kein Race-Window
                 notified_druck.add(match_id)   # sofort sperren, VOR allen API-Calls
                 notified_sets_speichern()
                 # ─────────────────────────────────────────────────────────
@@ -2374,6 +2378,7 @@ def bot_druck():
                     "quote":quote,"einsatz":einsatz,"liga":comp,
                     "webhook":DISCORD_WEBHOOK_DRUCK,"signal_zeit":time.time(),"bot":"Druck-Bot"
                 })
+                signal_eintragen(match_id,"druck",home,away,comp,ecken_stark,ecken_schwach,quote,einsatz)
                 print(f"  [Druck-Bot] ✅ {home} vs {away} | {druck_team} dominiert ({ecken_stark}:{ecken_schwach})")
                 time.sleep(0.5)
             bot_fehler_reset("Druck-Bot")
@@ -2459,6 +2464,7 @@ def bot_comeback():
                     "webhook":DISCORD_WEBHOOK_COMEBACK,"signal_zeit":time.time(),
                     "bot":"Comeback-Bot","competition":comp
                 })
+                signal_eintragen(match_id,"comeback",home,away,comp,shots_r,1,quote,einsatz)
                 print(f"  [Comeback-Bot] ✅ {home} vs {away} | {rueckliegend} dominiert trotz Rückstand")
                 time.sleep(0.5)
             bot_fehler_reset("Comeback-Bot")
@@ -2515,17 +2521,20 @@ def bot_torflut():
                            f"⚽ Tore HZ1: <b>{tore_hz1}</b>\n"
                            f"🎯 Tipp: Über <b>{grenze}</b> Tore im Gesamtspiel{ql}\n"
                            f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
+                if not signal_spam_check():
+                    continue
+                if not tipp_erlaubt(match_id,"Torflut-Bot"):
+                    continue
                 send_telegram(msg)
                 send_discord_embed(DISCORD_WEBHOOK_TORFLUT,
                     discord_torflut_tipp(home,away,comp,country,score_str,tore_hz1,grenze,quote,shots_tf,poss_th,poss_ta))
-                if not tipp_erlaubt(match_id,"Torflut-Bot"):
-                    continue
                 notified_torflut.add(match_id)
                 beobachtung_hinzufuegen(match_id,{
                     "typ":"torflut","match_id":match_id,"home":home,"away":away,
                     "hz1_tore":tore_hz1,"grenze":grenze,"quote":quote,
                     "webhook":DISCORD_WEBHOOK_TORFLUT,"signal_zeit":time.time(),"bot":"Torflut-Bot"
                 })
+                signal_eintragen(match_id,"torflut",home,away,comp,tore_hz1,int(grenze),quote,einsatz)
                 print(f"  [Torflut-Bot] ✅ {home} vs {away} | {tore_hz1} Tore in HZ1")
                 time.sleep(0.5)
             bot_fehler_reset("Torflut-Bot")
@@ -2678,6 +2687,8 @@ def bot_corner_rush():
                 # ── v55: SOFORT sperren – ein Signal pro Spiel ────────
                 if match_id in notified_corner_rush:
                     continue
+                notified_corner_rush.add(match_id)   # sofort sperren – kein Race-Window
+                notified_sets_speichern()
                 # ──────────────────────────────────────────────────────
                 home    = game.get("home",{}).get("name","?")
                 away    = game.get("away",{}).get("name","?")
@@ -2706,7 +2717,6 @@ def bot_corner_rush():
                 if not rush_team:
                     continue
                 # ── v55: VOR dem Senden in notified eintragen ─────────
-                notified_corner_rush.add(match_id)
                 notified_sets_speichern()
                 # ──────────────────────────────────────────────────────
                 zeit_diff = round((now_ts-alt["ts"])/60,1)
@@ -4714,6 +4724,670 @@ def bot_health_check_server():
         time.sleep(3600)
 
 # ============================================================
+#  AB TESTING
+# ============================================================
+
+AB_FILTER = {
+    "ecken_unter": {
+        "A": {"max_hz1_corners": 5, "label": "≤5 HZ1"},
+        "B": {"max_hz1_corners": 4, "label": "≤4 HZ1"},
+        "ergebnisse": {"A": {"g":0,"total":0}, "B": {"g":0,"total":0}},
+    }
+}
+AB_DATEI = "ab_test.json"
+
+def ab_test_laden():
+    import json, os as _os
+    global AB_FILTER
+    if _os.path.exists(AB_DATEI):
+        try:
+            with open(AB_DATEI) as f: AB_FILTER = json.load(f)
+        except Exception: pass
+
+def ab_test_speichern():
+    import json
+    try:
+        with open(AB_DATEI,"w") as f: json.dump(AB_FILTER,f,indent=2)
+    except Exception: pass
+
+def ab_test_variante(test_name):
+    if test_name not in AB_FILTER: return "A"
+    erg = AB_FILTER[test_name]["ergebnisse"]
+    return "A" if erg["A"]["total"] <= erg["B"]["total"] else "B"
+
+def ab_test_auswerten():
+    for test,data in AB_FILTER.items():
+        erg = data["ergebnisse"]
+        if erg["A"]["total"]<20 or erg["B"]["total"]<20: continue
+        q_a = erg["A"]["g"]/erg["A"]["total"]
+        q_b = erg["B"]["g"]/erg["B"]["total"]
+        w   = "A" if q_a>=q_b else "B"
+        send_telegram(f"🧪 <b>A/B Test: {test}</b>\nA: {round(q_a*100)}% | B: {round(q_b*100)}%\n🏆 Gewinner: <b>{w}</b>")
+
+# ============================================================
+#  VIRTUELLE KONTEN
+# ============================================================
+
+VIRTUELLE_KONTEN = {
+    "safe":     {"name":"Shield Safe",   "bots":["ecken","hz1tore","torwart"],   "bankroll":100.0,"start":100.0},
+    "highrise": {"name":"Flash High",    "bots":["comeback","druck","rotkarte"], "bankroll":50.0, "start":50.0},
+    "value":    {"name":"Diamond Value", "bots":["value","arbitrage","sharp"],   "bankroll":75.0, "start":75.0},
+}
+VK_DATEI = "virtuelle_konten.json"
+
+def vk_laden():
+    import json, os as _os
+    global VIRTUELLE_KONTEN
+    if _os.path.exists(VK_DATEI):
+        try:
+            with open(VK_DATEI) as f: VIRTUELLE_KONTEN = json.load(f)
+        except Exception: pass
+
+def vk_speichern():
+    import json
+    try:
+        with open(VK_DATEI,"w") as f: json.dump(VIRTUELLE_KONTEN,f,indent=2)
+    except Exception: pass
+
+def vk_update(typ, gewonnen, quote=1.85):
+    konto = next((k for k,v in VIRTUELLE_KONTEN.items() if typ in v.get("bots",[])), "safe")
+    br    = VIRTUELLE_KONTEN[konto]["bankroll"]
+    eins  = min(br*0.05, 10)
+    VIRTUELLE_KONTEN[konto]["bankroll"] = round(br+eins*(quote-1) if gewonnen else max(1,br-eins),2)
+    vk_speichern()
+
+def vk_status_text():
+    zeilen = []
+    for k,v in VIRTUELLE_KONTEN.items():
+        diff = round(v["bankroll"]-v["start"],2)
+        zeilen.append(f"{v['name']}: <b>{v['bankroll']}€</b> ({'+' if diff>=0 else ''}{diff}€)")
+    return "\n".join(zeilen)
+
+# ============================================================
+#  RANG & XP SYSTEM
+# ============================================================
+
+XP_QUELLEN = {"tipp_gewonnen":50,"tipp_verloren":10,"daily_checkin":20,
+               "einladung":200,"streak_5":50,"streak_10":150,"woche_gewonnen":100}
+LEVEL_STUFEN = [
+    (0,1,"🆕 Newcomer"),(100,2,"🎯 Einsteiger"),(300,3,"📊 Tipper"),
+    (600,4,"🔍 Analyst"),(1000,5,"🥉 Bronze Tipster"),(1500,6,"📈 Fortgeschrittener"),
+    (2200,7,"🎲 Tipp-Profi"),(3000,8,"🥈 Silber Tipster"),(4000,9,"🔥 Heißer Draht"),
+    (5500,10,"🥇 Gold Tipster"),(7500,11,"💡 Stratege"),(10000,12,"⚡ Streak Hunter"),
+    (13000,13,"🎯 Sniper"),(17000,14,"💎 Diamond Tipster"),(22000,15,"🌟 Superstar"),
+]
+RANG_DATEI   = "rang_system.json"
+_rang_daten  = {}
+_checkin_heute = {}
+
+def rang_laden():
+    import json, os as _os
+    global _rang_daten
+    if _os.path.exists(RANG_DATEI):
+        try:
+            with open(RANG_DATEI) as f: _rang_daten = json.load(f)
+            print(f"  [Rang] {len(_rang_daten)} User geladen")
+        except Exception as e: print(f"  [Rang] Fehler: {e}")
+
+def rang_speichern():
+    import json
+    try:
+        with open(RANG_DATEI,"w") as f: json.dump(_rang_daten,f,indent=2)
+    except Exception: pass
+
+def berechne_level(xp):
+    akt = LEVEL_STUFEN[0]
+    for min_xp,level,name in LEVEL_STUFEN:
+        if xp>=min_xp: akt = (min_xp,level,name)
+    idx = next((i for i,s in enumerate(LEVEL_STUFEN) if s[1]==akt[1]),0)
+    bis = LEVEL_STUFEN[idx+1][0]-xp if idx<len(LEVEL_STUFEN)-1 else 0
+    return akt[1],akt[2],bis
+
+def gib_xp(user_id, username, xp, grund):
+    if user_id not in _rang_daten:
+        _rang_daten[user_id] = {"name":username,"xp":0,"level":1,"level_name":"🆕 Newcomer",
+                                 "gewinne":0,"verluste":0,"streak":0}
+    d = _rang_daten[user_id]; d["name"] = username; altes = d["level"]
+    d["xp"] += xp
+    nl,nname,_ = berechne_level(d["xp"]); d["level"]=nl; d["level_name"]=nname
+    rang_speichern()
+    if nl > altes:
+        send_telegram_gruppe(f"🎉 <b>LEVEL UP! {username}</b>\n{altes}→<b>{nl}</b> {nname}")
+    return d
+
+def mache_daily_checkin(user_id, username):
+    heute_str = de_now().strftime("%Y-%m-%d")
+    if _checkin_heute.get(user_id)==heute_str: return f"⏰ Heute bereits eingecheckt!"
+    _checkin_heute[user_id] = heute_str
+    d = gib_xp(user_id,username,XP_QUELLEN["daily_checkin"],"daily_checkin")
+    return f"✅ +{XP_QUELLEN['daily_checkin']} XP | Gesamt: {d['xp']:,} | {d['level_name']}"
+
+def xp_rangliste():
+    sort = sorted(_rang_daten.items(),key=lambda x:x[1].get("xp",0),reverse=True)[:10]
+    medals = ["🥇","🥈","🥉"]
+    return "\n".join([f"{medals[i] if i<3 else str(i+1)+'.'} <b>{d.get('name','?')}</b> Lv.{d.get('level',1)} | {d.get('xp',0):,} XP"
+                      for i,(uid,d) in enumerate(sort)]) or "Noch keine Einträge"
+
+def wöchentliche_xp_auswertung(): pass
+
+# ============================================================
+#  COMMUNITY SYSTEM
+# ============================================================
+
+COMMUNITY_DATEI    = "community_system.json"
+_community_system  = {"einladungen":{},"challenges":{},"rollen":{}}
+
+def community_system_laden():
+    import json, os as _os
+    global _community_system
+    if not _os.path.exists(COMMUNITY_DATEI): return
+    try:
+        with open(COMMUNITY_DATEI) as f: _community_system.update(json.load(f))
+        print("  [Community] System geladen")
+    except Exception as e: print(f"  [Community] Fehler: {e}")
+
+def community_system_speichern():
+    import json
+    try:
+        with open(COMMUNITY_DATEI,"w") as f: json.dump(_community_system,f,indent=2)
+    except Exception: pass
+
+# ============================================================
+#  DISCORD VOTE SYSTEM
+# ============================================================
+
+_discord_votes  = {}
+_discord_punkte = {}
+DISCORD_VOTE_DATEI = "discord_votes.json"
+
+def discord_votes_laden():
+    import json, os as _os
+    global _discord_votes, _discord_punkte
+    for datei,ziel in [(DISCORD_VOTE_DATEI,"votes"),("discord_punkte.json","punkte")]:
+        if _os.path.exists(datei):
+            try:
+                with open(datei) as f:
+                    d = json.load(f)
+                if ziel=="votes": _discord_votes=d
+                else: _discord_punkte=d
+            except Exception: pass
+
+def discord_votes_speichern():
+    import json
+    for datei,daten in [(DISCORD_VOTE_DATEI,_discord_votes),("discord_punkte.json",_discord_punkte)]:
+        try:
+            with open(datei,"w") as f: json.dump(daten,f)
+        except Exception: pass
+
+def discord_vote_auswerten(signal_key, gewonnen):
+    for uid,vote in _discord_votes.get(signal_key,{}).items():
+        richtig = (vote=="ja" and gewonnen) or (vote=="nein" and not gewonnen)
+        _discord_punkte.setdefault(uid,{"punkte":0,"gewinne":0,"verluste":0,"name":"?"})
+        d = _discord_punkte[uid]
+        if richtig: d["punkte"]+=10; d["gewinne"]+=1
+        else:       d["punkte"]=max(0,d["punkte"]-3); d["verluste"]+=1
+    discord_votes_speichern()
+
+def sende_discord_rangliste():
+    if not _discord_punkte: return
+    sort = sorted(_discord_punkte.items(),key=lambda x:x[1].get("punkte",0),reverse=True)[:10]
+    medals = ["🥇","🥈","🥉"]
+    felder = [{"name":f"{medals[i] if i<3 else str(i+1)+'.'} {d.get('name','User')}",
+               "value":f"{d['punkte']} Pkt | {d['gewinne']}✅ {d['verluste']}❌","inline":True}
+              for i,(uid,d) in enumerate(sort)]
+    send_discord_embed(DISCORD_WEBHOOK_BILANZ,{"title":"🏆 Discord Rangliste","color":0xFFD700,
+        "fields":felder,"footer":{"text":f"BetlabLIVE • {heute()}"}})
+
+def sende_einladungs_leaderboard():
+    einladungen = _community_system.get("einladungen",{})
+    if not einladungen: return
+    sort    = sorted(einladungen.items(),key=lambda x:x[1].get("count",0),reverse=True)[:10]
+    medals  = ["🥇","🥈","🥉"]
+    zeilen  = [f"{medals[i] if i<3 else str(i+1)+'.'} <b>{d.get('name','?')}</b>: {d.get('count',0)}"
+               for i,(uid,d) in enumerate(sort)]
+    msg = "📊 <b>Einladungs-Leaderboard</b>\n━━━━━━━━━━━━━━━━━━━━\n"+"\n".join(zeilen)
+    send_telegram(msg); send_telegram_gruppe(msg)
+
+def sende_monatliche_challenge():
+    monat = de_now().strftime("%Y-%m")
+    if monat in _community_system.get("challenges",{}): return
+    _community_system.setdefault("challenges",{})[monat] = {"teilnehmer":{},"aktiv":True}
+    community_system_speichern()
+    msg = (f"🏆 <b>Monatliche Challenge startet!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+           f"📅 {de_now().strftime('%B %Y')}\n💰 Wer macht aus 10€ am meisten?\n"
+           f"🎁 Preise: Premium, Analyse, VIP\n━━━━━━━━━━━━━━━━━━━━\n/challenge join")
+    send_telegram(msg); send_telegram_gruppe(msg)
+
+# ============================================================
+#  KONFIDENZ-KALIBRIERUNG
+# ============================================================
+
+def kalibriere_konfidenz():
+    with _tracker_lock:
+        alle = [s for s in _signal_tracker.values()
+                if s.get("status")=="ausgewertet" and s.get("konfidenz")]
+    if len(alle)<100: return {}
+    nach_k = {}
+    for s in alle:
+        k = s.get("konfidenz",6)
+        nach_k.setdefault(k,{"gewonnen":0,"total":0})
+        nach_k[k]["total"] += 1
+        if s.get("gewonnen"): nach_k[k]["gewonnen"] += 1
+    meldungen = []
+    for k,data in sorted(nach_k.items()):
+        if data["total"]<10: continue
+        echte = round(data["gewonnen"]/data["total"]*100)
+        erw   = k*10
+        if abs(echte-erw)>=15:
+            meldungen.append(f"{'⚠️' if echte<erw else '✅'} K{k}/10: erwartet {erw}%, echt {echte}%")
+    if meldungen:
+        send_telegram("🧠 <b>Konfidenz-Kalibrierung</b>\n━━━━━━━━━━━━━━━━━━━━\n"+"\n".join(meldungen))
+
+# ============================================================
+#  COMPOUND BANKROLL SIMULATION
+# ============================================================
+
+def simuliere_compound_bankroll(startkapital=None, wochen=20):
+    if startkapital is None: startkapital = bankroll_laden()
+    gw  = sum(statistik[t]["gewonnen"] for t in statistik)
+    vl  = sum(statistik[t]["verloren"] for t in statistik)
+    ges = gw+vl
+    if ges<10: return {"ausreichend":False}
+    p     = gw/ges; q_avg = 1.85
+    kelly = max(0,min((p*q_avg-1)/(q_avg-1),0.05))
+    tpw   = max(1,ges//max(1,de_now().isocalendar()[1]))
+    br    = startkapital; verlauf = [round(br,2)]
+    for _ in range(wochen):
+        for _ in range(tpw):
+            eins = br*kelly
+            br   = round(br+eins*(q_avg-1) if p>0.5 else max(1,br-eins),2)
+        verlauf.append(br)
+    return {"ausreichend":True,"start":round(startkapital,2),"end":br,
+            "rendite_pct":round((br-startkapital)/startkapital*100,1),
+            "kelly_pct":round(kelly*100,1),"wochen":wochen,"verlauf":verlauf,
+            "trefferquote":round(p*100,1)}
+
+# ============================================================
+#  SIGNAL-ARCHIV SUCHE
+# ============================================================
+
+def suche_signale(suchbegriff):
+    sb = suchbegriff.lower().strip()
+    with _tracker_lock:
+        treffer = [s for s in _signal_tracker.values()
+                   if any(sb in (s.get(k) or "").lower()
+                          for k in ("home","away","competition","liga"))]
+    if not treffer: return f"❌ Keine Signale: <b>{suchbegriff}</b>"
+    sort = sorted(treffer,key=lambda x:x.get("signal_zeit",0),reverse=True)[:10]
+    import datetime
+    zeilen = [f"🔍 <b>'{suchbegriff}'</b> ({len(treffer)} gesamt)\n━━━━━━━━━━━━━━━━━━━━"]
+    for s in sort:
+        try: dt = datetime.datetime.fromtimestamp(s.get("signal_zeit",0)).strftime("%d.%m %H:%M")
+        except: dt = "?"
+        e = "✅" if s.get("gewonnen") else ("❌" if s.get("status")=="ausgewertet" else "⏳")
+        zeilen.append(f"{e} {dt} | {s.get('home','?')} vs {s.get('away','?')} | {s.get('typ','?')}")
+    return "\n".join(zeilen)
+
+# ============================================================
+#  WETTMARKT-EFFIZIENZ
+# ============================================================
+
+def berechne_markt_effizienz():
+    with _tracker_lock:
+        tipps = [s for s in _signal_tracker.values()
+                 if s.get("typ") in ("value","arbitrage") and s.get("status")=="ausgewertet"]
+    if len(tipps)<10: return {"ausreichend":False}
+    kat = {"sehr_gut":[t for t in tipps if t.get("ev",0)>=0.15],
+           "gut":     [t for t in tipps if 0.08<=t.get("ev",0)<0.15],
+           "gering":  [t for t in tipps if t.get("ev",0)<0.08]}
+    erg = {}
+    for name,lst in kat.items():
+        if not lst: continue
+        gw  = sum(1 for t in lst if t.get("gewonnen"))
+        roi = round(sum((t.get("quote",1)-1) if t.get("gewonnen") else -1 for t in lst)/len(lst)*100,1)
+        erg[name] = {"pct":round(gw/len(lst)*100),"roi":roi,"tipps":len(lst)}
+    return {"ausreichend":True,"kategorien":erg}
+
+# ============================================================
+#  PATTERN RECOGNITION
+# ============================================================
+
+_pattern_cache = {}
+PATTERN_TTL    = 7200
+
+def analysiere_team_muster(team_id, team_name):
+    now = time.time()
+    if team_id in _pattern_cache and now-_pattern_cache[team_id]["ts"]<PATTERN_TTL:
+        return _pattern_cache[team_id]["data"]
+    try:
+        params = {**LS_AUTH,"team_id":team_id,"number":10}
+        resp   = api_get_with_retry(f"{LS_BASE}/matches/history.json",params)
+        matches= resp.json().get("data",{}).get("match",[]) or []
+        if len(matches)<5: return {}
+        hz1,hz2 = [],[]
+        for m in matches:
+            svz = (m.get("scores") or {}).get("score","")
+            shz = (m.get("scores") or {}).get("ht_score","")
+            if not svz or not shz: continue
+            hv,av = parse_score(svz); hh,ah = parse_score(shz)
+            hz1.append(hh+ah); hz2.append((hv-hh)+(av-ah))
+        a1 = round(sum(hz1)/len(hz1),2) if hz1 else 0
+        a2 = round(sum(hz2)/len(hz2),2) if hz2 else 0
+        result = {"team":team_name,"avg_hz1_tore":a1,"avg_hz2_tore":a2,
+                  "hz2_staerker":a2>a1*1.3,"spiele":len(matches)}
+        _pattern_cache[team_id] = {"data":result,"ts":now}
+        return result
+    except Exception as e: print(f"  [Pattern] {e}"); return {}
+
+# ============================================================
+#  EXCEL EXPORT
+# ============================================================
+
+def erstelle_excel_export():
+    try:
+        import openpyxl
+        from openpyxl.styles import PatternFill, Font
+        wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Tipps"
+        header = ["Datum","Zeit","Liga","Heim","Gast","Typ","Quote","Status","Ergebnis"]
+        for i,h in enumerate(header,1):
+            c = ws.cell(row=1,column=i,value=h)
+            c.fill = PatternFill("solid",fgColor="1F3A5F"); c.font = Font(bold=True,color="FFFFFF")
+        grenze = time.time()-30*24*3600
+        with _tracker_lock:
+            sigs = sorted([s for s in _signal_tracker.values() if s.get("signal_zeit",0)>=grenze],
+                          key=lambda x:x.get("signal_zeit",0),reverse=True)
+        for row,s in enumerate(sigs,2):
+            import datetime as _dt
+            try: d=_dt.datetime.fromtimestamp(s.get("signal_zeit",0)); dat=d.strftime("%d.%m.%Y"); uhr=d.strftime("%H:%M")
+            except: dat=uhr="?"
+            erg = "✅ GEWONNEN" if s.get("gewonnen") else ("❌ VERLOREN" if s.get("status")=="ausgewertet" else "⏳")
+            for col,val in enumerate([dat,uhr,s.get("competition",s.get("liga","?")),
+                    s.get("home","?"),s.get("away","?"),s.get("typ","?"),
+                    s.get("quote",""),s.get("status",""),erg],1):
+                ws.cell(row=row,column=col,value=val)
+        for col in ws.columns: ws.column_dimensions[col[0].column_letter].width=16
+        pfad = "/tmp/betlab_export.xlsx"; wb.save(pfad); return pfad
+    except ImportError: print("  [Export] openpyxl fehlt"); return None
+    except Exception as e: print(f"  [Export] {e}"); return None
+
+# ============================================================
+#  CHARTS & GRAFIKEN
+# ============================================================
+
+def erstelle_performance_chart():
+    try:
+        import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
+        with _tracker_lock: alle = sorted(_signal_tracker.values(),key=lambda x:x.get("signal_zeit",0))
+        qk = []; gw = 0
+        for i,s in enumerate([a for a in alle if a.get("status")=="ausgewertet"]):
+            gw += 1 if s.get("gewonnen") else 0; qk.append(round(gw/(i+1)*100,1))
+        if len(qk)<3: return None
+        fig,ax = plt.subplots(figsize=(10,4),facecolor="#0d1117"); ax.set_facecolor("#161b22")
+        ax.plot(range(len(qk)),qk,color="#58a6ff",linewidth=2.5)
+        ax.axhline(y=50,color="#f85149",linestyle="--",linewidth=1,alpha=0.7)
+        ax.axhline(y=55,color="#3fb950",linestyle="--",linewidth=1,alpha=0.5)
+        ax.fill_between(range(len(qk)),qk,50,where=[q>=50 for q in qk],alpha=0.15,color="#3fb950")
+        ax.fill_between(range(len(qk)),qk,50,where=[q<50  for q in qk],alpha=0.15,color="#f85149")
+        ax.set_title("BetlabLIVE Trefferquote",color="#e6edf3",fontsize=14)
+        ax.tick_params(colors="#8b949e"); ax.spines[:].set_color("#30363d"); ax.set_ylim(0,100)
+        pfad = "/tmp/betlab_chart.png"; plt.tight_layout(); plt.savefig(pfad,dpi=120,bbox_inches="tight",facecolor="#0d1117"); plt.close(); return pfad
+    except Exception as e: print(f"  [Chart] {e}"); return None
+
+def sende_chart_telegram(pfad):
+    try:
+        with open(pfad,"rb") as f:
+            requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto",
+                data={"chat_id":TELEGRAM_CHAT_ID,"caption":f"📊 Performance Chart – {heute()}"},
+                files={"photo":f},timeout=20)
+    except Exception as e: print(f"  [Chart] {e}")
+
+def erstelle_daily_recap_grafik():
+    try:
+        import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
+        from matplotlib.patches import FancyBboxPatch
+        gw = sum(statistik[t]["gewonnen"] for t in statistik)
+        vl = sum(statistik[t]["verloren"] for t in statistik)
+        pct= round(gw/max(gw+vl,1)*100)
+        fig,ax = plt.subplots(figsize=(9,5),facecolor="#0d1117"); ax.set_facecolor("#0d1117"); ax.axis("off")
+        ax.add_patch(FancyBboxPatch((0.02,0.05),0.96,0.9,boxstyle="round,pad=0.02",
+            facecolor="#161b22",edgecolor="#30363d",linewidth=2,transform=ax.transAxes))
+        ax.text(0.5,0.88,"BetlabLIVE",ha="center",fontsize=22,fontweight="bold",color="#58a6ff",transform=ax.transAxes)
+        ax.text(0.5,0.78,f"Daily Recap {de_now().strftime('%d.%m.%Y')}",ha="center",fontsize=12,color="#8b949e",transform=ax.transAxes)
+        ax.text(0.2,0.58,str(gw),ha="center",fontsize=48,fontweight="bold",color="#3fb950",transform=ax.transAxes)
+        ax.text(0.2,0.43,"Gewonnen",ha="center",fontsize=11,color="#8b949e",transform=ax.transAxes)
+        ax.text(0.5,0.58,f"{pct}%",ha="center",fontsize=48,fontweight="bold",color="#58a6ff",transform=ax.transAxes)
+        ax.text(0.5,0.43,"Trefferquote",ha="center",fontsize=11,color="#8b949e",transform=ax.transAxes)
+        ax.text(0.8,0.58,str(vl),ha="center",fontsize=48,fontweight="bold",color="#f85149",transform=ax.transAxes)
+        ax.text(0.8,0.43,"Verloren",ha="center",fontsize=11,color="#8b949e",transform=ax.transAxes)
+        pfad = "/tmp/daily_recap.png"; plt.tight_layout(pad=0)
+        plt.savefig(pfad,dpi=150,bbox_inches="tight",facecolor="#0d1117"); plt.close(); return pfad
+    except Exception as e: print(f"  [Recap] {e}"); return None
+
+def sende_daily_recap():
+    pfad = erstelle_daily_recap_grafik()
+    if not pfad: return
+    gw = sum(statistik[t]["gewonnen"] for t in statistik)
+    vl = sum(statistik[t]["verloren"] for t in statistik)
+    pct= round(gw/max(gw+vl,1)*100)
+    try:
+        with open(pfad,"rb") as f:
+            requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto",
+                data={"chat_id":TELEGRAM_CHAT_ID,"caption":f"Daily Recap {de_now().strftime('%d.%m.%Y')} | {gw}G {vl}V {pct}%"},
+                files={"photo":f},timeout=20)
+    except Exception: pass
+
+def erstelle_monatsbericht_pdf():
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.colors import HexColor
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+        from reportlab.lib.units import cm
+        lm   = de_now().replace(day=1) - timedelta(days=1)
+        pfad = f"/tmp/betlab_{lm.strftime('%Y_%m')}.pdf"
+        doc  = SimpleDocTemplate(pfad,pagesize=A4)
+        stl  = getSampleStyleSheet(); stl["Title"].textColor = HexColor("#58a6ff")
+        gw   = sum(statistik[t]["gewonnen"] for t in statistik)
+        vl   = sum(statistik[t]["verloren"] for t in statistik)
+        br   = bankroll_laden()
+        pct  = round(gw/max(gw+vl,1)*100)
+        doc.build([
+            Paragraph(f"BetlabLIVE – {lm.strftime('%B %Y')}",stl["Title"]),
+            Spacer(1,0.5*cm),
+            Paragraph(f"Gewonnen: {gw} | Verloren: {vl} | Quote: {pct}%",stl["Normal"]),
+            Paragraph(f"Bankroll: {br}€",stl["Normal"]),
+        ])
+        return pfad
+    except ImportError: print("  [PDF] reportlab fehlt"); return None
+    except Exception as e: print(f"  [PDF] {e}"); return None
+
+def sende_pdf_telegram(pfad, monat):
+    try:
+        with open(pfad,"rb") as f:
+            requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument",
+                data={"chat_id":TELEGRAM_CHAT_ID,"caption":f"📄 Monatsbericht {monat}"},
+                files={"document":f},timeout=30)
+    except Exception as e: print(f"  [PDF] {e}")
+
+# ============================================================
+#  BOTS: TIPP-DES-TAGES / ODDS-TRACKER / HEDGE-ALARM
+#        BONUS-TRACKER / QUOTENVERGLEICH
+# ============================================================
+
+def bot_tipp_des_tages():
+    print("[TippDesTages-Bot] Gestartet | Täglich 09:00 Uhr")
+    import random; gesendet = set()
+    while True:
+        try:
+            now = de_now(); key = now.strftime("%Y-%m-%d")
+            if now.hour==9 and now.minute<5 and key not in gesendet:
+                gesendet.add(key)
+                fixtures = ls_get_fixtures(now.strftime("%Y-%m-%d"))
+                top      = filtere_top_spiele(fixtures)
+                if not top: time.sleep(60); continue
+                bester = None; beste_k = 0
+                for spiel in top[:10]:
+                    home   = spiel.get("home_name") or (spiel.get("home") or {}).get("name","?")
+                    away   = spiel.get("away_name") or (spiel.get("away") or {}).get("name","?")
+                    liga   = spiel.get("competition",{}).get("name","?")
+                    anstoß = spiel.get("time","?")
+                    r      = claude_prematch_analyse(home,away,liga,anstoß,[])
+                    if r and r.get("konfidenz",0)>beste_k:
+                        beste_k=r["konfidenz"]; bester={**r,"home":home,"away":away,"liga":liga,"anstoß":anstoß}
+                    time.sleep(1)
+                if not bester: time.sleep(60); continue
+                ke  = konfidenz_emoji(bester["konfidenz"])
+                msg = (f"⭐ <b>Tipp des Tages – {now.strftime('%d.%m.%Y')}</b>\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n🏆 {bester['liga']}\n"
+                       f"📌 {bester['home']} vs {bester['away']}\n"
+                       f"🕐 Anstoß: <b>{bester['anstoß']} Uhr</b>\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n🎯 Tipp: <b>{bester['tipp']}</b>\n"
+                       f"{ke} Konfidenz: <b>{bester['konfidenz']}/10</b>\n"
+                       f"📊 {bester['analyse']}\n━━━━━━━━━━━━━━━━━━━━\n⚠️ 18+ | Verantwortungsvoll spielen")
+                send_telegram(msg); send_telegram_gruppe(msg)
+                send_discord_embed(DISCORD_WEBHOOK_BILANZ,{
+                    "title":f"⭐ Tipp des Tages – {now.strftime('%d.%m.%Y')}","color":0xF1C40F,
+                    "fields":[
+                        {"name":"🏆 Liga","value":bester["liga"],"inline":True},
+                        {"name":"⚽ Spiel","value":f"{bester['home']} vs {bester['away']}","inline":False},
+                        {"name":"🎯 Tipp","value":f"**{bester['tipp']}**","inline":True},
+                        {"name":ke+" Konfidenz","value":f"**{bester['konfidenz']}/10**","inline":True},
+                        {"name":"📊 Analyse","value":bester["analyse"],"inline":False},
+                    ],"footer":{"text":f"Tipp des Tages • {heute()}"}})
+                print(f"  [TippDesTages] ✅ {bester['home']} vs {bester['away']}")
+        except Exception as e: print(f"  [TippDesTages] Fehler: {e}")
+        time.sleep(60)
+
+_odds_history_tracker = {}
+notified_odds_drop    = set()
+
+def bot_odds_tracker():
+    print("[Odds-Tracker] Gestartet | Quoten-Bewegungen überwachen")
+    while True:
+        try:
+            if not ODDS_API_KEY: time.sleep(5*60); continue
+            resp = requests.get("https://api.the-odds-api.com/v4/sports/soccer/odds/",
+                params={"apiKey":ODDS_API_KEY,"regions":"eu","markets":"totals,h2h","oddsFormat":"decimal"},timeout=10)
+            if resp.status_code!=200: time.sleep(5*60); continue
+            now = time.time()
+            for game in resp.json():
+                h_t = game.get("home_team","?"); a_t = game.get("away_team","?")
+                key = f"{h_t}_{a_t}"; bm_q = {}
+                for bm in game.get("bookmakers",[])[:3]:
+                    for market in bm.get("markets",[]):
+                        for out in market.get("outcomes",[]):
+                            k = f"{out.get('name','')}_{out.get('point','')}"
+                            bm_q.setdefault(k,[]).append({"q":out.get("price",0),"bm":bm.get("title","?")})
+                if key not in _odds_history_tracker:
+                    _odds_history_tracker[key]={"ts":now,"q":bm_q}; continue
+                alt = _odds_history_tracker[key]
+                if now-alt["ts"]<8*60: continue
+                for k,ql in bm_q.items():
+                    if k not in alt["q"]: continue
+                    qn = sum(v["q"] for v in ql)/max(len(ql),1)
+                    qa = sum(v["q"] for v in alt["q"][k])/max(len(alt["q"][k]),1)
+                    if qa<=1.1 or qn<=1.1: continue
+                    bew = round((qn-qa)/qa*100,1)
+                    if abs(bew)>=8 and len(ql)>=3:
+                        ar_k = f"{key}_{k}"
+                        if ar_k in notified_odds_drop: continue
+                        notified_odds_drop.add(ar_k)
+                        ri = "📉 gefallen" if bew<0 else "📈 gestiegen"
+                        msg = (f"📉 <b>Quote stark verändert!</b>\n📌 {h_t} vs {a_t}\n"
+                               f"🎯 {k}\n📉 {qa:.2f}→<b>{qn:.2f}</b> ({bew:+.1f}%) {ri}\n🕐 {jetzt()} Uhr")
+                        send_telegram(msg)
+                        send_discord_embed(DISCORD_WEBHOOK_VALUE,{"title":"📉 Quote verändert","color":0xE74C3C,
+                            "fields":[{"name":"⚽","value":f"{h_t} vs {a_t}","inline":True},
+                                      {"name":"🎯","value":f"**{k}**","inline":True},
+                                      {"name":"📉","value":f"{qa:.2f}→{qn:.2f} ({bew:+.1f}%)","inline":True}],
+                            "footer":{"text":f"Odds-Tracker • {heute()} {jetzt()}"}})
+                _odds_history_tracker[key]={"ts":now,"q":bm_q}
+            bot_fehler_reset("Odds-Tracker")
+        except Exception as e: bot_fehler_melden("Odds-Tracker",e)
+        time.sleep(5*60)
+
+def bot_hedge_alarm():
+    print("[Hedge-Alarm-Bot] Gestartet | Hedging-Empfehlungen")
+    while True:
+        try:
+            offene = tracker_get_offene()
+            if not ODDS_API_KEY or not offene: time.sleep(5*60); continue
+            for _,sig in offene:
+                home   = sig.get("home",""); away  = sig.get("away","")
+                orig_q = sig.get("quote")
+                if not orig_q or orig_q<=1.0: continue
+                details   = get_quote_details(home,away)
+                aktuelle_q = details.get("avg_quote",0)
+                if not aktuelle_q or aktuelle_q<=1.0: continue
+                anstieg = round((aktuelle_q-orig_q)/orig_q*100,1)
+                if anstieg>=25:
+                    msg = (f"🛡️ <b>Hedge-Empfehlung!</b>\n📌 {home} vs {away}\n"
+                           f"💶 Orig: <b>{orig_q}</b> → Aktuell: <b>{aktuelle_q}</b> (+{anstieg}%)\n"
+                           f"🛡️ Quote stark gestiegen → Hedge erwägen!\n🕐 {jetzt()} Uhr")
+                    send_telegram(msg)
+            bot_fehler_reset("Hedge-Alarm-Bot")
+        except Exception as e: bot_fehler_melden("Hedge-Alarm-Bot",e)
+        time.sleep(10*60)
+
+BOOKIE_AKTIONEN = {
+    "Leonbet":  "Keine Wettsteuer, bis zu 5% Cashback",
+    "Bet365":   "Regelmäßige Freiwetten für aktive Kunden",
+    "Bwin":     "Quoten-Boosts auf ausgewählte Spiele",
+    "Unibet":   "Cashback auf erste verlorene Wette",
+    "Pinnacle": "Kein Bonus – aber beste Quoten weltweit",
+    "Winamax":  "97% Quotenschlüssel, steuerfrei in DE",
+}
+
+def bot_bonus_tracker():
+    print("[Bonus-Tracker] Gestartet | Erinnerungen Mo/Mi/Fr")
+    gesendet = set()
+    while True:
+        try:
+            now = de_now(); key = now.strftime("%Y-%m-%d")
+            if now.weekday() in (0,2,4) and now.hour==9 and now.minute<5 and key not in gesendet:
+                gesendet.add(key)
+                zeilen = [f"📌 <b>{bm}</b>\n   {info}" for bm,info in BOOKIE_AKTIONEN.items()]
+                msg = (f"🎁 <b>Bookmaker Aktionen – {now.strftime('%d.%m.%Y')}</b>\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n"+"\n".join(zeilen)+
+                       f"\n━━━━━━━━━━━━━━━━━━━━\n⚠️ 18+ | Verantwortungsvoll spielen")
+                send_telegram(msg)
+            bot_fehler_reset("Bonus-Tracker")
+        except Exception as e: bot_fehler_melden("Bonus-Tracker",e)
+        time.sleep(60)
+
+def bot_quotenvergleich():
+    print("[Quotenvergleich-Bot] Gestartet | Täglich 08:30 Uhr")
+    gesendet = set()
+    while True:
+        try:
+            now = de_now(); key = now.strftime("%Y-%m-%d")
+            if now.hour==8 and 30<=now.minute<35 and key not in gesendet:
+                gesendet.add(key)
+                if not ODDS_API_KEY: time.sleep(60); continue
+                resp = requests.get("https://api.the-odds-api.com/v4/sports/soccer/odds/",
+                    params={"apiKey":ODDS_API_KEY,"regions":"eu,uk","markets":"h2h,totals","oddsFormat":"decimal"},timeout=10)
+                if resp.status_code!=200: time.sleep(60); continue
+                top = []
+                for game in resp.json()[:8]:
+                    h_t=game.get("home_team","?"); a_t=game.get("away_team","?")
+                    bq=0; bbm="?"; bm_name=""
+                    for bm in game.get("bookmakers",[]):
+                        for market in bm.get("markets",[]):
+                            for out in market.get("outcomes",[]):
+                                q=out.get("price",0)
+                                if q>bq: bq=q; bbm=bm.get("title","?"); bm_name=f"{out.get('name','')} {out.get('point','')}"
+                    if bq>=1.8: top.append({"spiel":f"{h_t} vs {a_t}","q":bq,"bm":bbm,"markt":bm_name})
+                if top:
+                    top.sort(key=lambda x:x["q"],reverse=True)
+                    zeilen = "\n".join([f"⭐ {v['spiel']}\n   💶 {v['q']} @ {v['bm']} ({v['markt']})" for v in top[:5]])
+                    send_telegram(f"💹 <b>Beste Quoten heute – {now.strftime('%d.%m.%Y')}</b>\n"
+                                  f"━━━━━━━━━━━━━━━━━━━━\n{zeilen}\n━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
+            bot_fehler_reset("Quotenvergleich-Bot")
+        except Exception as e: bot_fehler_melden("Quotenvergleich-Bot",e)
+        time.sleep(60)
+
+
+# ============================================================
 #  WATCHDOG
 # ============================================================
 
@@ -4752,11 +5426,11 @@ def bot_startup_alarm():
     print(f"  [Startup] BetlabLIVE v55 gestartet um {start_str}")
     key_status = "✅ API-Keys OK" if startup_ok else "⚠️ API-Keys prüfen!"
     send_telegram(
-        f"🚀 <b>BetlabLIVE v55 gestartet!</b>\n"
+        f"🚀 <b>BetlabLIVE v56 gestartet!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"{key_status}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"✅ v55 Fixes:\n"
+        f"✅ v56 Fixes:\n"
         f"• Discord Webhooks getrennt\n"
         f"• 6 notified-Sets persistiert\n"
         f"• Telegram Auth-Check aktiv\n"
@@ -4773,7 +5447,7 @@ def bot_startup_alarm():
 
 if __name__ == "__main__":
     print("=" * 55)
-    print("  ⚽ BETLABLIVE v55 – Release Ready")
+    print("  ⚽ BETLABLIVE v56 – Alle Features + Alle Fixes")
     print("  Duplikat-Fix | Ecken-Validierung | Robuste Auswertung")
     print("=" * 55 + "\n")
 
@@ -4832,6 +5506,18 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"  [Startup] dynamische_filter_laden: {e}")
 
+    # v56: Zusätzliche Ladefunktionen
+    try: ab_test_laden();            print("  [Startup] AB-Test geladen")
+    except Exception as e: print(f"  [Startup] ab_test_laden: {e}")
+    try: vk_laden();                 print("  [Startup] Virtuelle Konten geladen")
+    except Exception as e: print(f"  [Startup] vk_laden: {e}")
+    try: rang_laden();               print("  [Startup] Rang-System geladen")
+    except Exception as e: print(f"  [Startup] rang_laden: {e}")
+    try: community_system_laden();   print("  [Startup] Community geladen")
+    except Exception as e: print(f"  [Startup] community_system_laden: {e}")
+    try: discord_votes_laden();      print("  [Startup] Discord Votes geladen")
+    except Exception as e: print(f"  [Startup] discord_votes_laden: {e}")
+
     # ── v55: Bot-Definitionen
     # Entfernt: Ecken-Über-Bot, Karten-Bot, Rotkarte-Bot, CS2-Bot
     bot_definitionen = [
@@ -4862,6 +5548,11 @@ if __name__ == "__main__":
         ("Morgen-Bot",       bot_morgen_uebersicht),
         ("Selbstlern-Bot",   bot_selbstlernend),
         ("Wetter-Bot",       bot_wetter_tipp),
+        ("TippDesTages-Bot",  bot_tipp_des_tages),
+        ("Odds-Tracker",      bot_odds_tracker),
+        ("Hedge-Alarm-Bot",   bot_hedge_alarm),
+        ("Bonus-Tracker",     bot_bonus_tracker),
+        ("Quotenvergleich-Bot",bot_quotenvergleich),
         ("Gruppen-Bot",      bot_telegram_gruppe),
         # ("CS2-Bot",        bot_cs2),           # v55: ENTFERNT (später reaktivieren)
     ]
