@@ -60,7 +60,7 @@ DISCORD_WEBHOOK_HZ1TORE  = os.environ.get("DISCORD_WEBHOOK_HZ1TORE",  "https://d
 DISCORD_WEBHOOK_VZTORE   = os.environ.get("DISCORD_WEBHOOK_VZTORE",   "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1")
 DISCORD_WEBHOOK_TORE     = os.environ.get("DISCORD_WEBHOOK_TORE",     "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1")
 DISCORD_WEBHOOK_VALUE    = os.environ.get("DISCORD_WEBHOOK_VALUE",    "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1")
-DISCORD_WEBHOOK_CS2      = os.environ.get("DISCORD_WEBHOOK_CS2",      "") 
+DISCORD_WEBHOOK_CS2      = os.environ.get("DISCORD_WEBHOOK_CS2",      "")
 
 ODDS_API_KEY       = os.environ.get("ODDS_API_KEY",   "")
 PANDASCORE_API_KEY = os.environ.get("PANDASCORE_KEY", "")
@@ -4057,10 +4057,16 @@ def bot_rotkarte_ecken():
                 karte_fuer    = letzte.get("home_away","")
                 geschwaeches  = home if karte_fuer == "home" else away
                 staerkeres    = away if karte_fuer == "home" else home
+                restminuten   = 90-minute
+                # v58.1: Fester "+2 Ecken"-Puffer war unabhängig von der Restspielzeit –
+                # bei einer frühen Roten Karte (z.B. Min. 24, noch 66 Min übrig) macht
+                # das Signal keinen Sinn. Jetzt nur noch spät im Spiel (≤30 Min Rest),
+                # wo die Vorhersage über den Rest der Spielzeit realistisch bleibt.
+                if restminuten > 30:
+                    continue
                 stats = get_statistiken(match_id)
                 ecken_schwach = stats["corners_home"] if karte_fuer == "home" else stats["corners_away"]
                 ecken_stark   = stats["corners_away"] if karte_fuer == "home" else stats["corners_home"]
-                restminuten   = 90-minute
                 grenze_ecken  = ecken_schwach+2
                 notified_rk_ecken.add(match_id)
                 notified_sets_speichern()
