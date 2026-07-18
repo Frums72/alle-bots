@@ -29,9 +29,9 @@ from datetime import datetime, timezone, timedelta
 # ============================================================
 #  KONFIGURATION
 # ============================================================
-API_KEY            = os.environ.get("API_FOOTBALL_KEY","")  # v58: API-Football (api-sports.io) – nur EIN Key, kein Secret
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_TOKEN",  "")
-TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID","")
+API_KEY            = os.environ.get("API_FOOTBALL_KEY","40fc4040a3858f9f932aaf5ccec268c3")  # v58: API-Football (api-sports.io) – nur EIN Key, kein Secret
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_TOKEN",  "8706066107:AAHHVuC-M_gz-sr5sbm-7zkb7QGygfoRHoM")
+TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID","@BettingLabPubDE")
 
 # ── Discord Webhooks ─────────────────────────────────────────
 # Alle Webhooks MÜSSEN als Railway-Umgebungsvariablen gesetzt sein.
