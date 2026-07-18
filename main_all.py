@@ -173,6 +173,37 @@ PREMATCH_LIGEN       = {
     "uefa champions league","uefa europa league","uefa conference league",
     "primera division","süper lig","scottish premiership",
 }
+# v58.4: Liga-Name allein reicht nicht (viele Länder haben eine eigene "Premier
+# League", z.B. Kasachstan) - deshalb zusätzlich das Land prüfen. Europäische
+# Wettbewerbe (Champions/Europa/Conference League) sind länderübergreifend.
+TOP_LIGEN_LAENDER = {
+    "premier league":       "england",
+    "bundesliga":           "germany",
+    "la liga":               "spain",
+    "primera division":      "spain",
+    "serie a":               "italy",
+    "ligue 1":               "france",
+    "eredivisie":            "netherlands",
+    "primeira liga":         "portugal",
+    "süper lig":             "turkey",
+    "scottish premiership":  "scotland",
+}
+EUROPA_WETTBEWERBE = {
+    "champions league","europa league","uefa champions league",
+    "uefa europa league","uefa conference league",
+}
+
+def ist_top_liga(liga_name: str, country_name: str = "") -> bool:
+    liga_lower    = (liga_name or "").lower()
+    country_lower = (country_name or "").lower()
+    for teil in EUROPA_WETTBEWERBE:
+        if teil in liga_lower:
+            return True
+    for teil,land in TOP_LIGEN_LAENDER.items():
+        if teil in liga_lower and land in country_lower:
+            return True
+    return False
+
 TELEGRAM_CHAT_PREMATCH = os.environ.get("TELEGRAM_CHAT_PREMATCH", "-1001510152037")  # Besser: env var setzen
 
 MAX_CORNERS          = 5
@@ -838,7 +869,7 @@ def ls_get_events(match_id):
             "event":     event_name,
             "time":      (e.get("time") or {}).get("elapsed",0),
             "home_away": "home" if (home_id and team_id == home_id) else "away",
-            "player":    {"name": (e.get("player") or {}).get("name","?")},
+            "player":    {"name": (e.get("player") or {}).get("name") or "?"},
         })
     return events
 
@@ -4057,6 +4088,7 @@ def bot_rotkarte_ecken():
                 karte_fuer    = letzte.get("home_away","")
                 geschwaeches  = home if karte_fuer == "home" else away
                 staerkeres    = away if karte_fuer == "home" else home
+                geschw_id     = str((game.get("home") if karte_fuer=="home" else game.get("away") or {}).get("id",""))
                 restminuten   = 90-minute
                 # v58.1: Fester "+2 Ecken"-Puffer war unabhängig von der Restspielzeit –
                 # bei einer frühen Roten Karte (z.B. Min. 24, noch 66 Min übrig) macht
@@ -4067,10 +4099,22 @@ def bot_rotkarte_ecken():
                 stats = get_statistiken(match_id)
                 ecken_schwach = stats["corners_home"] if karte_fuer == "home" else stats["corners_away"]
                 ecken_stark   = stats["corners_away"] if karte_fuer == "home" else stats["corners_home"]
-                grenze_ecken  = ecken_schwach+2
+                # v58.3: Puffer basiert jetzt primär auf dem ECHTEN Ecken-Schnitt des
+                # schwächeren Teams aus dessen letzten Spielen (get_team_ecken_avg),
+                # statt auf einer geratenen Pauschalzahl. Hochrechnung: erwarteter
+                # Ecken-Zuwachs = Team-Schnitt/Spiel * (Restzeit/90) * 0.6 (Abschlag
+                # für die defensivere Spielweise in Unterzahl). Wenn kein Team-Schnitt
+                # verfügbar ist (zu wenig Historie), Fallback auf die alte Zeitfenster-Regel.
+                team_avg = get_team_ecken_avg(geschw_id) if geschw_id else None
+                if team_avg is not None:
+                    erwartete_weitere = team_avg*(restminuten/90)*0.6
+                    puffer = max(1,round(erwartete_weitere))
+                else:
+                    puffer = 1 if restminuten <= 15 else 2
+                grenze_ecken  = ecken_schwach+puffer
                 notified_rk_ecken.add(match_id)
                 notified_sets_speichern()
-                spieler = (letzte.get("player") or {}).get("name","?")
+                spieler = (letzte.get("player") or {}).get("name") or "?"
                 msg = (f"📐 <b>Rotkarte Ecken-Signal!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                        f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
                        f"📊 Stand: <b>{score}</b> | Min. <b>{minute}'</b>\n"
@@ -4330,8 +4374,9 @@ def ls_get_fixtures(date_str: str) -> list:
 def filtere_top_spiele(fixtures: list) -> list:
     top = []
     for f in fixtures:
-        liga = f.get("competition",{}).get("name","").lower()
-        if any(l in liga for l in PREMATCH_LIGEN):
+        liga    = f.get("competition",{}).get("name","")
+        country = (f.get("country") or {}).get("name","")
+        if ist_top_liga(liga,country):
             top.append(f)
     return top
 
@@ -4451,8 +4496,10 @@ def bot_prematch():
             print(f"  [PreMatch-Bot] Fehler: {e}")
         time.sleep(60)
 
+VIP_MIN_KONFIDENZ = 8  # nur "sehr sichere" Tipps sollen in die VIP-Erinnerung
+
 def bot_prematch_erinnerung():
-    print("[Erinnerungs-Bot] Gestartet | 15-Min Erinnerungen")
+    print(f"[Erinnerungs-Bot] Gestartet | 15-Min Erinnerungen, nur Tipps ab Konfidenz {VIP_MIN_KONFIDENZ}/10")
     erinnert = set()
     while True:
         try:
@@ -4463,10 +4510,11 @@ def bot_prematch_erinnerung():
                 match_id = str(spiel.get("id",""))
                 if not match_id or match_id in erinnert:
                     continue
-                home   = spiel.get("home_name",spiel.get("home",{}).get("name","?"))
-                away   = spiel.get("away_name",spiel.get("away",{}).get("name","?"))
-                liga   = spiel.get("competition",{}).get("name","?")
-                anstoß = spiel.get("time","")
+                home    = spiel.get("home_name",spiel.get("home",{}).get("name","?"))
+                away    = spiel.get("away_name",spiel.get("away",{}).get("name","?"))
+                liga    = spiel.get("competition",{}).get("name","?")
+                country = (spiel.get("country") or {}).get("name","")
+                anstoß  = spiel.get("time","")
                 if not anstoß or ":" not in anstoß:
                     continue
                 try:
@@ -4474,15 +4522,26 @@ def bot_prematch_erinnerung():
                     kickoff = now.replace(hour=h,minute=m,second=0,microsecond=0)
                     diff    = (kickoff-now).total_seconds()/60
                     if 13 <= diff <= 18:
-                        liga_lower = liga.lower()
-                        if any(l in liga_lower for l in PREMATCH_LIGEN):
-                            msg = (f"⏰ <b>Anstoß in ~15 Minuten!</b>\n"
-                                   f"━━━━━━━━━━━━━━━━━━━━\n"
-                                   f"🏆 {liga}\n⚽ <b>{home} vs {away}</b>\n"
-                                   f"🕐 Anstoß: <b>{anstoß} Uhr</b>\n"
-                                   f"━━━━━━━━━━━━━━━━━━━━\n💬 discord.gg/G6dt3Kpf")
-                            send_telegram_gruppe(msg)
-                            erinnert.add(match_id)
+                        if not ist_top_liga(liga,country):
+                            continue
+                        # v58.4: Erst hier nach der Erinnerung dazu markieren, damit der
+                        # Bot nicht jede Minute im 13-18-Min-Fenster erneut Claude aufruft.
+                        erinnert.add(match_id)
+                        result = claude_prematch_analyse(home,away,liga,anstoß,[])
+                        if not result or result.get("konfidenz",0) < VIP_MIN_KONFIDENZ:
+                            print(f"  [Erinnerungs-Bot] {home} vs {away} übersprungen (Konfidenz < {VIP_MIN_KONFIDENZ})")
+                            continue
+                        ke  = konfidenz_emoji(result["konfidenz"])
+                        msg = (f"⏰ <b>Anstoß in ~15 Minuten!</b>\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n"
+                               f"🏆 {liga}\n⚽ <b>{home} vs {away}</b>\n"
+                               f"🕐 Anstoß: <b>{anstoß} Uhr</b>\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n"
+                               f"🎯 Tipp: <b>{result['tipp']}</b>\n"
+                               f"{ke} Konfidenz: <b>{result['konfidenz']}/10</b>\n"
+                               f"📊 {result.get('analyse','')}\n"
+                               f"━━━━━━━━━━━━━━━━━━━━\n💬 discord.gg/G6dt3Kpf")
+                        send_telegram_gruppe(msg)
                 except Exception:
                     continue
         except Exception as e:
