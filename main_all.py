@@ -1797,7 +1797,7 @@ def einsatz_empfehlung_text(einsatz) -> str:
     except Exception:
         return f"**{einsatz}€**"
 
-def discord_ecken_tipp(home,away,comp,country,score,corners_home,corners_away,corners,grenze,quote,einsatz=None):
+def discord_ecken_tipp(home,away,comp,country,score,corners_home,corners_away,corners,grenze,quote,einsatz=None,konfidenz=None):
     qt = f"\n💶 **Quote:** {quote}" if quote else ""
     return {
         "title":"📐 Ecken Tipp","color":FARBE_ECKEN,
@@ -1809,11 +1809,12 @@ def discord_ecken_tipp(home,away,comp,country,score,corners_home,corners_away,co
             {"name":"📐 Ecken zur Halbzeit","value":f"🔵 {home}: **{corners_home}**\n🔴 {away}: **{corners_away}**\n📊 Gesamt: **{corners}**","inline":False},
             {"name":"🎯 Empfehlung","value":f"Unter **{grenze} Ecken** (Gesamtspiel){qt}","inline":False},
             {"name":"💰 Einsatz-Empfehlung","value":einsatz_empfehlung_text(einsatz),"inline":False},
+            {"name":"🎯 Konfidenz","value": (f"{konfidenz_emoji(konfidenz)} **{konfidenz}/10**" if konfidenz is not None else "–"),"inline":False},
         ],
         "footer":{"text":f"Ecken-Bot • {heute()} {jetzt()}"},
     }
 
-def discord_torwart_tipp(home,away,comp,country,shots_home,shots_away,saves_h,saves_a,poss_h,poss_a,min_text,quote,einsatz=None):
+def discord_torwart_tipp(home,away,comp,country,shots_home,shots_away,saves_h,saves_a,poss_h,poss_a,min_text,quote,einsatz=None,konfidenz=None):
     qt = f"\n💶 **Quote:** {quote}" if quote else ""
     return {
         "title":"🧤 Torwart Alarm","color":FARBE_TORWART,
@@ -1827,11 +1828,12 @@ def discord_torwart_tipp(home,away,comp,country,shots_home,shots_away,saves_h,sa
             {"name":"⚽ Ballbesitz","value":f"{poss_h}% | {poss_a}%","inline":True},
             {"name":"🎯 Empfehlung","value":f"Mindestens **1 Tor** fällt noch{qt}","inline":False},
             {"name":"💰 Einsatz-Empfehlung","value":einsatz_empfehlung_text(einsatz),"inline":False},
+            {"name":"🎯 Konfidenz","value": (f"{konfidenz_emoji(konfidenz)} **{konfidenz}/10**" if konfidenz is not None else "–"),"inline":False},
         ],
         "footer":{"text":f"Torwart-Bot • {heute()} {jetzt()}"},
     }
 
-def discord_druck_tipp(home,away,comp,country,score,minute,druck_team,ecken_stark,ecken_schwach,quote,einsatz=None):
+def discord_druck_tipp(home,away,comp,country,score,minute,druck_team,ecken_stark,ecken_schwach,quote,einsatz=None,konfidenz=None):
     qt = f"\n💶 **Quote:** {quote}" if quote else ""
     return {
         "title":"🔥 Druck Signal","color":FARBE_DRUCK,
@@ -1844,11 +1846,12 @@ def discord_druck_tipp(home,away,comp,country,score,minute,druck_team,ecken_star
             {"name":"📐 Ecken","value":f"**{ecken_stark}** : {ecken_schwach}","inline":True},
             {"name":"🎯 Empfehlung","value":f"Nächste Ecke / Tor für **{druck_team}**{qt}","inline":False},
             {"name":"💰 Einsatz-Empfehlung","value":einsatz_empfehlung_text(einsatz),"inline":False},
+            {"name":"🎯 Konfidenz","value": (f"{konfidenz_emoji(konfidenz)} **{konfidenz}/10**" if konfidenz is not None else "–"),"inline":False},
         ],
         "footer":{"text":f"Druck-Bot • {heute()} {jetzt()}"},
     }
 
-def discord_comeback_tipp(home,away,comp,country,score,minute,rueckliegend,fuehrend,shots_r,shots_f,poss_r,quote,einsatz=None):
+def discord_comeback_tipp(home,away,comp,country,score,minute,rueckliegend,fuehrend,shots_r,shots_f,poss_r,quote,einsatz=None,konfidenz=None):
     qt = f"\n💶 **Quote:** {quote}" if quote else ""
     return {
         "title":"🔄 Comeback Signal","color":FARBE_COMEBACK,
@@ -1863,11 +1866,12 @@ def discord_comeback_tipp(home,away,comp,country,score,minute,rueckliegend,fuehr
             {"name":"⚽ Ballbesitz","value":f"**{poss_r}%**","inline":True},
             {"name":"🎯 Empfehlung","value":f"Beide Teams treffen (Comeback){qt}","inline":False},
             {"name":"💰 Einsatz-Empfehlung","value":einsatz_empfehlung_text(einsatz),"inline":False},
+            {"name":"🎯 Konfidenz","value": (f"{konfidenz_emoji(konfidenz)} **{konfidenz}/10**" if konfidenz is not None else "–"),"inline":False},
         ],
         "footer":{"text":f"Comeback-Bot • {heute()} {jetzt()}"},
     }
 
-def discord_torflut_tipp(home,away,comp,country,score_hz1,tore_hz1,grenze,quote,shots_ges=0,poss_h="?",poss_a="?",einsatz=None):
+def discord_torflut_tipp(home,away,comp,country,score_hz1,tore_hz1,grenze,quote,shots_ges=0,poss_h="?",poss_a="?",einsatz=None,konfidenz=None):
     qt = f"\n💶 **Quote:** {quote}" if quote else ""
     return {
         "title":"🌊 Torflut Signal","color":FARBE_TORFLUT,
@@ -1881,11 +1885,12 @@ def discord_torflut_tipp(home,away,comp,country,score_hz1,tore_hz1,grenze,quote,
             {"name":"⚽ Ballbesitz","value":f"{poss_h}% | {poss_a}%","inline":True},
             {"name":"🎯 Empfehlung","value":f"Über **{grenze} Tore** im Gesamtspiel{qt}","inline":False},
             {"name":"💰 Einsatz-Empfehlung","value":einsatz_empfehlung_text(einsatz),"inline":False},
+            {"name":"🎯 Konfidenz","value": (f"{konfidenz_emoji(konfidenz)} **{konfidenz}/10**" if konfidenz is not None else "–"),"inline":False},
         ],
         "footer":{"text":f"Torflut-Bot • {heute()} {jetzt()}"},
     }
 
-def discord_hz1tore_tipp(home,away,comp,country,richtung,linie,avg_hz1,spiele,quote,einsatz=None):
+def discord_hz1tore_tipp(home,away,comp,country,richtung,linie,avg_hz1,spiele,quote,einsatz=None,konfidenz=None):
     qt = f"\n💶 **Quote:** {quote}" if quote else ""
     pfeil = "📈" if richtung == "über" else "📉"
     return {
@@ -1897,11 +1902,12 @@ def discord_hz1tore_tipp(home,away,comp,country,richtung,linie,avg_hz1,spiele,qu
             {"name":f"{pfeil} H2H Ø HZ1-Tore","value":f"**{avg_hz1}** Tore","inline":True},
             {"name":"🎯 Empfehlung","value":f"**{richtung.capitalize()} {linie}** Tore (HZ1){qt}","inline":False},
             {"name":"💰 Einsatz-Empfehlung","value":einsatz_empfehlung_text(einsatz),"inline":False},
+            {"name":"🎯 Konfidenz","value": (f"{konfidenz_emoji(konfidenz)} **{konfidenz}/10**" if konfidenz is not None else "–"),"inline":False},
         ],
         "footer":{"text":f"H2H-Analyse • {heute()} {jetzt()}"},
     }
 
-def discord_vztore_tipp(home,away,comp,country,richtung,linie,avg_vz,spiele,quote,einsatz=None):
+def discord_vztore_tipp(home,away,comp,country,richtung,linie,avg_vz,spiele,quote,einsatz=None,konfidenz=None):
     qt = f"\n💶 **Quote:** {quote}" if quote else ""
     pfeil = "📈" if richtung == "über" else "📉"
     return {
@@ -1913,6 +1919,7 @@ def discord_vztore_tipp(home,away,comp,country,richtung,linie,avg_vz,spiele,quot
             {"name":f"{pfeil} H2H Ø VZ-Tore","value":f"**{avg_vz}** Tore","inline":True},
             {"name":"🎯 Empfehlung","value":f"**{richtung.capitalize()} {linie}** Tore (Vollzeit){qt}","inline":False},
             {"name":"💰 Einsatz-Empfehlung","value":einsatz_empfehlung_text(einsatz),"inline":False},
+            {"name":"🎯 Konfidenz","value": (f"{konfidenz_emoji(konfidenz)} **{konfidenz}/10**" if konfidenz is not None else "–"),"inline":False},
         ],
         "footer":{"text":f"H2H-Analyse • {heute()} {jetzt()}"},
     }
@@ -2573,7 +2580,7 @@ def bot_ecken():
                 send_telegram(msg)
                 # v59: wait_for_message=True -> Message-ID für spätere ✅/❌-Reaktion sichern
                 dc_info = send_discord_embed(DISCORD_WEBHOOK_ECKEN,
-                    discord_ecken_tipp(home,away,comp,country,score,corners_home,corners_away,corners,grenze,quote,einsatz=einsatz),
+                    discord_ecken_tipp(home,away,comp,country,score,corners_home,corners_away,corners,grenze,quote,einsatz=einsatz,konfidenz=konfidenz),
                     wait_for_message=True)
                 notified_ecken.add(match_id)
                 multi_bonus = multi_signal_check(match_id,"Ecken-Bot")
@@ -2636,9 +2643,11 @@ def bot_torwart():
                 quote   = get_quote(match_id,"torwart")
                 if quote and quote < MIN_QUOTE:
                     continue
-                einsatz = kelly_einsatz_bankroll(quote,"torwart") if quote else EINSATZ
+                einsatz   = kelly_einsatz_bankroll(quote,"torwart") if quote else EINSATZ
+                konfidenz = berechne_konfidenz("torwart",comp,quote)  # v59.8: Konfidenz ergänzt
+                ke        = konfidenz_emoji(konfidenz)
                 ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
-                msg     = (f"🧤 <b>Torwart-Alarm!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                msg     = (f"🧤 <b>Torwart-Alarm!</b> {ke} Konfidenz: <b>{konfidenz}/10</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                            f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
                            f"📊 Stand: <b>0:0</b> | {min_text}\n━━━━━━━━━━━━━━━━━━━━\n"
                            f"🎯 Schüsse: <b>{shots_ges}</b> ({shots_home}|{shots_away})\n"
@@ -2649,7 +2658,7 @@ def bot_torwart():
                 send_telegram(msg)
                 dc_info = send_discord_embed(DISCORD_WEBHOOK_TORWART,
                     discord_torwart_tipp(home,away,comp,country,shots_home,shots_away,
-                        saves_home,saves_away,poss_home,poss_away,min_text,quote,einsatz=einsatz),
+                        saves_home,saves_away,poss_home,poss_away,min_text,quote,einsatz=einsatz,konfidenz=konfidenz),
                     wait_for_message=True)
                 notified_torwart.add(match_id)
                 beobachtung_hinzufuegen(match_id,{
@@ -2710,9 +2719,14 @@ def bot_druck():
                 quote   = get_quote(match_id,"druck")
                 if quote and quote < MIN_QUOTE:
                     continue
-                einsatz = kelly_einsatz_bankroll(quote,"druck") if quote else EINSATZ
+                einsatz   = kelly_einsatz_bankroll(quote,"druck") if quote else EINSATZ
+                # v59.8: Konfidenz ergänzt, mit Bonus für besonders starke Dominanz
+                konfidenz = berechne_konfidenz("druck",comp,quote)
+                if ecken_schwach > 0 and ecken_stark/ecken_schwach >= 4:
+                    konfidenz = min(10,konfidenz+1)
+                ke      = konfidenz_emoji(konfidenz)
                 ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
-                msg = (f"🔥 <b>Druck Signal!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                msg = (f"🔥 <b>Druck Signal!</b> {ke} Konfidenz: <b>{konfidenz}/10</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                        f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
                        f"📊 Stand: <b>{score}</b> | Minute: <b>{minute}'</b>\n"
                        f"🔥 Dominantes Team: <b>{druck_team}</b>\n"
@@ -2726,7 +2740,7 @@ def bot_druck():
                 send_telegram(msg)
                 dc_info = send_discord_embed(DISCORD_WEBHOOK_DRUCK,
                     discord_druck_tipp(home,away,comp,country,score,minute,druck_team,
-                        ecken_stark,ecken_schwach,quote,einsatz=einsatz),
+                        ecken_stark,ecken_schwach,quote,einsatz=einsatz,konfidenz=konfidenz),
                     wait_for_message=True)
                 tipp_erlaubt(match_id,"Druck-Bot")
                 beobachtung_hinzufuegen(match_id,{
@@ -2790,9 +2804,14 @@ def bot_comeback():
                 quote   = get_quote(match_id,"comeback")
                 if quote and quote < MIN_QUOTE:
                     continue
-                einsatz = kelly_einsatz_bankroll(quote,"comeback") if quote else EINSATZ
+                einsatz   = kelly_einsatz_bankroll(quote,"comeback") if quote else EINSATZ
+                # v59.8: Konfidenz ergänzt, mit Bonus für hohen Ballbesitz des rückliegenden Teams
+                konfidenz = berechne_konfidenz("comeback",comp,quote)
+                if poss_r >= 60:
+                    konfidenz = min(10,konfidenz+1)
+                ke      = konfidenz_emoji(konfidenz)
                 ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
-                msg = (f"🔄 <b>Comeback Signal!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                msg = (f"🔄 <b>Comeback Signal!</b> {ke} Konfidenz: <b>{konfidenz}/10</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                        f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
                        f"📊 Stand: <b>{score_str}</b> | Minute: <b>{minute}'</b>\n"
                        f"📉 Rückliegend: <b>{rueckliegend}</b>\n"
@@ -2807,7 +2826,7 @@ def bot_comeback():
                 send_telegram(msg)
                 dc_info = send_discord_embed(DISCORD_WEBHOOK_COMEBACK,
                     discord_comeback_tipp(home,away,comp,country,score_str,minute,
-                        rueckliegend,fuehrend,shots_r,shots_f,poss_r,quote,einsatz=einsatz),
+                        rueckliegend,fuehrend,shots_r,shots_f,poss_r,quote,einsatz=einsatz,konfidenz=konfidenz),
                     wait_for_message=True)
                 tipp_erlaubt(match_id,"Comeback-Bot")
                 beobachtung_hinzufuegen(match_id,{
@@ -2867,9 +2886,14 @@ def bot_torflut():
                 quote   = get_quote(match_id,"torflut")
                 if quote and quote < MIN_QUOTE:
                     continue
-                einsatz = kelly_einsatz_bankroll(quote,"torflut") if quote else EINSATZ
+                einsatz   = kelly_einsatz_bankroll(quote,"torflut") if quote else EINSATZ
+                # v59.8: Konfidenz ergänzt, mit Bonus je mehr Tore schon in HZ1 fielen
+                konfidenz = berechne_konfidenz("torflut",comp,quote)
+                if tore_hz1 >= 4:
+                    konfidenz = min(10,konfidenz+1)
+                ke      = konfidenz_emoji(konfidenz)
                 ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
-                msg     = (f"🌊 <b>Torflut Signal!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                msg     = (f"🌊 <b>Torflut Signal!</b> {ke} Konfidenz: <b>{konfidenz}/10</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                            f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
                            f"📊 Halbzeitstand: <b>{score_str}</b>\n"
                            f"⚽ Tore HZ1: <b>{tore_hz1}</b>\n"
@@ -2881,7 +2905,7 @@ def bot_torflut():
                     continue
                 send_telegram(msg)
                 dc_info = send_discord_embed(DISCORD_WEBHOOK_TORFLUT,
-                    discord_torflut_tipp(home,away,comp,country,score_str,tore_hz1,grenze,quote,shots_tf,poss_th,poss_ta,einsatz=einsatz),
+                    discord_torflut_tipp(home,away,comp,country,score_str,tore_hz1,grenze,quote,shots_tf,poss_th,poss_ta,einsatz=einsatz,konfidenz=konfidenz),
                     wait_for_message=True)
                 notified_torflut.add(match_id)
                 beobachtung_hinzufuegen(match_id,{
@@ -2962,7 +2986,7 @@ def bot_tore_analyse():
                                   f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                         send_telegram(msg)
                         dc_info = send_discord_embed(DISCORD_WEBHOOK_HZ1TORE,
-                            discord_hz1tore_tipp(home,away,comp,country,richtung,linie,ana["avg_hz1"],ana["hz1_spiele"],quote,einsatz=einsatz),
+                            discord_hz1tore_tipp(home,away,comp,country,richtung,linie,ana["avg_hz1"],ana["hz1_spiele"],quote,einsatz=einsatz,konfidenz=konfidenz),
                             wait_for_message=True)
                         if not tipp_erlaubt(match_id,"Tore-Bot-HZ1"):
                             continue
@@ -3001,7 +3025,7 @@ def bot_tore_analyse():
                                   f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                         send_telegram(msg)
                         dc_info = send_discord_embed(DISCORD_WEBHOOK_VZTORE,
-                            discord_vztore_tipp(home,away,comp,country,richtung,linie,ana["avg_vz"],ana["spiele"],quote,einsatz=einsatz),
+                            discord_vztore_tipp(home,away,comp,country,richtung,linie,ana["avg_vz"],ana["spiele"],quote,einsatz=einsatz,konfidenz=konfidenz),
                             wait_for_message=True)
                         if not tipp_erlaubt(match_id,"Tore-Bot-VZ"):
                             continue
@@ -3074,14 +3098,20 @@ def bot_corner_rush():
                 if not rush_team:
                     continue
                 zeit_diff = round((now_ts-alt["ts"])/60,1)
-                msg = (f"📐 <b>Corner Rush!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                # v59.7/8: Quote + Einsatz-Empfehlung + Konfidenz ergänzt
+                quote_cr   = get_quote(match_id,"cornerrush")
+                einsatz_cr = kelly_einsatz_bankroll(quote_cr,"ecken") if quote_cr else EINSATZ
+                konfidenz_cr = min(10,5+rush_ecken)  # mehr Ecken im Rush-Fenster = höhere Konfidenz
+                ke_cr        = konfidenz_emoji(konfidenz_cr)
+                ql_cr      = f"\n💶 Quote: <b>{quote_cr}</b> | 💰 Einsatz: <b>{einsatz_cr}€</b>" if quote_cr else f"\n💰 Einsatz: <b>{einsatz_cr}€</b>"
+                msg = (f"📐 <b>Corner Rush!</b> {ke_cr} Konfidenz: <b>{konfidenz_cr}/10</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                        f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
                        f"📊 Stand: <b>{score}</b> | Min. <b>{minute}'</b>\n"
                        f"━━━━━━━━━━━━━━━━━━━━\n"
                        f"⚡ <b>{rush_team}</b>: {rush_ecken} Ecken in {zeit_diff} Min!\n"
                        f"📐 Ecken gesamt: {corners_h}|{corners_a}\n"
                        f"💡 Extremer Druck → Tor oder weitere Ecken sehr wahrscheinlich\n"
-                       f"🎯 Tipp: <b>Nächste Ecke / Tor für {rush_team}</b>\n"
+                       f"🎯 Tipp: <b>Nächste Ecke / Tor für {rush_team}</b>{ql_cr}\n"
                        f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                 if not signal_spam_check():
                     continue
@@ -3100,6 +3130,9 @@ def bot_corner_rush():
                         {"name":"📐 Ecken Rush","value":f"**{rush_ecken}** in {zeit_diff} Min","inline":True},
                         {"name":"📐 Gesamt","value":f"{corners_h}|{corners_a}","inline":True},
                         {"name":"🎯 Tipp","value":f"**Nächste Ecke / Tor {rush_team}**","inline":False},
+                        {"name":"💶 Quote","value": (f"**{quote_cr}**" if quote_cr else "–"),"inline":True},
+                        {"name":"💰 Einsatz-Empfehlung","value":einsatz_empfehlung_text(einsatz_cr),"inline":True},
+                        {"name":"🎯 Konfidenz","value":f"{ke_cr} **{konfidenz_cr}/10**","inline":True},
                     ],
                     "footer":{"text":f"CornerRush-Bot • {heute()} {jetzt()}"},
                 }
@@ -3608,14 +3641,20 @@ def bot_xg():
                     continue
                 notified_xg.add(match_id)
                 notified_sets_speichern()
-                msg = (f"📊 <b>xG Signal!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                # v59.7/8: Quote + Einsatz-Empfehlung + Konfidenz ergänzt
+                quote_xg   = get_quote(match_id,"xg")
+                einsatz_xg = kelly_einsatz_bankroll(quote_xg,"torflut") if quote_xg else EINSATZ
+                konfidenz_xg = min(10,5+round(xg_diff))  # höhere xG-Differenz = höhere Konfidenz
+                ke_xg        = konfidenz_emoji(konfidenz_xg)
+                ql_xg      = f"\n💶 Quote: <b>{quote_xg}</b> | 💰 Einsatz: <b>{einsatz_xg}€</b>" if quote_xg else f"\n💰 Einsatz: <b>{einsatz_xg}€</b>"
+                msg = (f"📊 <b>xG Signal!</b> {ke_xg} Konfidenz: <b>{konfidenz_xg}/10</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                        f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
                        f"📊 Stand: <b>{score}</b> | Min. <b>{minute}'</b>\n"
                        f"━━━━━━━━━━━━━━━━━━━━\n"
                        f"📈 xG Gesamt: <b>{xg_ges}</b> | Tore: <b>{tore_ges}</b>\n"
                        f"🎯 xG Differenz: <b>+{xg_diff}</b> ungenutzte Chancen\n"
                        f"━━━━━━━━━━━━━━━━━━━━\n"
-                       f"💡 Tipp: Noch mehr Tore wahrscheinlich\n"
+                       f"💡 Tipp: Noch mehr Tore wahrscheinlich{ql_xg}\n"
                        f"🕐 {jetzt()} Uhr")
                 send_telegram(msg)
                 embed = {
@@ -3628,6 +3667,9 @@ def bot_xg():
                         {"name":"⚽ Echte Tore","value":f"**{tore_ges}**","inline":True},
                         {"name":"💎 xG Diff","value":f"**+{xg_diff}**","inline":True},
                         {"name":"💡 Tipp","value":"Mehr Tore wahrscheinlich","inline":False},
+                        {"name":"💶 Quote","value": (f"**{quote_xg}**" if quote_xg else "–"),"inline":True},
+                        {"name":"💰 Einsatz-Empfehlung","value":einsatz_empfehlung_text(einsatz_xg),"inline":True},
+                        {"name":"🎯 Konfidenz","value":f"{ke_xg} **{konfidenz_xg}/10**","inline":True},
                     ],
                     "footer":{"text":f"xG-Bot • {heute()} {jetzt()}"},
                 }
@@ -3681,8 +3723,12 @@ def bot_early_goal():
                 notified_sets_speichern()
                 tor_min = tore[0].get("time","?") if tore else "?"
                 quote   = get_quote(match_id,"tore")
-                ql      = f"\n💶 Quote: <b>{quote}</b>" if quote else ""
-                msg = (f"⚡ <b>Early Goal!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                einsatz = kelly_einsatz_bankroll(quote,"torflut") if quote else EINSATZ
+                # v59.8: Konfidenz ergänzt – je früher das Tor, desto höher
+                konfidenz = min(10,10-_safe_int(tor_min,5)//2)
+                ke        = konfidenz_emoji(konfidenz)
+                ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else f"\n💰 Einsatz: <b>{einsatz}€</b>"
+                msg = (f"⚡ <b>Early Goal!</b> {ke} Konfidenz: <b>{konfidenz}/10</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                        f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
                        f"📊 Stand: <b>{score_str}</b> | Min. <b>{minute}'</b>\n"
                        f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -3700,6 +3746,9 @@ def bot_early_goal():
                         {"name":"📊 Stand","value":f"**{score_str}**","inline":True},
                         {"name":"⚡ Tor in","value":f"Min. **{tor_min}'**","inline":True},
                         {"name":"🎯 Tipp","value":"**Über 2.5 Tore**","inline":False},
+                        {"name":"💶 Quote","value": (f"**{quote}**" if quote else "–"),"inline":True},
+                        {"name":"💰 Einsatz-Empfehlung","value":einsatz_empfehlung_text(einsatz),"inline":True},
+                        {"name":"🎯 Konfidenz","value":f"{ke} **{konfidenz}/10**","inline":True},
                     ],
                     "footer":{"text":f"EarlyGoal-Bot • {heute()} {jetzt()}"},
                 }
@@ -3908,6 +3957,7 @@ def bot_value_bet():
                             {"name":"💶 Quote","value":f"**{beste_quote}** ({bester_bm})","inline":True},
                             {"name":"💎 Edge","value":f"**+{edge_pct}%**","inline":True},
                             {"name":"💰 Einsatz-Empfehlung","value":einsatz_empfehlung_text(einsatz),"inline":False},
+                            {"name":"🎯 Konfidenz","value":f"{konfidenz_emoji(round(prob*10))} **{round(prob*10)}/10**","inline":True},
                         ],
                         "footer":{"text":f"Value-Bot • {heute()} {jetzt()}"},
                     }
@@ -3983,7 +4033,10 @@ def bot_arbitrage():
                 if key in notified_arbitrage:
                     continue
                 notified_arbitrage.add(key)
-                einsatz_total = 100
+                # v59.7: Einsatz-Split jetzt auf die aktuelle Bankroll skaliert (statt fix 100€)
+                # und tatsächlich angezeigt (wurde vorher nur berechnet, nie ausgegeben).
+                br            = bankroll_laden()
+                einsatz_total = round(min(br*0.1,100),2)
                 einsatz_over  = round(einsatz_total/arb["q_over"]/(1/arb["q_over"]+1/arb["q_under"]),2)
                 einsatz_under = round(einsatz_total-einsatz_over,2)
                 gewinn_sicher = round(einsatz_over*arb["q_over"]-einsatz_total,2)
@@ -3992,6 +4045,7 @@ def bot_arbitrage():
                        f"📈 Over {arb['linie']}: <b>{arb['q_over']}</b> @ {arb['bm_over']}\n"
                        f"📉 Under {arb['linie']}: <b>{arb['q_under']}</b> @ {arb['bm_under']}\n"
                        f"💎 Risikoloser Gewinn: <b>+{arb['profit_pct']}%</b>\n"
+                       f"💰 Einsatz-Split: <b>{einsatz_over}€</b> auf Over, <b>{einsatz_under}€</b> auf Under (Gesamt {einsatz_total}€)\n"
                        f"✅ Garantierter Gewinn: <b>+{gewinn_sicher}€</b>\n"
                        f"🕐 {jetzt()} Uhr")
                 send_telegram(msg)
@@ -4002,7 +4056,9 @@ def bot_arbitrage():
                         {"name":"📈 Over","value":f"**{arb['q_over']}** @ {arb['bm_over']}","inline":True},
                         {"name":"📉 Under","value":f"**{arb['q_under']}** @ {arb['bm_under']}","inline":True},
                         {"name":"💎 Profit","value":f"**+{arb['profit_pct']}%**","inline":True},
+                        {"name":"💰 Einsatz-Empfehlung","value":f"**{einsatz_over}€** Over / **{einsatz_under}€** Under (Σ {einsatz_total}€)","inline":False},
                         {"name":"✅ Garantiert","value":f"**+{gewinn_sicher}€**","inline":True},
+                        {"name":"🎯 Konfidenz","value":"🔒 **10/10** (mathematisch risikofrei)","inline":True},
                     ],
                     "footer":{"text":f"Arbitrage-Bot • {heute()} {jetzt()}"},
                 }
@@ -4124,12 +4180,12 @@ def bot_hz2_tore():
                     continue
                 notified_hz2.add(match_id)
                 notified_sets_speichern()
-                beobachtung_hinzufuegen(match_id,{
-                    "typ":"hz1tore","match_id":match_id,"home":home,"away":away,
-                    "richtung":"ueber","linie":0.5,"score_signal":"0 - 0",
-                    "quote":get_quote(match_id,"hz2"),"webhook":DISCORD_WEBHOOK_TORE,
-                    "signal_zeit":time.time(),"bot":"HZ2-Tore-Bot"
-                })
+                # v59.7 FIX: Quote/Einsatz ergänzt + Message-ID wird jetzt erfasst, damit dieser
+                # Bot (typ="hz1tore" -> wird vom Nachschau-Bot ausgewertet) auch eine ✅/❌-Reaktion
+                # bekommt, wie die anderen 6 auswertbaren Signal-Typen.
+                quote     = get_quote(match_id,"hz2")
+                einsatz   = kelly_einsatz_bankroll(quote,"hz1tore") if quote else EINSATZ
+                ql        = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else f"\n💰 Einsatz: <b>{einsatz}€</b>"
                 konfidenz = min(10,6+(1 if druck_ges >= 12 else 0)+(1 if druck_ges >= 16 else 0))
                 ke        = konfidenz_emoji(konfidenz)
                 msg = (f"⚡ <b>Über 0.5 HZ2 Tore!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
@@ -4139,7 +4195,7 @@ def bot_hz2_tore():
                        f"🎯 Schüsse: {shots_h}|{shots_a} | Ecken: {corners_h}|{corners_a}\n"
                        f"⚡ Druck-Score: <b>{druck_ges}</b>\n"
                        f"📈 >75% Chance auf mind. 1 Tor in HZ2\n"
-                       f"🎯 Tipp: <b>Über 0.5 HZ2 Tore</b>\n"
+                       f"🎯 Tipp: <b>Über 0.5 HZ2 Tore</b>{ql}\n"
                        f"{ke} Konfidenz: <b>{konfidenz}/10</b>\n"
                        f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                 send_telegram(msg)
@@ -4155,10 +4211,20 @@ def bot_hz2_tore():
                         {"name":"⚡ Druck","value":f"**{druck_ges}**","inline":True},
                         {"name":ke+" Konfidenz","value":f"**{konfidenz}/10**","inline":True},
                         {"name":"🎯 Tipp","value":"**Über 0.5 HZ2 Tore**","inline":False},
+                        {"name":"💶 Quote","value": (f"**{quote}**" if quote else "–"),"inline":True},
+                        {"name":"💰 Einsatz-Empfehlung","value":einsatz_empfehlung_text(einsatz),"inline":True},
                     ],
                     "footer":{"text":f"HZ2-Tore-Bot • {heute()} {jetzt()}"},
                 }
-                send_discord_embed(DISCORD_WEBHOOK_TORE,embed)
+                dc_info = send_discord_embed(DISCORD_WEBHOOK_TORE,embed,wait_for_message=True)
+                beobachtung_hinzufuegen(match_id,{
+                    "typ":"hz1tore","match_id":match_id,"home":home,"away":away,
+                    "richtung":"ueber","linie":0.5,"score_signal":"0 - 0",
+                    "quote":quote,"einsatz":einsatz,"webhook":DISCORD_WEBHOOK_TORE,
+                    "signal_zeit":time.time(),"bot":"HZ2-Tore-Bot",
+                    "discord_message_id": (dc_info or {}).get("message_id"),
+                    "discord_channel_id": (dc_info or {}).get("channel_id"),
+                })
                 print(f"  [HZ2-Tore-Bot] ✅ {home} vs {away} | Druck {druck_ges}")
                 time.sleep(0.5)
             bot_fehler_reset("HZ2-Tore-Bot")
@@ -4222,13 +4288,21 @@ def bot_rotkarte_ecken():
                 notified_rk_ecken.add(match_id)
                 notified_sets_speichern()
                 spieler = (letzte.get("player") or {}).get("name") or "?"
-                msg = (f"📐 <b>Rotkarte Ecken-Signal!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                # v59.6: Quote + Einsatz-Empfehlung ergänzt (fehlten bisher bei diesem Bot,
+                # anders als bei Ecken/Torwart/Druck/Comeback/Torflut/HZ1-VZ-Tore).
+                quote   = get_quote(match_id,"rotkarte")
+                einsatz = kelly_einsatz_bankroll(quote,"rotkarte") if quote else EINSATZ
+                # v59.8: Konfidenz ergänzt – je weniger Restzeit, desto sicherer bleibt's unter der Grenze
+                konfidenz = min(10,max(1,4+(30-restminuten)//5))
+                ke        = konfidenz_emoji(konfidenz)
+                ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else f"\n💰 Einsatz: <b>{einsatz}€</b>"
+                msg = (f"📐 <b>Rotkarte Ecken-Signal!</b> {ke} Konfidenz: <b>{konfidenz}/10</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                        f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
                        f"📊 Stand: <b>{score}</b> | Min. <b>{minute}'</b>\n"
                        f"━━━━━━━━━━━━━━━━━━━━\n"
                        f"🟥 {spieler} ({geschwaeches}) Rote Karte Min. {karte_min}'\n"
                        f"⏱️ Noch <b>{restminuten} Min</b>\n"
-                       f"🎯 Tipp: <b>{geschwaeches} unter {grenze_ecken} Ecken gesamt</b>\n"
+                       f"🎯 Tipp: <b>{geschwaeches} unter {grenze_ecken} Ecken gesamt</b>{ql}\n"
                        f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                 send_telegram(msg)
                 embed = {
@@ -4240,6 +4314,9 @@ def bot_rotkarte_ecken():
                         {"name":"🟥 Rote Karte","value":f"**{spieler}** ({geschwaeches})","inline":False},
                         {"name":"⏱️ Rest","value":f"**{restminuten} Min**","inline":True},
                         {"name":"🎯 Tipp","value":f"**{geschwaeches} unter {grenze_ecken} Ecken**","inline":False},
+                        {"name":"💶 Quote","value": (f"**{quote}**" if quote else "–"),"inline":True},
+                        {"name":"💰 Einsatz-Empfehlung","value":einsatz_empfehlung_text(einsatz),"inline":True},
+                        {"name":"🎯 Konfidenz","value":f"{ke} **{konfidenz}/10**","inline":True},
                     ],
                     "footer":{"text":f"RotkarteEcken-Bot • {heute()} {jetzt()}"},
                 }
@@ -5617,15 +5694,20 @@ def bot_tipp_des_tages():
                     anstoß = spiel.get("time","?")
                     r      = claude_prematch_analyse(home,away,liga,anstoß,[])
                     if r and r.get("konfidenz",0)>beste_k:
-                        beste_k=r["konfidenz"]; bester={**r,"home":home,"away":away,"liga":liga,"anstoß":anstoß}
+                        beste_k=r["konfidenz"]; bester={**r,"home":home,"away":away,"liga":liga,"anstoß":anstoß,"id":spiel.get("id","")}
                     time.sleep(1)
                 if not bester: time.sleep(60); continue
-                ke  = konfidenz_emoji(bester["konfidenz"])
+                ke = konfidenz_emoji(bester["konfidenz"])
+                # v59.7: Quote + Einsatz-Empfehlung ergänzt
+                bester_fixture_id = bester.get("id","")
+                quote_tdt         = get_quote(bester_fixture_id,"prematch") if bester_fixture_id else None
+                einsatz_tdt       = kelly_einsatz_bankroll(quote_tdt,"ecken") if quote_tdt else EINSATZ
+                ql_tdt            = f"\n💶 Quote: <b>{quote_tdt}</b> | 💰 Einsatz: <b>{einsatz_tdt}€</b>" if quote_tdt else f"\n💰 Einsatz: <b>{einsatz_tdt}€</b>"
                 msg = (f"⭐ <b>Tipp des Tages – {now.strftime('%d.%m.%Y')}</b>\n"
                        f"━━━━━━━━━━━━━━━━━━━━\n🏆 {bester['liga']}\n"
                        f"📌 {bester['home']} vs {bester['away']}\n"
                        f"🕐 Anstoß: <b>{bester['anstoß']} Uhr</b>\n"
-                       f"━━━━━━━━━━━━━━━━━━━━\n🎯 Tipp: <b>{bester['tipp']}</b>\n"
+                       f"━━━━━━━━━━━━━━━━━━━━\n🎯 Tipp: <b>{bester['tipp']}</b>{ql_tdt}\n"
                        f"{ke} Konfidenz: <b>{bester['konfidenz']}/10</b>\n"
                        f"📊 {bester['analyse']}\n━━━━━━━━━━━━━━━━━━━━\n⚠️ 18+ | Verantwortungsvoll spielen")
                 send_telegram(msg); send_telegram_gruppe(msg)
@@ -5636,6 +5718,8 @@ def bot_tipp_des_tages():
                         {"name":"⚽ Spiel","value":f"{bester['home']} vs {bester['away']}","inline":False},
                         {"name":"🎯 Tipp","value":f"**{bester['tipp']}**","inline":True},
                         {"name":ke+" Konfidenz","value":f"**{bester['konfidenz']}/10**","inline":True},
+                        {"name":"💶 Quote","value": (f"**{quote_tdt}**" if quote_tdt else "–"),"inline":True},
+                        {"name":"💰 Einsatz-Empfehlung","value":einsatz_empfehlung_text(einsatz_tdt),"inline":True},
                         {"name":"📊 Analyse","value":bester["analyse"],"inline":False},
                     ],"footer":{"text":f"Tipp des Tages • {heute()}"}})
                 print(f"  [TippDesTages] ✅ {bester['home']} vs {bester['away']}")
