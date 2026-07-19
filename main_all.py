@@ -90,12 +90,18 @@ DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "")
 
 def discord_add_reaction(channel_id: str, message_id: str, emoji: str):
     """v59: Setzt eine Reaktion (URL-encodetes Emoji, z.B. %E2%9C%85 = ✅) auf eine Nachricht."""
-    if not DISCORD_BOT_TOKEN or not channel_id or not message_id:
+    if not DISCORD_BOT_TOKEN:
+        print(f"  [Discord Reaction] Übersprungen – DISCORD_BOT_TOKEN nicht gesetzt")
+        return
+    if not channel_id or not message_id:
+        print(f"  [Discord Reaction] Übersprungen – keine message_id/channel_id gespeichert (Signal von vor dem Update?)")
         return
     try:
         url = f"https://discord.com/api/v10/channels/{channel_id}/messages/{message_id}/reactions/{emoji}/@me"
         resp = requests.put(url, headers={"Authorization": f"Bot {DISCORD_BOT_TOKEN}"}, timeout=10)
-        if resp.status_code not in (204, 200):
+        if resp.status_code in (204, 200):
+            print(f"  [Discord Reaction] ✅ Reaktion {emoji} gesetzt (message_id={message_id})")
+        else:
             print(f"  [Discord Reaction Fehler] {resp.status_code}: {resp.text}")
     except Exception as e:
         print(f"  [Discord Reaction Fehler] {e}")
@@ -1994,6 +2000,7 @@ def send_tagesbericht():
                 {"name":"🔥 Streak","value":f"**{abs(streak_aktuell)}x {'Gewinn' if streak_aktuell>0 else 'Verlust'}** (Beste: {streak_beste}x)","inline":True},
                 {"name":"🏆 Bot-Rangliste","value": rang or "Noch keine Daten","inline":False},
                 {"name":"🏦 Virtuelle Konten","value": vk or "–","inline":False},
+                {"name":"🎁 Willkommensbonus","value":"Zahl **100€** ein und du bekommst **50€ BettingLab-Bonus** obendrauf!","inline":False},
             ],
             "footer": {"text": f"BetlabLIVE • {heute()} {jetzt()}"},
         }
