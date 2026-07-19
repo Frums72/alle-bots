@@ -1010,6 +1010,7 @@ def af_odds_beste_quote(fixture_id) -> float:
     """Beste verfügbare Über/Unter-Torquote (egal welche Linie) – wie die alte get_quote()."""
     werte = _af_odds_werte(af_get_odds(fixture_id), ("Goals Over/Under","Over/Under"))
     if not werte:
+        print(f"  [AF-Odds] Keine Quote gefunden für Fixture {fixture_id} (Goals Over/Under)")
         return None
     return round(max(w["odd"] for w in werte),2)
 
@@ -1017,8 +1018,10 @@ def af_odds_details(fixture_id) -> dict:
     """Beste + durchschnittliche Über/Unter-Torquote, Anzahl Buchmacher – wie die alte get_quote_details()."""
     werte = _af_odds_werte(af_get_odds(fixture_id), ("Goals Over/Under","Over/Under"))
     if not werte:
+        print(f"  [AF-Odds] Keine Quote gefunden für Fixture {fixture_id} (Goals Over/Under)")
         return {"quote":None,"avg_quote":None,"bookmaker_anzahl":0}
     quotes = [w["odd"] for w in werte]
+    print(f"  [AF-Odds] ✅ {len(quotes)} Quote(n) gefunden für Fixture {fixture_id} (beste: {max(quotes)})")
     return {"quote":max(quotes),"avg_quote":round(sum(quotes)/len(quotes),2),"bookmaker_anzahl":len(quotes)}
 
 def af_odds_vergleich_text(fixture_id) -> str:
