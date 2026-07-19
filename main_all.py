@@ -960,30 +960,119 @@ def cache_aufraumen():
         for k in abgelaufen:
             del _events_cache[k]
 
-def get_quote(home, away, typ):
-    if not ODDS_API_KEY:
-        return None
+# ============================================================
+#  v59.1: LIVE-QUOTEN ÜBER API-FOOTBALL (ersetzt the-odds-api.com)
+# ============================================================
+# Ihr nutzt jetzt ausschließlich API-Football für Quoten (gleicher Key wie
+# für Live-Daten). Der Endpoint /odds liefert Quoten pro Fixture-ID, deshalb
+# arbeiten alle Funktionen unten mit match_id statt mit Team-Namen-Suche wie
+# vorher bei the-odds-api.com.
+_af_odds_cache = {}
+AF_ODDS_TTL    = 300  # 5 Minuten Cache pro Fixture
+
+def af_get_odds(fixture_id) -> list:
+    """Rohe Bookmaker-Liste für eine Fixture von API-Football (/odds?fixture=)."""
+    if not fixture_id:
+        return []
+    now = time.time()
+    key = str(fixture_id)
+    cached = _af_odds_cache.get(key)
+    if cached and now-cached["ts"] < AF_ODDS_TTL:
+        return cached["data"]
+    bookmakers = []
     try:
-        url    = "https://api.the-odds-api.com/v4/sports/soccer/odds/"
-        params = {"apiKey":ODDS_API_KEY,"regions":"eu","markets":"totals","oddsFormat":"decimal"}
-        resp   = requests.get(url,params=params,timeout=8)
-        if resp.status_code != 200:
-            return None
-        beste_quote = None
-        for game in resp.json():
-            h = game.get("home_team","").lower()
-            a = game.get("away_team","").lower()
-            if home.lower()[:4] in h or away.lower()[:4] in a:
-                for bookmaker in game.get("bookmakers",[]):
-                    for market in bookmaker.get("markets",[]):
-                        if market.get("key") == "totals":
-                            for outcome in market.get("outcomes",[]):
-                                q = round(outcome.get("price",0),2)
-                                if q > 1.0 and (beste_quote is None or q > beste_quote):
-                                    beste_quote = q
-        return beste_quote
-    except Exception:
+        params = {"fixture": fixture_id}
+        resp   = api_get_with_retry(f"{LS_BASE}/odds", params)
+        raw    = resp.json().get("response",[]) or []
+        bookmakers = (raw[0].get("bookmakers") or []) if raw else []
+    except Exception as e:
+        print(f"  [AF-Odds] Fehler ({fixture_id}): {e}")
+    _af_odds_cache[key] = {"data": bookmakers, "ts": now}
+    return bookmakers
+
+def _af_odds_werte(bookmakers: list, bet_namen: tuple) -> list:
+    """Sammelt alle {bookmaker,label,odd} aus den angegebenen Bet-Märkten (z.B. 'Goals Over/Under')."""
+    ergebnisse = []
+    for bm in bookmakers:
+        bm_name = bm.get("name","?")
+        for bet in bm.get("bets",[]) or []:
+            if bet.get("name") not in bet_namen:
+                continue
+            for v in bet.get("values",[]) or []:
+                try:
+                    odd = float(v.get("odd"))
+                except (TypeError,ValueError):
+                    continue
+                ergebnisse.append({"bookmaker":bm_name,"label":v.get("value","") or "","odd":odd})
+    return ergebnisse
+
+def af_odds_beste_quote(fixture_id) -> float:
+    """Beste verfügbare Über/Unter-Torquote (egal welche Linie) – wie die alte get_quote()."""
+    werte = _af_odds_werte(af_get_odds(fixture_id), ("Goals Over/Under","Over/Under"))
+    if not werte:
         return None
+    return round(max(w["odd"] for w in werte),2)
+
+def af_odds_details(fixture_id) -> dict:
+    """Beste + durchschnittliche Über/Unter-Torquote, Anzahl Buchmacher – wie die alte get_quote_details()."""
+    werte = _af_odds_werte(af_get_odds(fixture_id), ("Goals Over/Under","Over/Under"))
+    if not werte:
+        return {"quote":None,"avg_quote":None,"bookmaker_anzahl":0}
+    quotes = [w["odd"] for w in werte]
+    return {"quote":max(quotes),"avg_quote":round(sum(quotes)/len(quotes),2),"bookmaker_anzahl":len(quotes)}
+
+def af_odds_vergleich_text(fixture_id) -> str:
+    """Top-4 Buchmacher-Quoten als Textzeile für Telegram – wie die alte get_odds_vergleich()."""
+    werte = _af_odds_werte(af_get_odds(fixture_id), ("Goals Over/Under","Over/Under"))
+    if not werte:
+        return ""
+    beste = {}
+    for w in werte:
+        if w["bookmaker"] not in beste or w["odd"] > beste[w["bookmaker"]]:
+            beste[w["bookmaker"]] = w["odd"]
+    if not beste:
+        return ""
+    top4   = sorted(beste.items(),key=lambda x:x[1],reverse=True)[:4]
+    zeilen = " | ".join([f"{bm}: <b>{q}</b>" for bm,q in top4])
+    return f"\n📊 Quotes: {zeilen}"
+
+def af_odds_ecken_verfuegbar(fixture_id) -> bool:
+    """Prüft ob für die Fixture überhaupt ein Ecken-Markt existiert – wie die alte prüfe_ecken_verfuegbar()."""
+    bookmakers = af_get_odds(fixture_id)
+    if not bookmakers:
+        return True  # keine Odds-Daten vorhanden -> nicht blockieren, kann nicht geprüft werden
+    for bm in bookmakers:
+        for bet in bm.get("bets",[]) or []:
+            if "corner" in (bet.get("name","") or "").lower():
+                return True
+    print(f"  [Ecken] Kein Ecken-Markt bei API-Football für Fixture {fixture_id} – Signal unterdrückt")
+    return False
+
+def af_odds_fuer_value_bot(fixture_id) -> dict:
+    """Liefert dieselbe Dict-Struktur wie die alte get_live_odds_fuer_spiel() (name/point/quote/bookmaker)."""
+    bookmakers = af_get_odds(fixture_id)
+    quoten = {}
+    for bm in bookmakers:
+        bm_name = bm.get("name","?")
+        for bet in bm.get("bets",[]) or []:
+            bet_name = bet.get("name","")
+            for v in bet.get("values",[]) or []:
+                label = v.get("value","") or ""
+                try:
+                    odd = float(v.get("odd"))
+                except (TypeError,ValueError):
+                    continue
+                teile = label.split(" ")
+                name  = teile[0] if teile else label
+                point = teile[1] if len(teile) > 1 else ""
+                k = f"{bet_name}_{name}_{point}"
+                if k not in quoten or odd > quoten[k]["quote"]:
+                    quoten[k] = {"quote":odd,"name":name,"point":point,"market":bet_name,"bookmaker":bm_name}
+    return quoten
+
+def get_quote(match_id, typ=None):
+    """v59.1: Quoten jetzt über API-Football (fixture-basiert), nicht mehr the-odds-api.com."""
+    return af_odds_beste_quote(match_id)
 
 def kelly_einsatz(quote: float, typ: str) -> float:
     if not quote or quote <= 1.0:
@@ -1185,66 +1274,13 @@ def konfidenz_emoji(score):
     if score >= 4: return "🟠"
     return "🔴"
 
-def get_quote_details(home, away):
-    if not ODDS_API_KEY:
-        return {"quote":None,"avg_quote":None,"bookmaker_anzahl":0}
-    try:
-        url    = "https://api.the-odds-api.com/v4/sports/soccer/odds/"
-        params = {"apiKey":ODDS_API_KEY,"regions":"eu","markets":"totals","oddsFormat":"decimal"}
-        resp   = requests.get(url,params=params,timeout=8)
-        if resp.status_code != 200:
-            return {"quote":None,"avg_quote":None,"bookmaker_anzahl":0}
-        alle_quotes = []
-        for game in resp.json():
-            h = game.get("home_team","").lower()
-            a = game.get("away_team","").lower()
-            if home.lower()[:4] in h or away.lower()[:4] in a:
-                for bookmaker in game.get("bookmakers",[]):
-                    for market in bookmaker.get("markets",[]):
-                        if market.get("key") == "totals":
-                            for outcome in market.get("outcomes",[]):
-                                q = outcome.get("price",0)
-                                if q > 1.0:
-                                    alle_quotes.append(round(q,2))
-        if not alle_quotes:
-            return {"quote":None,"avg_quote":None,"bookmaker_anzahl":0}
-        return {"quote":max(alle_quotes),"avg_quote":round(sum(alle_quotes)/len(alle_quotes),2),"bookmaker_anzahl":len(alle_quotes)}
-    except Exception:
-        return {"quote":None,"avg_quote":None,"bookmaker_anzahl":0}
+def get_quote_details(match_id):
+    """v59.1: Quoten jetzt über API-Football (fixture-basiert), nicht mehr the-odds-api.com."""
+    return af_odds_details(match_id)
 
-def get_odds_vergleich(home: str, away: str) -> str:
-    if not ODDS_API_KEY:
-        return ""
-    try:
-        url    = "https://api.the-odds-api.com/v4/sports/soccer/odds/"
-        params = {"apiKey":ODDS_API_KEY,"regions":"eu","markets":"totals","oddsFormat":"decimal"}
-        resp   = requests.get(url,params=params,timeout=8)
-        if resp.status_code != 200:
-            return ""
-        bm_namen = {"bet365":"Bet365","unibet":"Unibet","betway":"Betway","williamhill":"William Hill","bwin":"Bwin","pinnacle":"Pinnacle"}
-        beste = {}
-        for game in resp.json():
-            h = game.get("home_team","").lower()
-            a = game.get("away_team","").lower()
-            if home.lower()[:4] not in h and away.lower()[:4] not in a:
-                continue
-            for bm in game.get("bookmakers",[]):
-                name    = bm.get("key","").lower()
-                anzeige = bm_namen.get(name,name.capitalize())
-                for market in bm.get("markets",[]):
-                    if market.get("key") == "totals":
-                        for outcome in market.get("outcomes",[]):
-                            q = round(outcome.get("price",0),2)
-                            if q > 1.0:
-                                if anzeige not in beste or q > beste[anzeige]:
-                                    beste[anzeige] = q
-        if not beste:
-            return ""
-        top4   = sorted(beste.items(),key=lambda x:x[1],reverse=True)[:4]
-        zeilen = " | ".join([f"{bm}: <b>{q}</b>" for bm,q in top4])
-        return f"\n📊 Quotes: {zeilen}"
-    except Exception:
-        return ""
+def get_odds_vergleich(match_id) -> str:
+    """v59.1: Quoten jetzt über API-Football (fixture-basiert), nicht mehr the-odds-api.com."""
+    return af_odds_vergleich_text(match_id)
 
 def gegentipp_registrieren(match_id,markt,richtung,bot):
     aktive_tipps.setdefault(match_id,[])
@@ -1291,7 +1327,7 @@ def clv_auswerten(spiel):
     if not einstieg:
         return ""
     try:
-        details = get_quote_details(spiel["home"],spiel["away"])
+        details = get_quote_details(spiel.get("match_id"))
         schluss = details.get("avg_quote")
         if not schluss:
             return ""
@@ -1656,37 +1692,9 @@ def kombi_signal_check(match_id: str):
             kombi_gesendet.add(match_id)
             break
 
-def prüfe_ecken_verfuegbar(home: str, away: str) -> bool:
-    if not ODDS_API_KEY:
-        return True
-    try:
-        url    = "https://api.the-odds-api.com/v4/sports/soccer/odds/"
-        params = {"apiKey":ODDS_API_KEY,"regions":"eu","markets":"alternate_totals","oddsFormat":"decimal"}
-        resp   = requests.get(url,params=params,timeout=6)
-        if resp.status_code != 200:
-            return True
-        home_s = home[:6].lower()
-        away_s = away[:6].lower()
-        for game in resp.json():
-            h = game.get("home_team","").lower()
-            a = game.get("away_team","").lower()
-            if home_s not in h and away_s not in a:
-                continue
-            bm_mit_ecken = 0
-            for bm in game.get("bookmakers",[]):
-                for market in bm.get("markets",[]):
-                    if "corner" in market.get("key","").lower():
-                        bm_mit_ecken += 1
-                        break
-            if bm_mit_ecken >= 2:
-                return True
-            elif bm_mit_ecken == 0:
-                print(f"  [Ecken] Kein Ecken-Markt für {home} vs {away} – Signal unterdrückt")
-                return False
-        return True
-    except Exception as e:
-        print(f"  [Ecken] Verfügbarkeits-Check Fehler: {e}")
-        return True
+def prüfe_ecken_verfuegbar(match_id) -> bool:
+    """v59.1: Prüft jetzt über API-Football (fixture-basiert), nicht mehr the-odds-api.com."""
+    return af_odds_ecken_verfuegbar(match_id)
 
 def whitelist_check(liga: str, home: str = "", away: str = "") -> bool:
     if not _whitelist.get("aktiv"):
@@ -2015,7 +2023,7 @@ def send_tagesbericht():
                 {"name":"❌ Verloren","value":f"**{vl}**","inline":True},
                 {"name":"🎯 Trefferquote","value":f"**{pct}%**","inline":True},
                 {"name":"💰 Bankroll","value":f"**{br}€** ({br_pfeil}{diff}€)","inline":True},
-                {"name":"🔥 Streak","value":f"**{abs(streak_aktuell)}x {'Gewinn' if streak_aktuell>0 else 'Verlust'}** (Beste: {streak_beste}x)","inline":True},
+                {"name":"🔥 Streak","value": (f"**Noch keine Serie** (Beste: {streak_beste}x)" if streak_aktuell==0 else f"**{abs(streak_aktuell)}x {'Gewinn' if streak_aktuell>0 else 'Verlust'}** (Beste: {streak_beste}x)"),"inline":True},
                 {"name":"🏆 Bot-Rangliste","value": rang or "Noch keine Daten","inline":False},
                 {"name":"🏦 Virtuelle Konten","value": vk or "–","inline":False},
                 {"name":"🎁 Willkommensbonus","value":"Zahl **100€** ein und du bekommst **50€ BettingLab-Bonus** obendrauf!","inline":False},
@@ -2448,7 +2456,7 @@ def bot_ecken():
                     continue
                 if not whitelist_check(comp,home,away):
                     continue
-                qd      = get_quote_details(home,away)
+                qd      = get_quote_details(match_id)
                 quote   = qd["quote"]
                 bm_anz  = qd["bookmaker_anzahl"]
                 if bm_anz > 0 and bm_anz < MIN_BOOKMAKER_ANZAHL:
@@ -2499,8 +2507,8 @@ def bot_ecken():
                 ev_data = berechne_ev_score(konfidenz, quote) if quote else {"label":"–"}
                 ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b> | {ev_data['label']}" if quote else ""
                 cl_line = f"\n🤖 Claude: <b>{cl_text}</b>" if cl_text else ""
-                odds_vgl = get_odds_vergleich(home,away)
-                if not prüfe_ecken_verfuegbar(home,away):
+                odds_vgl = get_odds_vergleich(match_id)
+                if not prüfe_ecken_verfuegbar(match_id):
                     notified_ecken.add(match_id)
                     continue
                 if not tipp_erlaubt(match_id,"Ecken-Bot"):
@@ -2580,7 +2588,7 @@ def bot_torwart():
                 status  = game.get("status","")
                 minute  = game.get("time","?")
                 min_text = "Halbzeit" if status == "HALF TIME BREAK" else f"{minute}'"
-                quote   = get_quote(home,away,"torwart")
+                quote   = get_quote(match_id,"torwart")
                 if quote and quote < MIN_QUOTE:
                     continue
                 einsatz = kelly_einsatz_bankroll(quote,"torwart") if quote else EINSATZ
@@ -2654,7 +2662,7 @@ def bot_druck():
                 country = (game.get("country") or {}).get("name","International")
                 score   = game.get("scores",{}).get("score","?")
                 minute  = game.get("time","?")
-                quote   = get_quote(home,away,"druck")
+                quote   = get_quote(match_id,"druck")
                 if quote and quote < MIN_QUOTE:
                     continue
                 einsatz = kelly_einsatz_bankroll(quote,"druck") if quote else EINSATZ
@@ -2734,7 +2742,7 @@ def bot_comeback():
                 comp    = game.get("competition",{}).get("name","?")
                 country = (game.get("country") or {}).get("name","International")
                 minute  = game.get("time","?")
-                quote   = get_quote(home,away,"comeback")
+                quote   = get_quote(match_id,"comeback")
                 if quote and quote < MIN_QUOTE:
                     continue
                 einsatz = kelly_einsatz_bankroll(quote,"comeback") if quote else EINSATZ
@@ -2811,7 +2819,7 @@ def bot_torflut():
                 else:                             grenze = tore_hz1+3
                 if tore_hz1 >= 4:
                     grenze = max(grenze,tore_hz1+2)
-                quote   = get_quote(home,away,"torflut")
+                quote   = get_quote(match_id,"torflut")
                 if quote and quote < MIN_QUOTE:
                     continue
                 einsatz = kelly_einsatz_bankroll(quote,"torflut") if quote else EINSATZ
@@ -2876,7 +2884,7 @@ def bot_tore_analyse():
                 ana = analysiere_h2h_tore(h2h)
                 if not ana:
                     continue
-                qd     = get_quote_details(home,away)
+                qd     = get_quote_details(match_id)
                 quote  = qd["quote"]
                 bm_anz = qd["bookmaker_anzahl"]
                 if quote and quote < MIN_QUOTE:
@@ -3627,7 +3635,7 @@ def bot_early_goal():
                 notified_early_goal.add(match_id)
                 notified_sets_speichern()
                 tor_min = tore[0].get("time","?") if tore else "?"
-                quote   = get_quote(home,away,"tore")
+                quote   = get_quote(match_id,"tore")
                 ql      = f"\n💶 Quote: <b>{quote}</b>" if quote else ""
                 msg = (f"⚡ <b>Early Goal!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                        f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
@@ -3741,35 +3749,9 @@ VALUE_REGELN = [
      "prob":lambda s,ev,st:0.72,"linie":11.5,"richtung":"über"},
 ]
 
-def get_live_odds_fuer_spiel(home: str, away: str) -> dict:
-    if not ODDS_API_KEY:
-        return {}
-    try:
-        url    = "https://api.the-odds-api.com/v4/sports/soccer/odds/"
-        params = {"apiKey":ODDS_API_KEY,"regions":"eu","markets":"totals,spreads","oddsFormat":"decimal"}
-        resp   = requests.get(url,params=params,timeout=8)
-        if resp.status_code != 200:
-            return {}
-        for game in resp.json():
-            h = game.get("home_team","").lower()
-            a = game.get("away_team","").lower()
-            if home.lower()[:5] in h or away.lower()[:5] in a:
-                quoten = {}
-                for bm in game.get("bookmakers",[]):
-                    for market in bm.get("markets",[]):
-                        key = market.get("key","")
-                        for outcome in market.get("outcomes",[]):
-                            name  = outcome.get("name","")
-                            point = outcome.get("point","")
-                            q     = round(outcome.get("price",0),2)
-                            k     = f"{key}_{name}_{point}"
-                            if k not in quoten or q > quoten[k]["quote"]:
-                                quoten[k] = {"quote":q,"name":name,"point":point,"market":key,"bookmaker":bm.get("title","")}
-                return quoten
-        return {}
-    except Exception as e:
-        print(f"  [Value] Odds Fehler: {e}")
-        return {}
+def get_live_odds_fuer_spiel(match_id) -> dict:
+    """v59.1: Quoten jetzt über API-Football (fixture-basiert), nicht mehr the-odds-api.com."""
+    return af_odds_fuer_value_bot(match_id)
 
 def berechne_value(prob: float, quote: float) -> float:
     return round(prob*quote-1,3)
@@ -3806,7 +3788,7 @@ def bot_value_bet():
                     prob  = regel["prob"](game,events,stats)
                     linie = regel["linie"]
                     rich  = regel["richtung"]
-                    quoten = get_live_odds_fuer_spiel(home,away)
+                    quoten = get_live_odds_fuer_spiel(match_id)
                     if not quoten:
                         continue
                     beste_quote = None; bester_bm = ""
@@ -3862,50 +3844,51 @@ def bot_value_bet():
 notified_arbitrage = set()
 
 def finde_arbitrage() -> list:
-    if not ODDS_API_KEY:
-        return []
+    """
+    v59.1: Sucht Arbitrage jetzt über die aktuell laufenden Spiele (API-Football
+    Odds pro Fixture), statt wie vorher über einen Bulk-Abruf aller Spiele
+    weltweit bei the-odds-api.com. Dadurch werden nur LIVE-Spiele erfasst,
+    keine Pre-Match-Quoten mehr (API-Football liefert Odds fixture-basiert).
+    """
     try:
-        url    = "https://api.the-odds-api.com/v4/sports/soccer/odds/"
-        params = {"apiKey":ODDS_API_KEY,"regions":"eu","markets":"totals","oddsFormat":"decimal"}
-        resp   = requests.get(url,params=params,timeout=8)
-        if resp.status_code != 200:
-            return []
-        arbs = []
-        for game in resp.json():
-            home_t = game.get("home_team","?")
-            away_t = game.get("away_team","?")
-            beste_over  = {}
-            beste_under = {}
-            for bm in game.get("bookmakers",[]):
-                for market in bm.get("markets",[]):
-                    if market.get("key") != "totals":
-                        continue
-                    for outcome in market.get("outcomes",[]):
-                        linie = str(outcome.get("point",""))
-                        q     = outcome.get("price",0)
-                        name  = outcome.get("name","")
-                        if "Over" in name:
-                            if linie not in beste_over or q > beste_over[linie]["q"]:
-                                beste_over[linie] = {"q":q,"bm":bm.get("title","?")}
-                        elif "Under" in name:
-                            if linie not in beste_under or q > beste_under[linie]["q"]:
-                                beste_under[linie] = {"q":q,"bm":bm.get("title","?")}
-            for linie in beste_over:
-                if linie not in beste_under:
-                    continue
-                q_over  = beste_over[linie]["q"]
-                q_under = beste_under[linie]["q"]
-                margin  = round(1/q_over+1/q_under,4)
-                if margin < 0.98:
-                    profit_pct = round((1-margin)*100,2)
-                    arbs.append({"home":home_t,"away":away_t,"linie":linie,
-                                 "q_over":q_over,"bm_over":beste_over[linie]["bm"],
-                                 "q_under":q_under,"bm_under":beste_under[linie]["bm"],
-                                 "margin":margin,"profit_pct":profit_pct})
-        return sorted(arbs,key=lambda x:x["profit_pct"],reverse=True)
+        matches = get_live_matches()
     except Exception as e:
         print(f"  [Arbitrage] Fehler: {e}")
         return []
+    arbs = []
+    for m in matches:
+        fixture_id = str(m.get("id"))
+        home_t = m.get("home",{}).get("name","?")
+        away_t = m.get("away",{}).get("name","?")
+        werte = _af_odds_werte(af_get_odds(fixture_id), ("Goals Over/Under","Over/Under"))
+        if not werte:
+            continue
+        beste_over  = {}
+        beste_under = {}
+        for w in werte:
+            teile = w["label"].split(" ")
+            if len(teile) < 2:
+                continue
+            richtung, linie = teile[0], teile[1]
+            if richtung == "Over":
+                if linie not in beste_over or w["odd"] > beste_over[linie]["q"]:
+                    beste_over[linie] = {"q":w["odd"],"bm":w["bookmaker"]}
+            elif richtung == "Under":
+                if linie not in beste_under or w["odd"] > beste_under[linie]["q"]:
+                    beste_under[linie] = {"q":w["odd"],"bm":w["bookmaker"]}
+        for linie in beste_over:
+            if linie not in beste_under:
+                continue
+            q_over  = beste_over[linie]["q"]
+            q_under = beste_under[linie]["q"]
+            margin  = round(1/q_over+1/q_under,4)
+            if margin < 0.98:
+                profit_pct = round((1-margin)*100,2)
+                arbs.append({"home":home_t,"away":away_t,"linie":linie,
+                             "q_over":q_over,"bm_over":beste_over[linie]["bm"],
+                             "q_under":q_under,"bm_under":beste_under[linie]["bm"],
+                             "margin":margin,"profit_pct":profit_pct})
+    return sorted(arbs,key=lambda x:x["profit_pct"],reverse=True)
 
 def bot_arbitrage():
     print("[Arbitrage-Bot] Gestartet | Suche Arbitrage-Möglichkeiten")
@@ -3956,31 +3939,27 @@ notified_sharp = set()
 _sharp_history = {}
 
 def bot_sharp_money():
+    """
+    v59.1: Beobachtet Quotenbewegungen jetzt über API-Football-Odds (Markt
+    'Match Winner') pro laufendem Spiel, statt wie vorher über einen
+    Bulk-Abruf bei the-odds-api.com.
+    """
     print("[Sharp-Money-Bot] Gestartet | Pro-Wetter Bewegungen")
     while True:
         try:
-            if not ODDS_API_KEY:
-                time.sleep(10*60)
-                continue
-            url    = "https://api.the-odds-api.com/v4/sports/soccer/odds/"
-            params = {"apiKey":ODDS_API_KEY,"regions":"eu","markets":"h2h","oddsFormat":"decimal"}
-            resp   = requests.get(url,params=params,timeout=10)
-            if resp.status_code != 200:
-                time.sleep(10*60)
-                continue
+            matches = get_live_matches()
             now = time.time()
-            for game in resp.json():
-                home_t = game.get("home_team","?")
-                away_t = game.get("away_team","?")
-                key    = f"{home_t}_{away_t}"
+            for m in matches:
+                fixture_id = str(m.get("id"))
+                home_t = m.get("home",{}).get("name","?")
+                away_t = m.get("away",{}).get("name","?")
+                key    = fixture_id
+                werte  = _af_odds_werte(af_get_odds(fixture_id), ("Match Winner",))
+                if not werte:
+                    continue
                 bm_quoten = {}
-                for bm in game.get("bookmakers",[])[:3]:
-                    for market in bm.get("markets",[]):
-                        for outcome in market.get("outcomes",[]):
-                            k = f"{outcome.get('name','')}_{outcome.get('point','')}"
-                            if k not in bm_quoten:
-                                bm_quoten[k] = []
-                            bm_quoten[k].append({"q":outcome.get("price",0),"bookmaker":bm.get("title","?")})
+                for w in werte:
+                    bm_quoten.setdefault(w["label"],[]).append({"q":w["odd"],"bookmaker":w["bookmaker"]})
                 if key not in _sharp_history:
                     _sharp_history[key] = {"ts":now,"quoten":bm_quoten}
                     continue
@@ -4066,7 +4045,7 @@ def bot_hz2_tore():
                 beobachtung_hinzufuegen(match_id,{
                     "typ":"hz1tore","match_id":match_id,"home":home,"away":away,
                     "richtung":"ueber","linie":0.5,"score_signal":"0 - 0",
-                    "quote":get_quote(home,away,"hz2"),"webhook":DISCORD_WEBHOOK_TORE,
+                    "quote":get_quote(match_id,"hz2"),"webhook":DISCORD_WEBHOOK_TORE,
                     "signal_zeit":time.time(),"bot":"HZ2-Tore-Bot"
                 })
                 konfidenz = min(10,6+(1 if druck_ges >= 12 else 0)+(1 if druck_ges >= 16 else 0))
@@ -5119,10 +5098,12 @@ def vk_update(typ, gewonnen, quote=1.85):
     vk_speichern()
 
 def vk_status_text():
+    """v59.2: Nutzt Discord-Markdown (**fett**) statt HTML <b>-Tags, da diese Funktion
+    ausschließlich im Discord-Tagesbericht-Embed verwendet wird (Discord rendert kein HTML)."""
     zeilen = []
     for k,v in VIRTUELLE_KONTEN.items():
         diff = round(v["bankroll"]-v["start"],2)
-        zeilen.append(f"{v['name']}: <b>{v['bankroll']}€</b> ({'+' if diff>=0 else ''}{diff}€)")
+        zeilen.append(f"{v['name']}: **{v['bankroll']}€** ({'+' if diff>=0 else ''}{diff}€)")
     return "\n".join(zeilen)
 
 
@@ -5583,22 +5564,24 @@ _odds_history_tracker = {}
 notified_odds_drop    = set()
 
 def bot_odds_tracker():
+    """
+    v59.1: Beobachtet Quotenbewegungen jetzt über API-Football-Odds pro
+    laufendem Spiel, statt wie vorher über einen Bulk-Abruf bei the-odds-api.com.
+    """
     print("[Odds-Tracker] Gestartet | Quoten-Bewegungen überwachen")
     while True:
         try:
-            if not ODDS_API_KEY: time.sleep(5*60); continue
-            resp = requests.get("https://api.the-odds-api.com/v4/sports/soccer/odds/",
-                params={"apiKey":ODDS_API_KEY,"regions":"eu","markets":"totals,h2h","oddsFormat":"decimal"},timeout=10)
-            if resp.status_code!=200: time.sleep(5*60); continue
+            matches = get_live_matches()
             now = time.time()
-            for game in resp.json():
-                h_t = game.get("home_team","?"); a_t = game.get("away_team","?")
-                key = f"{h_t}_{a_t}"; bm_q = {}
-                for bm in game.get("bookmakers",[])[:3]:
-                    for market in bm.get("markets",[]):
-                        for out in market.get("outcomes",[]):
-                            k = f"{out.get('name','')}_{out.get('point','')}"
-                            bm_q.setdefault(k,[]).append({"q":out.get("price",0),"bm":bm.get("title","?")})
+            for m in matches:
+                fixture_id = str(m.get("id"))
+                h_t = m.get("home",{}).get("name","?"); a_t = m.get("away",{}).get("name","?")
+                key = fixture_id
+                werte = _af_odds_werte(af_get_odds(fixture_id), ("Goals Over/Under","Over/Under","Match Winner"))
+                if not werte: continue
+                bm_q = {}
+                for w in werte:
+                    bm_q.setdefault(w["label"],[]).append({"q":w["odd"],"bm":w["bookmaker"]})
                 if key not in _odds_history_tracker:
                     _odds_history_tracker[key]={"ts":now,"q":bm_q}; continue
                 alt = _odds_history_tracker[key]
@@ -5632,12 +5615,12 @@ def bot_hedge_alarm():
     while True:
         try:
             offene = tracker_get_offene()
-            if not ODDS_API_KEY or not offene: time.sleep(5*60); continue
+            if not offene: time.sleep(5*60); continue
             for _,sig in offene:
                 home   = sig.get("home",""); away  = sig.get("away","")
                 orig_q = sig.get("quote")
                 if not orig_q or orig_q<=1.0: continue
-                details   = get_quote_details(home,away)
+                details   = get_quote_details(sig.get("match_id"))  # v59.1: jetzt fixture-basiert
                 aktuelle_q = details.get("avg_quote",0)
                 if not aktuelle_q or aktuelle_q<=1.0: continue
                 anstieg = round((aktuelle_q-orig_q)/orig_q*100,1)
@@ -5677,6 +5660,12 @@ def bot_bonus_tracker():
         time.sleep(60)
 
 def bot_quotenvergleich():
+    """
+    v59.1: Nutzt jetzt die Fixtures des Tages (bereits über API-Football
+    geladen wie beim PreMatch-Bot) und fragt für die Top-Ligen-Spiele die
+    Odds einzeln über /odds ab, statt wie vorher einen Bulk-Abruf bei
+    the-odds-api.com zu machen.
+    """
     print("[Quotenvergleich-Bot] Gestartet | Täglich 08:30 Uhr")
     gesendet = set()
     while True:
@@ -5684,20 +5673,18 @@ def bot_quotenvergleich():
             now = de_now(); key = now.strftime("%Y-%m-%d")
             if now.hour==8 and 30<=now.minute<35 and key not in gesendet:
                 gesendet.add(key)
-                if not ODDS_API_KEY: time.sleep(60); continue
-                resp = requests.get("https://api.the-odds-api.com/v4/sports/soccer/odds/",
-                    params={"apiKey":ODDS_API_KEY,"regions":"eu,uk","markets":"h2h,totals","oddsFormat":"decimal"},timeout=10)
-                if resp.status_code!=200: time.sleep(60); continue
+                fixtures   = ls_get_fixtures(now.strftime("%Y-%m-%d"))
+                top_spiele = filtere_top_spiele(fixtures)[:8]
                 top = []
-                for game in resp.json()[:8]:
-                    h_t=game.get("home_team","?"); a_t=game.get("away_team","?")
-                    bq=0; bbm="?"; bm_name=""
-                    for bm in game.get("bookmakers",[]):
-                        for market in bm.get("markets",[]):
-                            for out in market.get("outcomes",[]):
-                                q=out.get("price",0)
-                                if q>bq: bq=q; bbm=bm.get("title","?"); bm_name=f"{out.get('name','')} {out.get('point','')}"
-                    if bq>=1.8: top.append({"spiel":f"{h_t} vs {a_t}","q":bq,"bm":bbm,"markt":bm_name})
+                for spiel in top_spiele:
+                    fixture_id = spiel.get("id","")
+                    h_t = spiel.get("home_name") or (spiel.get("home") or {}).get("name","?")
+                    a_t = spiel.get("away_name") or (spiel.get("away") or {}).get("name","?")
+                    werte = _af_odds_werte(af_get_odds(fixture_id), ("Match Winner","Goals Over/Under","Over/Under"))
+                    if not werte: continue
+                    bester = max(werte,key=lambda w:w["odd"])
+                    if bester["odd"]>=1.8:
+                        top.append({"spiel":f"{h_t} vs {a_t}","q":bester["odd"],"bm":bester["bookmaker"],"markt":bester["label"]})
                 if top:
                     top.sort(key=lambda x:x["q"],reverse=True)
                     zeilen = "\n".join([f"⭐ {v['spiel']}\n   💶 {v['q']} @ {v['bm']} ({v['markt']})" for v in top[:5]])
