@@ -86,7 +86,7 @@ DISCORD_WEBHOOK_CS2      = os.environ.get("DISCORD_WEBHOOK_CS2",      "")
 # ── v59: Discord-Bot-Token für Reaktionen (✅/❌) auf ausgewertete Signale ──
 # Webhooks können KEINE Reaktionen setzen – dafür braucht es einen echten Bot
 # mit "Add Reactions" + "View Channel"-Rechten in den jeweiligen Kanälen.
-DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "MTUyODQxMjg2NjY2NjAzNzM5MA.GfSsm9.FuFdNPwGakkMMdc6wv_RAamcuOCh14tPo_wPLg")
+DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "")
 
 def discord_add_reaction(channel_id: str, message_id: str, emoji: str):
     """v59: Setzt eine Reaktion (URL-encodetes Emoji, z.B. %E2%9C%85 = ✅) auf eine Nachricht."""
