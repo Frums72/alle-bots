@@ -1733,7 +1733,18 @@ FARBE_VZTORE              = 0x8E44AD
 FARBE_AUSWERTUNG_GEWONNEN = 0x2ECC71
 FARBE_AUSWERTUNG_VERLOREN = 0xE74C3C
 
-def discord_ecken_tipp(home,away,comp,country,score,corners_home,corners_away,corners,grenze,quote):
+def einsatz_empfehlung_text(einsatz) -> str:
+    """v59: Formatiert die empfohlene Einsatzhöhe inkl. Anteil an der aktuellen Bankroll für Discord-Embeds."""
+    if not einsatz:
+        return "–"
+    try:
+        br  = bankroll_laden()
+        pct = round(einsatz/br*100,1) if br else 0
+        return f"**{einsatz}€** (≈{pct}% der Bankroll)"
+    except Exception:
+        return f"**{einsatz}€**"
+
+def discord_ecken_tipp(home,away,comp,country,score,corners_home,corners_away,corners,grenze,quote,einsatz=None):
     qt = f"\n💶 **Quote:** {quote}" if quote else ""
     return {
         "title":"📐 Ecken Tipp","color":FARBE_ECKEN,
@@ -1744,11 +1755,12 @@ def discord_ecken_tipp(home,away,comp,country,score,corners_home,corners_away,co
             {"name":"⚽ Spiel","value":f"{home} vs {away}","inline":False},
             {"name":"📐 Ecken zur Halbzeit","value":f"🔵 {home}: **{corners_home}**\n🔴 {away}: **{corners_away}**\n📊 Gesamt: **{corners}**","inline":False},
             {"name":"🎯 Empfehlung","value":f"Unter **{grenze} Ecken** (Gesamtspiel){qt}","inline":False},
+            {"name":"💰 Einsatz-Empfehlung","value":einsatz_empfehlung_text(einsatz),"inline":False},
         ],
         "footer":{"text":f"Ecken-Bot • {heute()} {jetzt()}"},
     }
 
-def discord_torwart_tipp(home,away,comp,country,shots_home,shots_away,saves_h,saves_a,poss_h,poss_a,min_text,quote):
+def discord_torwart_tipp(home,away,comp,country,shots_home,shots_away,saves_h,saves_a,poss_h,poss_a,min_text,quote,einsatz=None):
     qt = f"\n💶 **Quote:** {quote}" if quote else ""
     return {
         "title":"🧤 Torwart Alarm","color":FARBE_TORWART,
@@ -1761,11 +1773,12 @@ def discord_torwart_tipp(home,away,comp,country,shots_home,shots_away,saves_h,sa
             {"name":"🧤 Paraden","value":f"🔵 {saves_h} | 🔴 {saves_a}","inline":True},
             {"name":"⚽ Ballbesitz","value":f"{poss_h}% | {poss_a}%","inline":True},
             {"name":"🎯 Empfehlung","value":f"Mindestens **1 Tor** fällt noch{qt}","inline":False},
+            {"name":"💰 Einsatz-Empfehlung","value":einsatz_empfehlung_text(einsatz),"inline":False},
         ],
         "footer":{"text":f"Torwart-Bot • {heute()} {jetzt()}"},
     }
 
-def discord_druck_tipp(home,away,comp,country,score,minute,druck_team,ecken_stark,ecken_schwach,quote):
+def discord_druck_tipp(home,away,comp,country,score,minute,druck_team,ecken_stark,ecken_schwach,quote,einsatz=None):
     qt = f"\n💶 **Quote:** {quote}" if quote else ""
     return {
         "title":"🔥 Druck Signal","color":FARBE_DRUCK,
@@ -1777,11 +1790,12 @@ def discord_druck_tipp(home,away,comp,country,score,minute,druck_team,ecken_star
             {"name":"🔥 Dominantes Team","value":f"**{druck_team}**","inline":False},
             {"name":"📐 Ecken","value":f"**{ecken_stark}** : {ecken_schwach}","inline":True},
             {"name":"🎯 Empfehlung","value":f"Nächste Ecke / Tor für **{druck_team}**{qt}","inline":False},
+            {"name":"💰 Einsatz-Empfehlung","value":einsatz_empfehlung_text(einsatz),"inline":False},
         ],
         "footer":{"text":f"Druck-Bot • {heute()} {jetzt()}"},
     }
 
-def discord_comeback_tipp(home,away,comp,country,score,minute,rueckliegend,fuehrend,shots_r,shots_f,poss_r,quote):
+def discord_comeback_tipp(home,away,comp,country,score,minute,rueckliegend,fuehrend,shots_r,shots_f,poss_r,quote,einsatz=None):
     qt = f"\n💶 **Quote:** {quote}" if quote else ""
     return {
         "title":"🔄 Comeback Signal","color":FARBE_COMEBACK,
@@ -1795,11 +1809,12 @@ def discord_comeback_tipp(home,away,comp,country,score,minute,rueckliegend,fuehr
             {"name":"🎯 Schüsse Rückliegend","value":f"**{shots_r}** | Gegner: {shots_f}","inline":True},
             {"name":"⚽ Ballbesitz","value":f"**{poss_r}%**","inline":True},
             {"name":"🎯 Empfehlung","value":f"Beide Teams treffen (Comeback){qt}","inline":False},
+            {"name":"💰 Einsatz-Empfehlung","value":einsatz_empfehlung_text(einsatz),"inline":False},
         ],
         "footer":{"text":f"Comeback-Bot • {heute()} {jetzt()}"},
     }
 
-def discord_torflut_tipp(home,away,comp,country,score_hz1,tore_hz1,grenze,quote,shots_ges=0,poss_h="?",poss_a="?"):
+def discord_torflut_tipp(home,away,comp,country,score_hz1,tore_hz1,grenze,quote,shots_ges=0,poss_h="?",poss_a="?",einsatz=None):
     qt = f"\n💶 **Quote:** {quote}" if quote else ""
     return {
         "title":"🌊 Torflut Signal","color":FARBE_TORFLUT,
@@ -1812,11 +1827,12 @@ def discord_torflut_tipp(home,away,comp,country,score_hz1,tore_hz1,grenze,quote,
             {"name":"🎯 Schüsse gesamt","value":f"**{shots_ges}**","inline":True},
             {"name":"⚽ Ballbesitz","value":f"{poss_h}% | {poss_a}%","inline":True},
             {"name":"🎯 Empfehlung","value":f"Über **{grenze} Tore** im Gesamtspiel{qt}","inline":False},
+            {"name":"💰 Einsatz-Empfehlung","value":einsatz_empfehlung_text(einsatz),"inline":False},
         ],
         "footer":{"text":f"Torflut-Bot • {heute()} {jetzt()}"},
     }
 
-def discord_hz1tore_tipp(home,away,comp,country,richtung,linie,avg_hz1,spiele,quote):
+def discord_hz1tore_tipp(home,away,comp,country,richtung,linie,avg_hz1,spiele,quote,einsatz=None):
     qt = f"\n💶 **Quote:** {quote}" if quote else ""
     pfeil = "📈" if richtung == "über" else "📉"
     return {
@@ -1827,11 +1843,12 @@ def discord_hz1tore_tipp(home,away,comp,country,richtung,linie,avg_hz1,spiele,qu
             {"name":"📊 H2H Basis","value":f"**{spiele}** Spiele","inline":True},
             {"name":f"{pfeil} H2H Ø HZ1-Tore","value":f"**{avg_hz1}** Tore","inline":True},
             {"name":"🎯 Empfehlung","value":f"**{richtung.capitalize()} {linie}** Tore (HZ1){qt}","inline":False},
+            {"name":"💰 Einsatz-Empfehlung","value":einsatz_empfehlung_text(einsatz),"inline":False},
         ],
         "footer":{"text":f"H2H-Analyse • {heute()} {jetzt()}"},
     }
 
-def discord_vztore_tipp(home,away,comp,country,richtung,linie,avg_vz,spiele,quote):
+def discord_vztore_tipp(home,away,comp,country,richtung,linie,avg_vz,spiele,quote,einsatz=None):
     qt = f"\n💶 **Quote:** {quote}" if quote else ""
     pfeil = "📈" if richtung == "über" else "📉"
     return {
@@ -1842,6 +1859,7 @@ def discord_vztore_tipp(home,away,comp,country,richtung,linie,avg_vz,spiele,quot
             {"name":"📊 H2H Basis","value":f"**{spiele}** Spiele","inline":True},
             {"name":f"{pfeil} H2H Ø VZ-Tore","value":f"**{avg_vz}** Tore","inline":True},
             {"name":"🎯 Empfehlung","value":f"**{richtung.capitalize()} {linie}** Tore (Vollzeit){qt}","inline":False},
+            {"name":"💰 Einsatz-Empfehlung","value":einsatz_empfehlung_text(einsatz),"inline":False},
         ],
         "footer":{"text":f"H2H-Analyse • {heute()} {jetzt()}"},
     }
@@ -2502,7 +2520,7 @@ def bot_ecken():
                 send_telegram(msg)
                 # v59: wait_for_message=True -> Message-ID für spätere ✅/❌-Reaktion sichern
                 dc_info = send_discord_embed(DISCORD_WEBHOOK_ECKEN,
-                    discord_ecken_tipp(home,away,comp,country,score,corners_home,corners_away,corners,grenze,quote),
+                    discord_ecken_tipp(home,away,comp,country,score,corners_home,corners_away,corners,grenze,quote,einsatz=einsatz),
                     wait_for_message=True)
                 notified_ecken.add(match_id)
                 multi_bonus = multi_signal_check(match_id,"Ecken-Bot")
@@ -2578,7 +2596,7 @@ def bot_torwart():
                 send_telegram(msg)
                 dc_info = send_discord_embed(DISCORD_WEBHOOK_TORWART,
                     discord_torwart_tipp(home,away,comp,country,shots_home,shots_away,
-                        saves_home,saves_away,poss_home,poss_away,min_text,quote),
+                        saves_home,saves_away,poss_home,poss_away,min_text,quote,einsatz=einsatz),
                     wait_for_message=True)
                 notified_torwart.add(match_id)
                 beobachtung_hinzufuegen(match_id,{
@@ -2655,7 +2673,7 @@ def bot_druck():
                 send_telegram(msg)
                 dc_info = send_discord_embed(DISCORD_WEBHOOK_DRUCK,
                     discord_druck_tipp(home,away,comp,country,score,minute,druck_team,
-                        ecken_stark,ecken_schwach,quote),
+                        ecken_stark,ecken_schwach,quote,einsatz=einsatz),
                     wait_for_message=True)
                 tipp_erlaubt(match_id,"Druck-Bot")
                 beobachtung_hinzufuegen(match_id,{
@@ -2736,7 +2754,7 @@ def bot_comeback():
                 send_telegram(msg)
                 dc_info = send_discord_embed(DISCORD_WEBHOOK_COMEBACK,
                     discord_comeback_tipp(home,away,comp,country,score_str,minute,
-                        rueckliegend,fuehrend,shots_r,shots_f,poss_r,quote),
+                        rueckliegend,fuehrend,shots_r,shots_f,poss_r,quote,einsatz=einsatz),
                     wait_for_message=True)
                 tipp_erlaubt(match_id,"Comeback-Bot")
                 beobachtung_hinzufuegen(match_id,{
@@ -2810,7 +2828,7 @@ def bot_torflut():
                     continue
                 send_telegram(msg)
                 dc_info = send_discord_embed(DISCORD_WEBHOOK_TORFLUT,
-                    discord_torflut_tipp(home,away,comp,country,score_str,tore_hz1,grenze,quote,shots_tf,poss_th,poss_ta),
+                    discord_torflut_tipp(home,away,comp,country,score_str,tore_hz1,grenze,quote,shots_tf,poss_th,poss_ta,einsatz=einsatz),
                     wait_for_message=True)
                 notified_torflut.add(match_id)
                 beobachtung_hinzufuegen(match_id,{
@@ -2891,7 +2909,7 @@ def bot_tore_analyse():
                                   f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                         send_telegram(msg)
                         dc_info = send_discord_embed(DISCORD_WEBHOOK_HZ1TORE,
-                            discord_hz1tore_tipp(home,away,comp,country,richtung,linie,ana["avg_hz1"],ana["hz1_spiele"],quote),
+                            discord_hz1tore_tipp(home,away,comp,country,richtung,linie,ana["avg_hz1"],ana["hz1_spiele"],quote,einsatz=einsatz),
                             wait_for_message=True)
                         if not tipp_erlaubt(match_id,"Tore-Bot-HZ1"):
                             continue
@@ -2930,7 +2948,7 @@ def bot_tore_analyse():
                                   f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                         send_telegram(msg)
                         dc_info = send_discord_embed(DISCORD_WEBHOOK_VZTORE,
-                            discord_vztore_tipp(home,away,comp,country,richtung,linie,ana["avg_vz"],ana["spiele"],quote),
+                            discord_vztore_tipp(home,away,comp,country,richtung,linie,ana["avg_vz"],ana["spiele"],quote,einsatz=einsatz),
                             wait_for_message=True)
                         if not tipp_erlaubt(match_id,"Tore-Bot-VZ"):
                             continue
