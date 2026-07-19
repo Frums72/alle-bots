@@ -968,10 +968,20 @@ def cache_aufraumen():
 # arbeiten alle Funktionen unten mit match_id statt mit Team-Namen-Suche wie
 # vorher bei the-odds-api.com.
 _af_odds_cache = {}
-AF_ODDS_TTL    = 300  # 5 Minuten Cache pro Fixture
+AF_ODDS_TTL    = 60  # v59.5: von 5 Min auf 1 Min verkürzt, da Live-Quoten sich schnell ändern
 
 def af_get_odds(fixture_id) -> list:
-    """Rohe Bookmaker-Liste für eine Fixture von API-Football (/odds?fixture=)."""
+    """
+    v59.5 FIX: Der Pre-Match-Endpoint (/odds) wird nach Anpfiff oft NICHT mehr aktualisiert –
+    dadurch bekam der Bot bei laufenden Spielen veraltete Vorspiel-Quoten (z.B. "4.8 für ein
+    weiteres Tor" obwohl das Spiel schon 3:0 stand, weil das noch die Quote von vor dem
+    Anpfiff war). Jetzt wird zuerst der LIVE-Odds-Endpoint (/odds/live) abgefragt, der
+    tatsächlich in Echtzeit aktualisierte In-Play-Quoten liefert. Nur wenn dafür (noch) keine
+    Daten vorliegen (z.B. kurz vor Anpfiff oder Liga ohne Live-Odds-Unterstützung), wird auf
+    die Pre-Match-Quote von /odds zurückgefallen. Das Ergebnis wird in beiden Fällen in die
+    gleiche Struktur normalisiert (Liste von {"name":bookmaker,"bets":[{"name":..,"values":[..]}]}),
+    damit der Rest des Codes unverändert bleibt.
+    """
     if not fixture_id:
         return []
     now = time.time()
@@ -979,14 +989,46 @@ def af_get_odds(fixture_id) -> list:
     cached = _af_odds_cache.get(key)
     if cached and now-cached["ts"] < AF_ODDS_TTL:
         return cached["data"]
+
     bookmakers = []
+    quelle = ""
+
+    # 1) Zuerst LIVE-Odds versuchen (tatsächlich in Echtzeit aktualisiert)
     try:
         params = {"fixture": fixture_id}
-        resp   = api_get_with_retry(f"{LS_BASE}/odds", params)
+        resp   = api_get_with_retry(f"{LS_BASE}/odds/live", params)
         raw    = resp.json().get("response",[]) or []
-        bookmakers = (raw[0].get("bookmakers") or []) if raw else []
+        for eintrag in raw:
+            fx    = eintrag.get("fixture") or {}
+            fx_id = str(fx.get("id","")) if fx else ""
+            if fx_id and fx_id != str(fixture_id):
+                continue
+            # API-Football liefert bei /odds/live meist direkt "odds":[...] ohne Bookmaker-Ebene
+            direkte_odds = eintrag.get("odds")
+            if direkte_odds:
+                bookmakers.append({"name":"Live","bets": direkte_odds})
+            for bm in eintrag.get("bookmakers", []) or []:
+                bookmakers.append(bm)
+        if bookmakers:
+            quelle = "live"
     except Exception as e:
-        print(f"  [AF-Odds] Fehler ({fixture_id}): {e}")
+        print(f"  [AF-Odds-Live] Fehler ({fixture_id}): {e}")
+
+    # 2) Fallback: Pre-Match-Odds, falls (noch) keine Live-Quote existiert
+    if not bookmakers:
+        try:
+            params = {"fixture": fixture_id}
+            resp   = api_get_with_retry(f"{LS_BASE}/odds", params)
+            raw    = resp.json().get("response",[]) or []
+            bookmakers = (raw[0].get("bookmakers") or []) if raw else []
+            if bookmakers:
+                quelle = "prematch-fallback"
+        except Exception as e:
+            print(f"  [AF-Odds] Fehler ({fixture_id}): {e}")
+
+    if bookmakers:
+        print(f"  [AF-Odds] Fixture {fixture_id}: Quoten-Quelle = {quelle} ({len(bookmakers)} Bookmaker-Einträge)")
+
     _af_odds_cache[key] = {"data": bookmakers, "ts": now}
     return bookmakers
 
@@ -3768,6 +3810,18 @@ def get_live_odds_fuer_spiel(match_id) -> dict:
 def berechne_value(prob: float, quote: float) -> float:
     return round(prob*quote-1,3)
 
+def kelly_einsatz_value(prob: float, quote: float) -> float:
+    """v59.4: Einsatz-Empfehlung für Value-Bets nach Kelly-Kriterium, basierend auf der
+    geschätzten Wahrscheinlichkeit der Regel (statt auf der Trefferquoten-Historie wie
+    kelly_einsatz_bankroll, die Value-Bets bisher nicht genutzt hat)."""
+    br = bankroll_laden()
+    b  = quote - 1.0
+    if b <= 0:
+        return EINSATZ
+    kelly   = max(0,(b*prob-(1-prob))/b) * KELLY_FRACTION
+    einsatz = round(kelly*br,2)
+    return max(KELLY_MIN_EINSATZ,min(einsatz,KELLY_MAX_EINSATZ))
+
 def bot_value_bet():
     print(f"[Value-Bot] Gestartet | Min. Quote {VALUE_BET_MIN_QUOTE} | Min. Edge {VALUE_BET_MIN_VALUE*100:.0f}%")
     while True:
@@ -3831,6 +3885,7 @@ def bot_value_bet():
                         continue
                     notified_value.add(regel_key)
                     edge_pct = round(edge*100,1)
+                    einsatz  = kelly_einsatz_value(prob,beste_quote)
                     msg = (f"💎 <b>VALUE BET GEFUNDEN!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                            f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
                            f"📊 Stand: <b>{score}</b> | Minute: <b>{minute}'</b>\n"
@@ -3839,6 +3894,7 @@ def bot_value_bet():
                            f"📈 Wahrscheinlichkeit: <b>{round(prob*100)}%</b>\n"
                            f"💶 Beste Quote: <b>{beste_quote}</b> ({bester_bm})\n"
                            f"💎 Value Edge: <b>+{edge_pct}%</b>\n"
+                           f"💰 Einsatz: <b>{einsatz}€</b>\n"
                            f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                     send_telegram(msg)
                     embed = {
@@ -3851,6 +3907,7 @@ def bot_value_bet():
                             {"name":"📈 Wahrsch.","value":f"**{round(prob*100)}%**","inline":True},
                             {"name":"💶 Quote","value":f"**{beste_quote}** ({bester_bm})","inline":True},
                             {"name":"💎 Edge","value":f"**+{edge_pct}%**","inline":True},
+                            {"name":"💰 Einsatz-Empfehlung","value":einsatz_empfehlung_text(einsatz),"inline":False},
                         ],
                         "footer":{"text":f"Value-Bot • {heute()} {jetzt()}"},
                     }
