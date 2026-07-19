@@ -1,4 +1,26 @@
-# v58 – API-Football Migration (api-sports.io) + Lock-Fixes
+# v59 – Reaktions-Auswertung, Duplikat-Fix, Tagesbericht-Fix
+# ============================================================
+# Änderungen v59 (auf Wunsch, drei Fixes):
+#   1) NEU: Discord-Bot postet nach der Auswertung eine ✅/❌ Reaktion direkt
+#      auf die ursprüngliche Signal-Nachricht (Ecken/Torwart/Druck/Comeback/
+#      Torflut/HZ1-Tore/VZ-Tore). Dafür wird ein echter Discord-Bot-Token
+#      benötigt (DISCORD_BOT_TOKEN) – Webhooks allein können keine Reaktionen
+#      setzen. send_discord_embed() gibt bei wait_for_message=True jetzt die
+#      message_id/channel_id zurück, die im Signal-Tracker mitgespeichert wird.
+#   2) FIX Duplikate: notified_sets_laden() hat die gespeicherten "bereits
+#      gepostet"-Listen bisher verworfen, wenn sie älter als 30 Minuten waren
+#      (auch am selben Tag). Nach jedem Neustart (Redeploy/Crash) hat der Bot
+#      dadurch alle bereits geposteten Spiele vergessen und teils erneut
+#      getippt -> exakt das "gleiches Spiel, gleicher Tipp"-Problem. Der
+#      30-Minuten-Frische-Check ist raus, es zählt nur noch der Tages-Check.
+#   3) FIX Tagesbericht: bot_auswertung_und_berichte nutzte eine lokale
+#      Variable statt des persistierten globalen Markers -> nach einem
+#      Neustart rund um 02:00 Uhr fiel der Bericht für den ganzen Tag aus.
+#      Jetzt Nachhol-Logik (now.hour >= TAGESBERICHT_UHRZEIT) + globaler
+#      Marker. Zusätzlich postet send_tagesbericht() jetzt auch als Discord-
+#      Embed in den Bilanz-Channel (Bankroll, Streak, Bot-Rangliste,
+#      Virtuelle Konten) – vorher ging der Bericht nur an Telegram.
+#
 # ============================================================
 # Änderungen v58 (API-Football Migration):
 #   • Komplette Umstellung von livescore-api.com auf API-Football (v3.football.api-sports.io)
@@ -11,7 +33,6 @@
 #     Ecken-/Druck-/Comeback-/xG-/Anomalie-Bot laufen jetzt ohne diese Werte
 #
 # Änderungen aus v57 (unverändert übernommen):
-# Änderungen gegenüber v56:
 #   • FIX: Druck-Bot / Comeback-Bot / CornerRush-Bot sperrten Spiele SOFORT beim
 #     ersten Sehen (vor jeder Bedingungsprüfung) -> Spiele wurden nie erneut
 #     geprüft, wenn die Bedingung beim ersten Durchlauf noch nicht erfüllt war.
@@ -61,6 +82,23 @@ DISCORD_WEBHOOK_VZTORE   = os.environ.get("DISCORD_WEBHOOK_VZTORE",   "https://d
 DISCORD_WEBHOOK_TORE     = os.environ.get("DISCORD_WEBHOOK_TORE",     "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1")
 DISCORD_WEBHOOK_VALUE    = os.environ.get("DISCORD_WEBHOOK_VALUE",    "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1")
 DISCORD_WEBHOOK_CS2      = os.environ.get("DISCORD_WEBHOOK_CS2",      "")
+
+# ── v59: Discord-Bot-Token für Reaktionen (✅/❌) auf ausgewertete Signale ──
+# Webhooks können KEINE Reaktionen setzen – dafür braucht es einen echten Bot
+# mit "Add Reactions" + "View Channel"-Rechten in den jeweiligen Kanälen.
+DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "MTUyODQxMjg2NjY2NjAzNzM5MA.GfSsm9.FuFdNPwGakkMMdc6wv_RAamcuOCh14tPo_wPLg")
+
+def discord_add_reaction(channel_id: str, message_id: str, emoji: str):
+    """v59: Setzt eine Reaktion (URL-encodetes Emoji, z.B. %E2%9C%85 = ✅) auf eine Nachricht."""
+    if not DISCORD_BOT_TOKEN or not channel_id or not message_id:
+        return
+    try:
+        url = f"https://discord.com/api/v10/channels/{channel_id}/messages/{message_id}/reactions/{emoji}/@me"
+        resp = requests.put(url, headers={"Authorization": f"Bot {DISCORD_BOT_TOKEN}"}, timeout=10)
+        if resp.status_code not in (204, 200):
+            print(f"  [Discord Reaction Fehler] {resp.status_code}: {resp.text}")
+    except Exception as e:
+        print(f"  [Discord Reaction Fehler] {e}")
 
 ODDS_API_KEY       = os.environ.get("ODDS_API_KEY",   "")
 PANDASCORE_API_KEY = os.environ.get("PANDASCORE_KEY", "")
@@ -276,18 +314,12 @@ DYNAMISCHE_FILTER = {
 # ============================================================
 #  v58: API-FOOTBALL (api-sports.io) – Basis-URL, Auth, Transform
 # ============================================================
-# LS_BASE bleibt als Variablenname bestehen (an vielen Stellen referenziert),
-# zeigt aber jetzt auf API-Football statt livescore-api.com.
 LS_BASE = "https://v3.football.api-sports.io"
-
-# API-Football authentifiziert über einen einzelnen Header (kein Secret nötig).
-AF_HEADERS = {"x-apisports-key": API_KEY}  # wird in __main__ nochmal mit finalem API_KEY befüllt
+AF_HEADERS = {"x-apisports-key": API_KEY}
 
 KARTEN_TYPEN   = {"Yellow Card","Red Card","Yellow Red Card"}
 ROTKARTE_TYPEN = {"Red Card","Yellow Red Card"}
 
-# Status-Kurzcodes von API-Football → interne Status-Strings, die der
-# restliche Bot-Code (unverändert) erwartet (z.B. "IN PLAY","HALF TIME BREAK","FT").
 _AF_STATUS_MAP = {
     "1H":"IN PLAY","2H":"IN PLAY","ET":"IN PLAY","P":"IN PLAY","BT":"IN PLAY",
     "SUSP":"IN PLAY","INT":"IN PLAY","LIVE":"IN PLAY",
@@ -296,12 +328,9 @@ _AF_STATUS_MAP = {
     "NS":"NS","TBD":"NS","PST":"PST","CANC":"CANC","ABD":"ABD","AWD":"AWD","WO":"WO",
 }
 
-# Merkt sich zu jeder Fixture-ID die Heimteam-ID (API-Football liefert bei
-# Events nur team.id, nicht "home"/"away" direkt – das wird hierüber aufgelöst).
 _af_home_team_cache = {}
 
 def aktuelle_saison() -> int:
-    """API-Football referenziert Saisons über das Startjahr (z.B. 2025 für 25/26)."""
     now = de_now()
     return now.year if now.month >= 7 else now.year-1
 
@@ -310,11 +339,6 @@ def _af_status(fx: dict) -> str:
     return _AF_STATUS_MAP.get(short, short)
 
 def _af_fixture_zu_intern(fx: dict) -> dict:
-    """
-    Wandelt ein rohes API-Football Fixture-Objekt in die interne Datenstruktur um,
-    die im gesamten Bot-Code verwendet wird (gleiche Feldnamen wie vorher bei
-    livescore-api.com). Cached nebenbei die Heimteam-ID für Events-Zuordnung.
-    """
     fixture    = fx.get("fixture") or {}
     league     = fx.get("league")  or {}
     teams      = fx.get("teams")   or {}
@@ -347,7 +371,6 @@ def _af_fixture_zu_intern(fx: dict) -> dict:
     }
 
 def _af_fixture_zu_prematch(fx: dict) -> dict:
-    """Wandelt eine Fixture in das für PreMatch-Bots erwartete Format (mit Anstoßzeit)."""
     fixture = fx.get("fixture") or {}
     league  = fx.get("league")  or {}
     teams   = fx.get("teams")   or {}
@@ -563,6 +586,14 @@ def _notified_sets_github_push():
         pass
 
 def notified_sets_laden():
+    """
+    v59 FIX (Duplikate): Vorher wurden die gespeicherten "bereits gepostet"-Sets
+    verworfen, wenn die letzte Speicherung länger als 30 Minuten her war – auch
+    am selben Tag. Nach jedem Neustart (Redeploy/Crash auf Railway) hat der Bot
+    dadurch alle bereits getippten Live-Spiele vergessen und teils erneut
+    gepostet (gleiches Spiel, gleicher Tipp, kurz nacheinander). Jetzt zählt
+    nur noch der Tages-Check.
+    """
     import json, os as _os
     global notified_ecken,notified_ecken_over,notified_karten,notified_torwart
     global notified_druck,notified_comeback,notified_torflut,notified_rotkarte
@@ -578,14 +609,6 @@ def notified_sets_laden():
         if data.get("gespeichert","")[:10] != de_now().strftime("%Y-%m-%d"):
             print(f"  [Notified] Sets von gestern – nicht geladen")
             return
-        try:
-            gespeichert_dt = datetime.strptime(data.get("gespeichert",""),"%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
-            alter_min = (datetime.now(timezone.utc)-gespeichert_dt).total_seconds()/60
-            if alter_min > 30:
-                print(f"  [Notified] Sets {alter_min:.0f} Min alt – starte frisch")
-                return
-        except Exception:
-            pass
         notified_ecken      = set(data.get("ecken",     []))
         notified_ecken_over = set(data.get("ecken_over",[]))
         notified_karten     = set(data.get("karten",    []))
@@ -672,12 +695,26 @@ def send_telegram_gruppe(message: str, chat_id: str = None):
     if resp.status_code != 200:
         print(f"  [Telegram Gruppe Fehler] {resp.text}")
 
-def send_discord_embed(webhook_url: str, embed: dict):
+def send_discord_embed(webhook_url: str, embed: dict, wait_for_message: bool = False):
+    """
+    v59: Kann jetzt optional auf die Discord-Antwort warten (wait=true) und gibt
+    dann {"message_id":..., "channel_id":...} zurück. Damit lässt sich später
+    (nach der Auswertung) eine Reaktion direkt auf diese Nachricht setzen.
+    """
     if not webhook_url or webhook_url.startswith("DISCORD"):
-        return
-    resp = requests.post(webhook_url,json={"embeds":[embed]},timeout=10)
-    if resp.status_code not in (200,204):
-        print(f"  [Discord Fehler] {resp.status_code}: {resp.text}")
+        return None
+    try:
+        params = {"wait": "true"} if wait_for_message else None
+        resp = requests.post(webhook_url, params=params, json={"embeds":[embed]}, timeout=10)
+        if resp.status_code not in (200,204):
+            print(f"  [Discord Fehler] {resp.status_code}: {resp.text}")
+            return None
+        if wait_for_message and resp.status_code == 200:
+            data = resp.json()
+            return {"message_id": data.get("id"), "channel_id": data.get("channel_id")}
+    except Exception as e:
+        print(f"  [Discord Fehler] {e}")
+    return None
 
 def send_discord(webhook_url: str, message: str):
     if not webhook_url or webhook_url.startswith("DISCORD"):
@@ -689,7 +726,6 @@ def send_discord(webhook_url: str, message: str):
 
 # ── v57: Tages-Reset-Helper für den API-Monitor ──────────────────────
 def _api_monitor_tag_pruefen():
-    """Setzt den Tageszähler zurück, sobald ein neuer Tag (de_now()) beginnt."""
     global _api_hard_stop_alarm_gesendet
     heute_str = de_now().strftime("%Y-%m-%d")
     if _api_monitor["datum"] != heute_str:
@@ -698,10 +734,6 @@ def _api_monitor_tag_pruefen():
         _api_hard_stop_alarm_gesendet = False
 
 def rate_limit_check():
-    """
-    v57: Prüft zuerst das harte Tageslimit (73.000 von 75.000 Calls) BEVOR
-    überhaupt ein Request rausgeht. Danach wie gehabt das Minuten-Limit.
-    """
     with _api_calls_lock:
         _api_monitor_tag_pruefen()
         if _api_monitor["heute"] >= API_DAILY_HARD_STOP:
@@ -719,7 +751,6 @@ def rate_limit_check():
         api_monitor_increment()
 
 def bot_fehler_melden(bot_name: str, fehler: Exception):
-    # v57: Tageslimit ist kein "echter" Bot-Fehler -> keine Fehler-Alert-Flut auslösen
     if isinstance(fehler, ApiTagesLimitErreicht):
         print(f"  [{bot_name}] Pausiert – {fehler}")
         return
@@ -752,8 +783,6 @@ def karten_emoji(typ: str) -> str:
     return "🃏"
 
 def api_get_with_retry(url: str, params: dict, max_retries: int = 3, headers: dict = None) -> requests.Response:
-    # v58: API-Football authentifiziert per Header statt Query-Param.
-    # Default = AF_HEADERS, sodass bestehende Call-Sites ohne headers= weiterlaufen.
     if headers is None:
         headers = AF_HEADERS
     rate_limit_check()
@@ -791,7 +820,6 @@ def _safe_int(val, default=0):
         return default
 
 def ls_get_live_matches():
-    # v58: API-Football liefert alle Live-Spiele in einem Call, keine Seiten nötig.
     try:
         params = {"live":"all"}
         resp   = api_get_with_retry(f"{LS_BASE}/fixtures",params)
@@ -804,13 +832,6 @@ def ls_get_live_matches():
     return alle_matches
 
 def ls_get_statistiken(match_id):
-    """
-    v58: "Dangerous Attacks" und "Free Kicks" liefert API-Football nicht als
-    eigene Stat-Typen (Free Kicks nur unzuverlässig über "Fouls" annäherbar).
-    Beide Felder wurden daher komplett entfernt statt sie mit falschen Werten
-    vorzugaukeln – alle Bots, die darauf basierten, laufen jetzt ohne diese
-    Zusatzfilter weiter (Kernlogik über Ecken/Schüsse/Ballbesitz bleibt aktiv).
-    """
     result = {
         "corners_home":0,"corners_away":0,
         "shots_on_target_home":0,"shots_on_target_away":0,
@@ -838,7 +859,6 @@ def ls_get_statistiken(match_id):
     return result
 
 def ls_get_events(match_id):
-    """v58: Ordnet Events per gecachter Heimteam-ID home/away zu (API-Football liefert nur team.id)."""
     try:
         params = {"fixture":match_id}
         resp   = api_get_with_retry(f"{LS_BASE}/fixtures/events",params)
@@ -1027,7 +1047,6 @@ def liga_erlaubt(liga: str) -> bool:
     return True
 
 def _af_team_history(team_id: str, anzahl: int) -> list:
-    """v58: Letzte N abgeschlossene Spiele eines Teams über API-Football (/fixtures?team=&last=)."""
     try:
         params = {"team":team_id,"last":anzahl}
         resp   = api_get_with_retry(f"{LS_BASE}/fixtures",params)
@@ -1280,7 +1299,6 @@ def clv_auswerten(spiel):
         return ""
 
 def get_standings(league_id: str) -> list:
-    """v58: API-Football liefert Standings pro Saison, verschachtelt in Gruppen/Tabellen."""
     now = time.time()
     lid = str(league_id)
     if lid in _standings_cache and now-_standings_cache[lid]["ts"] < STANDINGS_TTL:
@@ -1497,7 +1515,6 @@ def kelly_einsatz_bankroll(quote: float, typ: str) -> float:
 _api_monitor = {"heute":0,"datum":""}
 
 def api_monitor_increment():
-    """v57: erwartet, unter _api_calls_lock aufgerufen zu werden (siehe rate_limit_check)."""
     _api_monitor_tag_pruefen()
     _api_monitor["heute"] += 1
     if _api_monitor["heute"] % 3000 == 0:
@@ -1924,6 +1941,15 @@ def bot_rangliste() -> str:
     return "\n".join(zeilen)+f"\n━━━━━━━━━━━━━━━━━━━━\n{streak_text}" if zeilen else "Noch keine Daten"
 
 def send_tagesbericht():
+    """
+    v59 FIX (Tagesbericht):
+    - Setzt jetzt den GLOBALEN Marker `tagesbericht_gesendet`, statt sich auf
+      eine lokale Variable im Auswertungs-Thread zu verlassen -> überlebt
+      Thread-/Prozess-Neustarts (siehe bot_auswertung_und_berichte).
+    - Postet den Bericht jetzt zusätzlich als Discord-Embed in den
+      Bilanz-Channel (Bankroll, Streak, Bot-Rangliste, Virtuelle Konten) –
+      vorher ging der Tagesbericht ausschließlich an Telegram.
+    """
     global tagesbericht_gesendet
     gw  = sum(statistik[t]["gewonnen"] for t in statistik)
     vl  = sum(statistik[t]["verloren"] for t in statistik)
@@ -1952,8 +1978,33 @@ def send_tagesbericht():
             f"💰 <b>Bankroll:</b> {br}€ ({br_pfeil}{diff}€ seit Start)\n"
             f"{api_monitor_bericht()}")
     send_telegram(msg)
+
+    # ── v59 NEU: Tagesbericht zusätzlich als Discord-Embed in den Bilanz-Channel ──
+    try:
+        rang  = bot_rangliste()
+        vk    = vk_status_text()
+        farbe = 0x2ECC71 if gn >= 0 else 0xE74C3C
+        tages_embed = {
+            "title": f"📋 Tagesbericht – {heute()}", "color": farbe,
+            "fields": [
+                {"name":"✅ Gewonnen","value":f"**{gw}**","inline":True},
+                {"name":"❌ Verloren","value":f"**{vl}**","inline":True},
+                {"name":"🎯 Trefferquote","value":f"**{pct}%**","inline":True},
+                {"name":"💰 Bankroll","value":f"**{br}€** ({br_pfeil}{diff}€)","inline":True},
+                {"name":"🔥 Streak","value":f"**{abs(streak_aktuell)}x {'Gewinn' if streak_aktuell>0 else 'Verlust'}** (Beste: {streak_beste}x)","inline":True},
+                {"name":"🏆 Bot-Rangliste","value": rang or "Noch keine Daten","inline":False},
+                {"name":"🏦 Virtuelle Konten","value": vk or "–","inline":False},
+            ],
+            "footer": {"text": f"BetlabLIVE • {heute()} {jetzt()}"},
+        }
+        send_discord_embed(DISCORD_WEBHOOK_BILANZ, tages_embed)
+    except Exception as e:
+        print(f"  [Tagesbericht] Discord-Post Fehler: {e}")
+
+    tagesbericht_gesendet = de_now().date()
     for t in statistik:
         statistik[t] = {"gewonnen":0,"verloren":0,"gewinn":0.0}
+    statistik_speichern()
     print(f"  [Bericht] Tagesbericht gesendet ({heute()})")
 
 def send_wochenbericht():
@@ -2295,15 +2346,24 @@ def auswertung_vztore(spiel,ft_result=None):
 # ============================================================
 
 def bot_auswertung_und_berichte():
+    """
+    v59 FIX (Tagesbericht): Vorher wurde eine lokale Variable
+    (tagesbericht_gesendet_local) genutzt, die bei jedem Thread-Neustart
+    (z.B. durch den Watchdog nach einem Crash) zurückgesetzt wurde und die
+    Bedingung `now.hour == TAGESBERICHT_UHRZEIT` nur exakt in Stunde 2
+    zutraf. Lief der Bot ausgerechnet um 02:00 Uhr nicht, fiel der ganze
+    Tagesbericht aus. Jetzt: globaler, persistierter Marker
+    `tagesbericht_gesendet` + Nachhol-Logik (>= statt ==), sodass der
+    Bericht auch nachträglich am selben Tag noch verschickt wird.
+    """
     print("[Auswertung-Bot] Gestartet | Berichte – Auswertung via bot_nachschau")
-    tagesbericht_gesendet_local = None
-    letzter_wochenbericht       = de_now().isocalendar()[1]
+    global tagesbericht_gesendet
+    letzter_wochenbericht = de_now().isocalendar()[1]
     while True:
         try:
             now = de_now()
-            if now.hour == TAGESBERICHT_UHRZEIT and tagesbericht_gesendet_local != now.date():
+            if now.hour >= TAGESBERICHT_UHRZEIT and tagesbericht_gesendet != now.date():
                 send_tagesbericht()
-                tagesbericht_gesendet_local = now.date()
             aktuelle_woche = now.isocalendar()[1]
             if now.weekday() == 0 and aktuelle_woche != letzter_wochenbericht:
                 send_wochenbericht()
@@ -2319,7 +2379,6 @@ def bot_auswertung_und_berichte():
                 cache_aufraumen()
                 bot_auswertung_und_berichte._letzter_cleanup = time.time()
 
-            # ── Memory-Cleanup täglich 03:00 Uhr (Fix Memory Leak) ──────
             if now.hour == 3 and now.minute < 2:
                 mem_key = f"mem_{now.strftime('%Y-%m-%d')}"
                 if not hasattr(bot_auswertung_und_berichte,"_mem_key") or                         bot_auswertung_und_berichte._mem_key != mem_key:
@@ -2376,36 +2435,28 @@ def bot_ecken():
                 schlecht = schlechtes_wetter(country)
                 wetter_bonus = 1 if schlecht else 0
                 grenze = corners*2+1+wetter_bonus
-                # Historischer Ecken-Durchschnitt Check
                 if not ecken_tipp_sinnvoll(game,grenze):
                     print(f"  [Ecken-Bot] Hist. Durchschnitt passt nicht – übersprungen")
                     continue
-                # ── v58: LIVE-STATISTIKEN VALIDIERUNG (Dangerous-Attacks/Freistöße
-                # entfernt, da API-Football diese Stat-Typen nicht liefert) ─────
                 shots_h_live = stats["shots_on_target_home"]
                 shots_a_live = stats["shots_on_target_away"]
                 shots_ges_live = shots_h_live+shots_a_live
                 poss_h_live  = _safe_int(stats["possession_home"])
                 poss_a_live  = _safe_int(stats["possession_away"])
 
-                # Zu viele Schüsse aufs Tor = intensives Spiel → mehr Ecken in HZ2
                 if shots_ges_live >= 7:
                     print(f"  [Ecken-Bot] Zu intensiv: {shots_ges_live} Schüsse aufs Tor – übersprungen")
                     continue
 
-                # Stark einseitiger Ballbesitz (≥25% Unterschied) →
-                # unterlegenes Team wird versuchen Druck zu machen = mehr Standards
                 if poss_h_live > 0 and poss_a_live > 0:
                     if abs(poss_h_live-poss_a_live) >= 25:
                         print(f"  [Ecken-Bot] Einseitiger Ballbesitz ({poss_h_live}:{poss_a_live}) – übersprungen")
                         continue
 
-                # Hohe Tordifferenz → unterlegendes Team kämpft = mehr Ecken
                 score_h_live,score_a_live = parse_score(game.get("scores",{}).get("score","0 - 0"))
                 if abs(score_h_live-score_a_live) >= 2:
                     print(f"  [Ecken-Bot] Hohe Tordifferenz ({score_h_live}:{score_a_live}) – übersprungen")
                     continue
-                # ── Ende Live-Validierung ──────────────────────────────────
 
                 league_id = str((game.get("competition") or {}).get("id",""))
                 home_id   = str((game.get("home") or {}).get("id",""))
@@ -2442,15 +2493,19 @@ def bot_ecken():
                        f"🎯 Tipp: Unter <b>{grenze}</b> Ecken gesamt{ql}{odds_vgl}{cl_line}\n"
                        f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                 send_telegram(msg)
-                send_discord_embed(DISCORD_WEBHOOK_ECKEN,
-                    discord_ecken_tipp(home,away,comp,country,score,corners_home,corners_away,corners,grenze,quote))
+                # v59: wait_for_message=True -> Message-ID für spätere ✅/❌-Reaktion sichern
+                dc_info = send_discord_embed(DISCORD_WEBHOOK_ECKEN,
+                    discord_ecken_tipp(home,away,comp,country,score,corners_home,corners_away,corners,grenze,quote),
+                    wait_for_message=True)
                 notified_ecken.add(match_id)
                 multi_bonus = multi_signal_check(match_id,"Ecken-Bot")
                 konfidenz   = min(10,konfidenz+multi_bonus)
                 beobachtung_hinzufuegen(match_id,{
                     "typ":"ecken","match_id":match_id,"home":home,"away":away,
                     "hz1_ecken":corners,"quote":quote,"einsatz":einsatz,"liga":comp,
-                    "webhook":DISCORD_WEBHOOK_ECKEN,"signal_zeit":time.time(),"bot":"Ecken-Bot"
+                    "webhook":DISCORD_WEBHOOK_ECKEN,"signal_zeit":time.time(),"bot":"Ecken-Bot",
+                    "discord_message_id": (dc_info or {}).get("message_id"),
+                    "discord_channel_id": (dc_info or {}).get("channel_id"),
                 })
                 signal_eintragen(match_id,"ecken",home,away,comp,corners,grenze,quote,einsatz)
                 gegentipp_registrieren(match_id,"ecken","unter","Ecken-Bot")
@@ -2514,14 +2569,17 @@ def bot_torwart():
                            f"🎯 Tipp: Mind. <b>1 Tor</b> fällt noch{ql}\n"
                            f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                 send_telegram(msg)
-                send_discord_embed(DISCORD_WEBHOOK_TORWART,
+                dc_info = send_discord_embed(DISCORD_WEBHOOK_TORWART,
                     discord_torwart_tipp(home,away,comp,country,shots_home,shots_away,
-                        saves_home,saves_away,poss_home,poss_away,min_text,quote))
+                        saves_home,saves_away,poss_home,poss_away,min_text,quote),
+                    wait_for_message=True)
                 notified_torwart.add(match_id)
                 beobachtung_hinzufuegen(match_id,{
                     "typ":"torwart","match_id":match_id,"home":home,"away":away,
                     "quote":quote,"einsatz":einsatz,"liga":comp,
-                    "webhook":DISCORD_WEBHOOK_TORWART,"signal_zeit":time.time(),"bot":"Torwart-Bot"
+                    "webhook":DISCORD_WEBHOOK_TORWART,"signal_zeit":time.time(),"bot":"Torwart-Bot",
+                    "discord_message_id": (dc_info or {}).get("message_id"),
+                    "discord_channel_id": (dc_info or {}).get("channel_id"),
                 })
                 signal_eintragen(match_id,"torwart",home,away,comp,shots_ges,1,quote,einsatz)
                 print(f"  [Torwart-Bot] ✅ {home} vs {away} | {shots_ges} Schüsse")
@@ -2535,13 +2593,6 @@ def bot_torwart():
             time.sleep(FUSSBALL_INTERVAL*60)
 
 def bot_druck():
-    """
-    v58: Signal wenn ein Team deutlich mehr Ecken hat als der Gegner
-    (Freistöße entfernt – von API-Football nicht als Stat-Typ verfügbar).
-    FIX: notified_druck.add() passiert jetzt erst unmittelbar VOR dem Versand,
-    nicht mehr beim ersten Sehen des Spiels. So wird ein Match bei jedem
-    Durchlauf neu geprüft, bis die Bedingung tatsächlich erfüllt ist.
-    """
     print(f"[Druck-Bot] Gestartet | Ratio {DRUCK_RATIO}:1 bei mind. {MIN_DRUCK_ECKEN} Ecken")
     while True:
         try:
@@ -2590,22 +2641,23 @@ def bot_druck():
                        f"📐 Ecken: <b>{ecken_stark}</b> : {ecken_schwach}\n"
                        f"🎯 Tipp: Nächste Ecke / Tor für <b>{druck_team}</b>{ql}\n"
                        f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
-                # ── v57: Sperren erst unmittelbar vor dem Versand ─────────
                 if not signal_spam_check():
                     continue
                 notified_druck.add(match_id)
                 notified_sets_speichern()
-                # ───────────────────────────────────────────────────────
                 send_telegram(msg)
-                send_discord_embed(DISCORD_WEBHOOK_DRUCK,
+                dc_info = send_discord_embed(DISCORD_WEBHOOK_DRUCK,
                     discord_druck_tipp(home,away,comp,country,score,minute,druck_team,
-                        ecken_stark,ecken_schwach,quote))
+                        ecken_stark,ecken_schwach,quote),
+                    wait_for_message=True)
                 tipp_erlaubt(match_id,"Druck-Bot")
                 beobachtung_hinzufuegen(match_id,{
                     "typ":"druck","match_id":match_id,"home":home,"away":away,
                     "druck_team":druck_team,"score_signal":score,
                     "quote":quote,"einsatz":einsatz,"liga":comp,
-                    "webhook":DISCORD_WEBHOOK_DRUCK,"signal_zeit":time.time(),"bot":"Druck-Bot"
+                    "webhook":DISCORD_WEBHOOK_DRUCK,"signal_zeit":time.time(),"bot":"Druck-Bot",
+                    "discord_message_id": (dc_info or {}).get("message_id"),
+                    "discord_channel_id": (dc_info or {}).get("channel_id"),
                 })
                 signal_eintragen(match_id,"druck",home,away,comp,ecken_stark,ecken_schwach,quote,einsatz)
                 print(f"  [Druck-Bot] ✅ {home} vs {away} | {druck_team} dominiert ({ecken_stark}:{ecken_schwach})")
@@ -2619,10 +2671,6 @@ def bot_druck():
             time.sleep(FUSSBALL_INTERVAL*60)
 
 def bot_comeback():
-    """
-    v57: Signal wenn rückliegendes Team mehr Schüsse & Ballbesitz hat.
-    FIX: notified_comeback.add() erst unmittelbar VOR dem Versand (siehe bot_druck).
-    """
     print(f"[Comeback-Bot] Gestartet | ab Minute {COMEBACK_AB_MINUTE}")
     while True:
         try:
@@ -2655,8 +2703,6 @@ def bot_comeback():
                     poss_r          = poss_a
                 if shots_r == 0 and shots_f == 0 and poss_r == 0:
                     continue
-                # v58: druck_ok basiert nur noch auf Schüssen (dangerous_attacks
-                # liefert API-Football nicht als eigenen Stat-Typ)
                 druck_ok = shots_r > shots_f
                 if not druck_ok or poss_r <= 45:
                     continue
@@ -2676,23 +2722,24 @@ def bot_comeback():
                        f"⚽ Ballbesitz: <b>{poss_r}%</b>\n"
                        f"🎯 Tipp: Beide Teams treffen{ql}\n"
                        f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
-                # ── v57: Sperren erst unmittelbar vor dem Versand ─────────
                 if not signal_spam_check():
                     continue
                 notified_comeback.add(match_id)
                 notified_sets_speichern()
-                # ───────────────────────────────────────────────────────
                 send_telegram(msg)
-                send_discord_embed(DISCORD_WEBHOOK_COMEBACK,
+                dc_info = send_discord_embed(DISCORD_WEBHOOK_COMEBACK,
                     discord_comeback_tipp(home,away,comp,country,score_str,minute,
-                        rueckliegend,fuehrend,shots_r,shots_f,poss_r,quote))
+                        rueckliegend,fuehrend,shots_r,shots_f,poss_r,quote),
+                    wait_for_message=True)
                 tipp_erlaubt(match_id,"Comeback-Bot")
                 beobachtung_hinzufuegen(match_id,{
                     "typ":"comeback","match_id":match_id,"home":home,"away":away,
                     "rueckliegend":rueckliegend,"score_signal":score_str,
                     "quote":quote,"einsatz":einsatz,"liga":comp,
                     "webhook":DISCORD_WEBHOOK_COMEBACK,"signal_zeit":time.time(),
-                    "bot":"Comeback-Bot","competition":comp
+                    "bot":"Comeback-Bot","competition":comp,
+                    "discord_message_id": (dc_info or {}).get("message_id"),
+                    "discord_channel_id": (dc_info or {}).get("channel_id"),
                 })
                 signal_eintragen(match_id,"comeback",home,away,comp,shots_r,1,quote,einsatz)
                 print(f"  [Comeback-Bot] ✅ {home} vs {away} | {rueckliegend} dominiert trotz Rückstand")
@@ -2706,7 +2753,6 @@ def bot_comeback():
             time.sleep(FUSSBALL_INTERVAL*60)
 
 def bot_torflut():
-    """Signal wenn HZ1 bereits 3+ Tore hatte."""
     print(f"[Torflut-Bot] Gestartet | mind. {TORFLUT_MIN_TORE} Tore in HZ1")
     while True:
         try:
@@ -2756,13 +2802,16 @@ def bot_torflut():
                 if not tipp_erlaubt(match_id,"Torflut-Bot"):
                     continue
                 send_telegram(msg)
-                send_discord_embed(DISCORD_WEBHOOK_TORFLUT,
-                    discord_torflut_tipp(home,away,comp,country,score_str,tore_hz1,grenze,quote,shots_tf,poss_th,poss_ta))
+                dc_info = send_discord_embed(DISCORD_WEBHOOK_TORFLUT,
+                    discord_torflut_tipp(home,away,comp,country,score_str,tore_hz1,grenze,quote,shots_tf,poss_th,poss_ta),
+                    wait_for_message=True)
                 notified_torflut.add(match_id)
                 beobachtung_hinzufuegen(match_id,{
                     "typ":"torflut","match_id":match_id,"home":home,"away":away,
                     "hz1_tore":tore_hz1,"grenze":grenze,"quote":quote,
-                    "webhook":DISCORD_WEBHOOK_TORFLUT,"signal_zeit":time.time(),"bot":"Torflut-Bot"
+                    "webhook":DISCORD_WEBHOOK_TORFLUT,"signal_zeit":time.time(),"bot":"Torflut-Bot",
+                    "discord_message_id": (dc_info or {}).get("message_id"),
+                    "discord_channel_id": (dc_info or {}).get("channel_id"),
                 })
                 signal_eintragen(match_id,"torflut",home,away,comp,tore_hz1,int(grenze),quote,einsatz)
                 print(f"  [Torflut-Bot] ✅ {home} vs {away} | {tore_hz1} Tore in HZ1")
@@ -2834,15 +2883,18 @@ def bot_tore_analyse():
                                   f"🎯 Tipp: {richtung.capitalize()} <b>{linie}</b> Tore (HZ1){ql}{cl_hz1}\n"
                                   f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                         send_telegram(msg)
-                        send_discord_embed(DISCORD_WEBHOOK_HZ1TORE,
-                            discord_hz1tore_tipp(home,away,comp,country,richtung,linie,ana["avg_hz1"],ana["hz1_spiele"],quote))
+                        dc_info = send_discord_embed(DISCORD_WEBHOOK_HZ1TORE,
+                            discord_hz1tore_tipp(home,away,comp,country,richtung,linie,ana["avg_hz1"],ana["hz1_spiele"],quote),
+                            wait_for_message=True)
                         if not tipp_erlaubt(match_id,"Tore-Bot-HZ1"):
                             continue
                         notified_hz1tore.add(match_id)
                         beobachtung_hinzufuegen(match_id,{
                             "typ":"hz1tore","match_id":match_id,"home":home,"away":away,"liga":comp,
                             "richtung":richtung,"linie":linie,"quote":quote,"einsatz":einsatz,
-                            "webhook":DISCORD_WEBHOOK_HZ1TORE,"signal_zeit":time.time()
+                            "webhook":DISCORD_WEBHOOK_HZ1TORE,"signal_zeit":time.time(),
+                            "discord_message_id": (dc_info or {}).get("message_id"),
+                            "discord_channel_id": (dc_info or {}).get("channel_id"),
                         })
                         signal_eintragen(match_id,"hz1tore",home,away,comp,ana["avg_hz1"],linie,quote,einsatz)
                         gegentipp_registrieren(match_id,"hz1tore",richtung,"Tore-Bot")
@@ -2870,15 +2922,18 @@ def bot_tore_analyse():
                                   f"🎯 Tipp: {richtung.capitalize()} <b>{linie}</b> Tore (VZ){ql}{cl_vz}\n"
                                   f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                         send_telegram(msg)
-                        send_discord_embed(DISCORD_WEBHOOK_VZTORE,
-                            discord_vztore_tipp(home,away,comp,country,richtung,linie,ana["avg_vz"],ana["spiele"],quote))
+                        dc_info = send_discord_embed(DISCORD_WEBHOOK_VZTORE,
+                            discord_vztore_tipp(home,away,comp,country,richtung,linie,ana["avg_vz"],ana["spiele"],quote),
+                            wait_for_message=True)
                         if not tipp_erlaubt(match_id,"Tore-Bot-VZ"):
                             continue
                         notified_vztore.add(match_id)
                         beobachtung_hinzufuegen(match_id,{
                             "typ":"vztore","match_id":match_id,"home":home,"away":away,"liga":comp,
                             "richtung":richtung,"linie":linie,"quote":quote,"einsatz":einsatz,
-                            "webhook":DISCORD_WEBHOOK_VZTORE,"signal_zeit":time.time()
+                            "webhook":DISCORD_WEBHOOK_VZTORE,"signal_zeit":time.time(),
+                            "discord_message_id": (dc_info or {}).get("message_id"),
+                            "discord_channel_id": (dc_info or {}).get("channel_id"),
                         })
                         signal_eintragen(match_id,"vztore",home,away,comp,ana["avg_vz"],linie,quote,einsatz)
                         gegentipp_registrieren(match_id,"vztore",richtung,"Tore-Bot")
@@ -2893,27 +2948,19 @@ def bot_tore_analyse():
             time.sleep(FUSSBALL_INTERVAL*60)
 
 # ============================================================
-#  CORNER RUSH BOT (v57: Duplikat-Fix + Spam-Check + History-Cleanup)
+#  CORNER RUSH BOT
 # ============================================================
 
 notified_corner_rush = set()
 _corner_history = {}
 
 def bot_corner_rush():
-    """
-    v57: Signal wenn ein Team in 10 Minuten 4+ Ecken erzwingt.
-    FIX: notified_corner_rush.add() erst unmittelbar VOR dem Versand.
-    Vorher wurde das Match schon beim ersten Sehen gesperrt, wodurch der
-    Bot die nötige mehrfache History nie sammeln konnte -> praktisch nie
-    ein echtes Signal. Zusätzlich jetzt auch signal_spam_check() aktiv.
-    """
     print("[CornerRush-Bot] Gestartet | 4+ Ecken in 10 Min")
     while True:
         try:
             matches = get_live_matches()
             laufend = [m for m in matches if m.get("status") in ("IN PLAY","ADDED TIME")
                        and _safe_int(m.get("time",0)) >= 20]
-            # Alte Match-Historien aufräumen (nicht mehr live = Spiel beendet)
             live_ids_cr = {str(m.get("id")) for m in laufend}
             for mid in list(_corner_history.keys()):
                 if mid not in live_ids_cr:
@@ -2958,12 +3005,10 @@ def bot_corner_rush():
                        f"💡 Extremer Druck → Tor oder weitere Ecken sehr wahrscheinlich\n"
                        f"🎯 Tipp: <b>Nächste Ecke / Tor für {rush_team}</b>\n"
                        f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
-                # ── v57: Sperren + Spam-Check erst unmittelbar vor dem Versand ──
                 if not signal_spam_check():
                     continue
                 notified_corner_rush.add(match_id)
                 notified_sets_speichern()
-                # ──────────────────────────────────────────────────────────────
                 send_telegram(msg)
                 embed = {
                     "title":f"📐 Corner Rush – {rush_team} eskaliert!","color":0xE67E22,
@@ -3148,16 +3193,9 @@ def thesportsdb_suche_spiel(home: str, away: str):
     return None
 
 def ls_get_match_result(match_id: str, home: str = "", away: str = "", liga: str = ""):
-    """
-    VERBESSERTE TRIPLE-VERIFIKATION:
-    - Livescore FT direkt vertrauen wenn Status eindeutig
-    - Live-Liste Check: Spiel nicht mehr live → sofortiger Retry
-    - Soft-Verification: 1 Quelle reicht nach vielen Versuchen
-    """
     ergebnisse = {}
     ht_score   = ""
 
-    # ── Quelle 1: livescore-api ──────────────────────────────
     try:
         match    = ls_get_single_match(match_id)
         status   = str(match.get("status","") or "").upper().strip()
@@ -3174,7 +3212,6 @@ def ls_get_match_result(match_id: str, home: str = "", away: str = "", liga: str
     except Exception as e:
         print(f"  [Triple] Livescore Fehler: {e}")
 
-    # ── Live-Liste Check: wenn Spiel nicht mehr live → Retry ─
     if not ergebnisse:
         try:
             live      = get_live_matches()
@@ -3193,7 +3230,6 @@ def ls_get_match_result(match_id: str, home: str = "", away: str = "", liga: str
         except Exception as e:
             print(f"  [Triple] Live-Check Fehler: {e}")
 
-    # ── Quelle 2: football-data.org ──────────────────────────
     if home and away:
         try:
             fd_result = fd_suche_spiel(home,away,liga)
@@ -3205,7 +3241,6 @@ def ls_get_match_result(match_id: str, home: str = "", away: str = "", liga: str
         except Exception as e:
             print(f"  [Triple] football-data Fehler: {e}")
 
-    # ── Quelle 3: TheSportsDB (nur wenn noch keine 2 Quellen) ─
     if home and away and len(ergebnisse) < 2:
         try:
             tsdb = thesportsdb_suche_spiel(home,away)
@@ -3215,7 +3250,6 @@ def ls_get_match_result(match_id: str, home: str = "", away: str = "", liga: str
         except Exception as e:
             print(f"  [Triple] TheSportsDB Fehler: {e}")
 
-    # ── Quelle 4: Events Fallback ─────────────────────────────
     from collections import Counter
     zaehler_bisher = Counter(ergebnisse.values())
     bestaetigt     = zaehler_bisher.most_common(1)[0][1] if zaehler_bisher else 0
@@ -3234,7 +3268,6 @@ def ls_get_match_result(match_id: str, home: str = "", away: str = "", liga: str
         except Exception as e:
             print(f"  [Triple] Events Fehler: {e}")
 
-    # ── Entscheidung ──────────────────────────────────────────
     if not ergebnisse:
         print(f"  [Triple] ❌ Keine Quelle hat Ergebnis geliefert für {match_id}")
         return None
@@ -3243,14 +3276,12 @@ def ls_get_match_result(match_id: str, home: str = "", away: str = "", liga: str
     bestes  = zaehler.most_common(1)[0]
     bester_score,anzahl = bestes
 
-    # 2+ Quellen bestätigen → sicher
     if anzahl >= 2:
         print(f"  [Triple] ✅ BESTÄTIGT ({anzahl}/{len(ergebnisse)} Quellen): {bester_score}")
         return {"status":"FT","score":bester_score,"ht_score":ht_score,
                 "quelle":f"triple_verified ({anzahl}/{len(ergebnisse)})",
                 "alle_quellen":ergebnisse}
 
-    # Livescore hat FT-Status direkt bestätigt → vertrauen
     if "livescore" in ergebnisse or "livescore_retry" in ergebnisse:
         key_ls  = "livescore" if "livescore" in ergebnisse else "livescore_retry"
         score_ls = ergebnisse[key_ls]
@@ -3258,7 +3289,6 @@ def ls_get_match_result(match_id: str, home: str = "", away: str = "", liga: str
         return {"status":"FT","score":score_ls,"ht_score":ht_score,
                 "quelle":"livescore_single","alle_quellen":ergebnisse}
 
-    # Nur 1 beliebige Quelle verfügbar → auch akzeptieren
     if len(ergebnisse) == 1:
         einziger = list(ergebnisse.values())[0]
         quelle   = list(ergebnisse.keys())[0]
@@ -3277,12 +3307,14 @@ def bot_nachschau():
     """
     EINZIGER Auswertungs-Bot.
     Retry alle 90s, max. 20 Versuche.
+    v59: setzt nach jeder Auswertung zusätzlich eine ✅/❌-Reaktion direkt auf
+    die ursprüngliche Signal-Nachricht in Discord (siehe discord_add_reaction).
     """
     print("[Nachschau-Bot] Gestartet | 90s Retry, 20 Versuche max")
 
     AUSWERTUNG_FNS = {
         "ecken":      auswertung_ecken,
-        "ecken_over": None,   # Bot entfernt, aber alte Signale noch auswerten
+        "ecken_over": None,
         "karten":     None,
         "torwart":    auswertung_torwart,
         "druck":      auswertung_druck,
@@ -3356,16 +3388,10 @@ def bot_nachschau():
                 emoji    = "✅" if gewonnen else "❌"
                 send_telegram(msg)
 
-                # v57.1: Statt starrer "\d+ - \d+"-Regex den Inhalt der jeweiligen
-                # <b>...</b>-Tags greifen. Das funktioniert auch für Fallback-Texte
-                # wie "mind. 2 Tor(e)" oder "mind. 3 (HZ1)", die kein "H - A"-Format
-                # haben und vorher als "?" im Discord-Embed landeten.
                 def _extrahiere_feld(label: str) -> str:
                     m = re.search(rf"{label}:\s*<b>([^<]+)</b>",msg)
                     return m.group(1).strip() if m else "?"
 
-                # v57.1: Quote + tatsächlicher Gewinn/Einsatz auch im Discord-Embed
-                # anzeigen (vorher nur in der Telegram-Nachricht enthalten).
                 def _quote_gewinn_feld():
                     quote = sig.get("quote")
                     if not quote:
@@ -3401,6 +3427,13 @@ def bot_nachschau():
 
                 embed = discord_auswertung(typ,home,away,gewonnen,details)
                 send_discord_embed(webhook,embed)
+
+                # ── v59 NEU (Fix 1): Reaktion direkt auf die Original-Signal-Nachricht ──
+                msg_id  = sig.get("discord_message_id")
+                chan_id = sig.get("discord_channel_id")
+                if msg_id and chan_id:
+                    reaction_emoji = "%E2%9C%85" if gewonnen else "%E2%9D%8C"   # ✅ bzw. ❌
+                    discord_add_reaction(chan_id, msg_id, reaction_emoji)
 
                 try:
                     einsatz = sig.get("einsatz",EINSATZ)
@@ -3489,8 +3522,6 @@ def bot_xg():
                 shots_a  = stats["shots_on_target_away"]
                 if shots_h+shots_a == 0:
                     continue
-                # v58: xG-Näherung nur noch über Schüsse aufs Tor (dangerous_attacks
-                # liefert API-Football nicht als eigenen Stat-Typ)
                 xg_h    = round(shots_h*0.33,2)
                 xg_a    = round(shots_a*0.33,2)
                 xg_ges  = round(xg_h+xg_a,2)
@@ -4090,21 +4121,11 @@ def bot_rotkarte_ecken():
                 staerkeres    = away if karte_fuer == "home" else home
                 geschw_id     = str((game.get("home") if karte_fuer=="home" else game.get("away") or {}).get("id",""))
                 restminuten   = 90-minute
-                # v58.1: Fester "+2 Ecken"-Puffer war unabhängig von der Restspielzeit –
-                # bei einer frühen Roten Karte (z.B. Min. 24, noch 66 Min übrig) macht
-                # das Signal keinen Sinn. Jetzt nur noch spät im Spiel (≤30 Min Rest),
-                # wo die Vorhersage über den Rest der Spielzeit realistisch bleibt.
                 if restminuten > 30:
                     continue
                 stats = get_statistiken(match_id)
                 ecken_schwach = stats["corners_home"] if karte_fuer == "home" else stats["corners_away"]
                 ecken_stark   = stats["corners_away"] if karte_fuer == "home" else stats["corners_home"]
-                # v58.3: Puffer basiert jetzt primär auf dem ECHTEN Ecken-Schnitt des
-                # schwächeren Teams aus dessen letzten Spielen (get_team_ecken_avg),
-                # statt auf einer geratenen Pauschalzahl. Hochrechnung: erwarteter
-                # Ecken-Zuwachs = Team-Schnitt/Spiel * (Restzeit/90) * 0.6 (Abschlag
-                # für die defensivere Spielweise in Unterzahl). Wenn kein Team-Schnitt
-                # verfügbar ist (zu wenig Historie), Fallback auf die alte Zeitfenster-Regel.
                 team_avg = get_team_ecken_avg(geschw_id) if geschw_id else None
                 if team_avg is not None:
                     erwartete_weitere = team_avg*(restminuten/90)*0.6
@@ -4195,7 +4216,6 @@ def manuell_tipps_speichern():
         print(f"  [Manuell] Fehler: {e}")
 
 def check_rate_limit_warnung():
-    """v57: Nutzt jetzt API_DAILY_LIMIT (75.000) als Basis statt fest verdrahteter 50.000."""
     calls_heute = _api_monitor.get("heute",0)
     pct         = round(calls_heute/API_DAILY_LIMIT*100,1)
     if pct >= 80:
@@ -4496,7 +4516,7 @@ def bot_prematch():
             print(f"  [PreMatch-Bot] Fehler: {e}")
         time.sleep(60)
 
-VIP_MIN_KONFIDENZ = 8  # nur "sehr sichere" Tipps sollen in die VIP-Erinnerung
+VIP_MIN_KONFIDENZ = 8
 
 def bot_prematch_erinnerung():
     print(f"[Erinnerungs-Bot] Gestartet | 15-Min Erinnerungen, nur Tipps ab Konfidenz {VIP_MIN_KONFIDENZ}/10")
@@ -4524,8 +4544,6 @@ def bot_prematch_erinnerung():
                     if 13 <= diff <= 18:
                         if not ist_top_liga(liga,country):
                             continue
-                        # v58.4: Erst hier nach der Erinnerung dazu markieren, damit der
-                        # Bot nicht jede Minute im 13-18-Min-Fenster erneut Claude aufruft.
                         erinnert.add(match_id)
                         result = claude_prematch_analyse(home,away,liga,anstoß,[])
                         if not result or result.get("konfidenz",0) < VIP_MIN_KONFIDENZ:
@@ -4712,13 +4730,11 @@ def bot_telegram_befehle():
                 text     = msg_obj.get("text","").strip()
                 if not text:
                     continue
-                # ── Auth-Check – nur erlaubte Chats/Admins dürfen Befehle senden ──
                 erlaubte_chats = {str(TELEGRAM_CHAT_ID), str(TELEGRAM_CHAT_PREMATCH)}
                 erlaubte_chats.update(str(a) for a in ADMIN_IDS)
                 if chat_id not in erlaubte_chats:
                     print(f"  [Telegram] Unbekannter Chat {chat_id} von {username} – ignoriert")
                     continue
-                # ──────────────────────────────────────────────────────────────────────
 
                 def antworten(msg):
                     requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
@@ -4934,7 +4950,7 @@ def bot_web_dashboard():
                 elif self.path in ("/","/index.html","/radar","/health"):
                     html = f"""<!DOCTYPE html>
 <html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>BetlabLIVE v58</title>
+<title>BetlabLIVE v59</title>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
 body{{background:#0d1117;color:#e6edf3;font-family:system-ui;padding:20px}}
@@ -4953,7 +4969,7 @@ th{{background:#21262d;font-size:12px;color:#8b949e;text-transform:uppercase}}
 .v57-badge{{background:rgba(88,166,255,0.1);border:1px solid #58a6ff;padding:4px 12px;border-radius:20px;color:#58a6ff;font-size:12px;margin-bottom:16px;display:inline-block}}
 </style></head><body>
 <h1>⚽ BetlabLIVE Dashboard</h1>
-<div class="v57-badge">v58 – API-Football ✅</div>
+<div class="v57-badge">v59 – Reaktionen + Duplikat-/Tagesbericht-Fix ✅</div>
 <div class="grid" id="cards"></div>
 <table><thead><tr><th>Bot</th><th>Gewonnen</th><th>Verloren</th><th>Quote</th></tr></thead>
 <tbody id="bots"></tbody></table>
@@ -5000,11 +5016,6 @@ update();setInterval(update,30000);
         print(f"[Dashboard] Fehler: {e}")
 
 def bot_health_check_server():
-    """
-    /health ist direkt im Dashboard auf Port 8080 verfügbar.
-    Railway Health-Check muss auf Port 8080 /health zeigen.
-    Diese Funktion bleibt als No-Op damit der Startup-Code nicht geändert werden muss.
-    """
     print("[Health-Check] Health-Check auf Port 8080 /health integriert (kein separater Server)")
     while True:
         time.sleep(3600)
@@ -5088,6 +5099,7 @@ def vk_status_text():
         diff = round(v["bankroll"]-v["start"],2)
         zeilen.append(f"{v['name']}: <b>{v['bankroll']}€</b> ({'+' if diff>=0 else ''}{diff}€)")
     return "\n".join(zeilen)
+
 
 # ============================================================
 #  RANG & XP SYSTEM
@@ -5707,22 +5719,18 @@ def cleanup_memory():
 
 def bot_startup_alarm():
     start_str = de_now().strftime("%d.%m.%Y %H:%M")
-    print(f"  [Startup] BetlabLIVE v58 gestartet um {start_str}")
+    print(f"  [Startup] BetlabLIVE v59 gestartet um {start_str}")
     key_status = "✅ API-Keys OK" if startup_ok else "⚠️ API-Keys prüfen!"
+    reaction_status = "✅ Discord-Reaktionen aktiv" if DISCORD_BOT_TOKEN else "⚠️ DISCORD_BOT_TOKEN fehlt – keine ✅/❌-Reaktionen"
     send_telegram(
-        f"🚀 <b>BetlabLIVE v58 gestartet!</b>\n"
+        f"🚀 <b>BetlabLIVE v59 gestartet!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"{key_status}\n"
+        f"{key_status}\n{reaction_status}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"✅ v58 Änderungen:\n"
-        f"• Umstellung auf API-Football (api-sports.io)\n"
-        f"• Druck/Comeback/CornerRush: Lock erst bei Signalversand\n"
-        f"• Hartes API-Tageslimit ({API_DAILY_LIMIT:,}, Hard-Stop {API_DAILY_HARD_STOP:,})\n"
-        f"• CornerRush jetzt mit Spam-Schutz\n"
-        f"• Discord Webhooks getrennt\n"
-        f"• Telegram Auth-Check aktiv\n"
-        f"• Memory-Cleanup täglich 03:00\n"
-        f"• Health auf Port 8080 /health\n"
+        f"✅ v59 Änderungen:\n"
+        f"• NEU: ✅/❌-Reaktion direkt auf die Signal-Nachricht nach der Auswertung\n"
+        f"• FIX: Duplikate nach Neustart (notified_sets_laden ohne 30-Min-Check)\n"
+        f"• FIX: Tagesbericht mit Nachhol-Logik + Discord-Post in den Bilanz-Channel\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"🕐 {jetzt()} Uhr"
     )
@@ -5733,8 +5741,8 @@ def bot_startup_alarm():
 
 if __name__ == "__main__":
     print("=" * 55)
-    print("  ⚽ BETLABLIVE v58 – API-Football Migration + Lock-Fixes")
-    print("  Duplikat-Fix | Ecken-Validierung | Robuste Auswertung")
+    print("  ⚽ BETLABLIVE v59 – Reaktionen, Duplikat-Fix, Tagesbericht-Fix")
+    print("  Auf Basis von v58 (API-Football Migration + Lock-Fixes)")
     print("=" * 55 + "\n")
 
     # ── API-Key Validierung vor Start ─────────────────────
@@ -5749,6 +5757,7 @@ if __name__ == "__main__":
         "FOOTBALLDATA_KEY": FOOTBALLDATA_KEY,
         "ANTHROPIC_KEY":    ANTHROPIC_API_KEY,
         "GITHUB_TOKEN":     GITHUB_TOKEN,
+        "DISCORD_BOT_TOKEN":DISCORD_BOT_TOKEN,   # v59: fuer die ✅/❌-Reaktionen
     }
     print("[Startup] Prüfe Konfiguration...")
     for name, val in required_vars.items():
@@ -5760,6 +5769,8 @@ if __name__ == "__main__":
     for name, val in optional_vars.items():
         status = "✅" if (val and val.strip()) else "⚠️  (deaktiviert)"
         print(f"  {status} {name}")
+    if not DISCORD_BOT_TOKEN:
+        print("  [Startup] Hinweis: DISCORD_BOT_TOKEN nicht gesetzt -> Auswertungs-Reaktionen (✅/❌) bleiben aus.")
     if not startup_ok:
         print("[Startup] Pflicht-Variablen fehlen – Bot startet, aber API-Calls werden fehlschlagen!")
         print("[Startup] Bitte in Railway die fehlenden Environment Variables setzen.")
@@ -5799,7 +5810,6 @@ if __name__ == "__main__":
     except Exception as e: print(f"  [Startup] discord_votes_laden: {e}")
 
     # ── Bot-Definitionen
-    # Entfernt: Ecken-Über-Bot, Karten-Bot, Rotkarte-Bot, CS2-Bot
     bot_definitionen = [
         ("Ecken-Bot",        bot_ecken),
         ("Torwart-Bot",      bot_torwart),
