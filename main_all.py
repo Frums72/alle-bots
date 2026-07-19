@@ -3734,20 +3734,29 @@ def bot_anomalie_erkennung():
 
 notified_value = set()
 
+# v59.3 FIX: Jede Regel bekommt jetzt einen festen Ziel-Markt ("markt"). Vorher wurde
+# beim Quoten-Matching nur nach Label ("Over"/"Under" + Linie) gesucht, ohne zu prüfen,
+# aus welchem Wettmarkt die Quote überhaupt stammt. Dadurch konnten artfremde Märkte
+# (z.B. "nur Team X trifft über X.5 Mal") mit zufällig gleichem Label reinrutschen und
+# absurd hohe/falsche Quoten liefern (z.B. 34.0 für Tore Über 3.5 gesamt). Die Markt-Namen
+# sind API-Football-Standardnamen; falls euer Plan andere Bezeichnungen liefert, bitte im
+# API-Football-Dashboard unter "Odds" nachschauen und hier anpassen.
+VALUE_MAX_PLAUSIBLE_QUOTE = 10.0  # Sicherheitsnetz: Quoten über diesem Wert werden verworfen
+
 VALUE_REGELN = [
-    {"typ":"karten_unter","name":"Karten Unter 4.5",
+    {"typ":"karten_unter","name":"Karten Unter 4.5","markt":("Cards Over/Under",),
      "check":lambda s,ev,st:(60<=_safe_int(s.get("time",0))<=80 and len([e for e in ev if e.get("event") in KARTEN_TYPEN])<=1),
      "prob":lambda s,ev,st:0.82,"linie":4.5,"richtung":"unter"},
-    {"typ":"ecken_unter","name":"Ecken Unter 9.5",
+    {"typ":"ecken_unter","name":"Ecken Unter 9.5","markt":("Corners Over/Under","Corners Over Under"),
      "check":lambda s,ev,st:(_safe_int(s.get("time",0))>=70 and st["corners_home"]+st["corners_away"]<=6),
      "prob":lambda s,ev,st:0.80,"linie":9.5,"richtung":"unter"},
-    {"typ":"tore_unter","name":"Tore Unter 1.5",
+    {"typ":"tore_unter","name":"Tore Unter 1.5","markt":("Goals Over/Under","Over/Under"),
      "check":lambda s,ev,st:(_safe_int(s.get("time",0))>=70 and s.get("scores",{}).get("score","") in ("0 - 0","0-0")),
      "prob":lambda s,ev,st:0.75,"linie":1.5,"richtung":"unter"},
-    {"typ":"tore_ueber","name":"Tore Über 3.5",
+    {"typ":"tore_ueber","name":"Tore Über 3.5","markt":("Goals Over/Under","Over/Under"),
      "check":lambda s,ev,st:(_safe_int(s.get("time",0))>=60 and sum(parse_score(s.get("scores",{}).get("score","0-0")))>=3),
      "prob":lambda s,ev,st:0.78,"linie":3.5,"richtung":"über"},
-    {"typ":"ecken_ueber_live","name":"Ecken Über 11.5",
+    {"typ":"ecken_ueber_live","name":"Ecken Über 11.5","markt":("Corners Over/Under","Corners Over Under"),
      "check":lambda s,ev,st:(_safe_int(s.get("time",0))>=60 and st["corners_home"]+st["corners_away"]>=10),
      "prob":lambda s,ev,st:0.72,"linie":11.5,"richtung":"über"},
 ]
@@ -3794,15 +3803,28 @@ def bot_value_bet():
                     quoten = get_live_odds_fuer_spiel(match_id)
                     if not quoten:
                         continue
+                    ziel_maerkte = regel.get("markt",())
                     beste_quote = None; bester_bm = ""
                     for k,v in quoten.items():
-                        if rich == "unter" and "Under" in v["name"] and abs(float(v.get("point",0))-linie)<0.1:
+                        # v59.3 FIX: nur noch der zur Regel passende Wettmarkt wird durchsucht
+                        # (vorher wurden artfremde Märkte mit zufällig gleichem Label mitgezählt)
+                        if v.get("market") not in ziel_maerkte:
+                            continue
+                        try:
+                            point_val = float(v.get("point",0))
+                        except (TypeError, ValueError):
+                            continue
+                        if rich == "unter" and "Under" in v["name"] and abs(point_val-linie)<0.1:
                             if beste_quote is None or v["quote"] > beste_quote:
                                 beste_quote = v["quote"]; bester_bm = v["bookmaker"]
-                        elif rich == "über" and "Over" in v["name"] and abs(float(v.get("point",0))-linie)<0.1:
+                        elif rich == "über" and "Over" in v["name"] and abs(point_val-linie)<0.1:
                             if beste_quote is None or v["quote"] > beste_quote:
                                 beste_quote = v["quote"]; bester_bm = v["bookmaker"]
                     if not beste_quote or beste_quote < VALUE_BET_MIN_QUOTE:
+                        continue
+                    # v59.3 FIX: Sicherheitsnetz gegen unrealistische/falsch zugeordnete Quoten
+                    if beste_quote > VALUE_MAX_PLAUSIBLE_QUOTE:
+                        print(f"  [Value-Bot] ⚠️ Unplausible Quote {beste_quote} für {regel['name']} ({home} vs {away}) – verworfen")
                         continue
                     edge = berechne_value(prob,beste_quote)
                     if edge < VALUE_BET_MIN_VALUE:
