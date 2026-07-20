@@ -69,18 +69,25 @@ TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID","@BettingLabPubDE")
 # ── Discord Webhooks ─────────────────────────────────────────
 # Alle Webhooks MÜSSEN als Railway-Umgebungsvariablen gesetzt sein.
 # Kein hardcoded Fallback – verhindert dass alle Signale in denselben Kanal laufen.
-DISCORD_WEBHOOK_ECKEN    = os.environ.get("DISCORD_WEBHOOK_ECKEN",    "https://discord.com/api/webhooks/1501122762096377957/OqjCXNqBBnMvaQlSz5npaYYnjbWpdh3DENhPE7aJr1ZA_WgGo0PkRRG6ZFZURi9X1CK4")
-DISCORD_WEBHOOK_KARTEN   = os.environ.get("DISCORD_WEBHOOK_KARTEN",   "https://discord.com/api/webhooks/1501250542788280451/BZ6r8Y2SEDPgya9skt8Gyzbsoetvq0yPY6pWG5HrUzK9moeL-RXYWAiEwWuIlEy7GBfM")
-DISCORD_WEBHOOK_TORWART  = os.environ.get("DISCORD_WEBHOOK_TORWART",  "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1")
-DISCORD_WEBHOOK_BILANZ   = os.environ.get("DISCORD_WEBHOOK_BILANZ",   "https://discord.com/api/webhooks/1501251926564667564/fdBE4jOLislDfwpMs2cUURm_4_YzfATKWFmaOjRNEXulHCJu1DB-lUBLqLmm73l-HQ4v")
-DISCORD_WEBHOOK_DRUCK    = os.environ.get("DISCORD_WEBHOOK_DRUCK",    "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1")
-DISCORD_WEBHOOK_COMEBACK = os.environ.get("DISCORD_WEBHOOK_COMEBACK", "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1")
-DISCORD_WEBHOOK_TORFLUT  = os.environ.get("DISCORD_WEBHOOK_TORFLUT",  "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1")
-DISCORD_WEBHOOK_ROTKARTE = os.environ.get("DISCORD_WEBHOOK_ROTKARTE", "https://discord.com/api/webhooks/1501250542788280451/BZ6r8Y2SEDPgya9skt8Gyzbsoetvq0yPY6pWG5HrUzK9moeL-RXYWAiEwWuIlEy7GBfM")
-DISCORD_WEBHOOK_HZ1TORE  = os.environ.get("DISCORD_WEBHOOK_HZ1TORE",  "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1")
-DISCORD_WEBHOOK_VZTORE   = os.environ.get("DISCORD_WEBHOOK_VZTORE",   "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1")
-DISCORD_WEBHOOK_TORE     = os.environ.get("DISCORD_WEBHOOK_TORE",     "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1")
-DISCORD_WEBHOOK_VALUE    = os.environ.get("DISCORD_WEBHOOK_VALUE",    "https://discord.com/api/webhooks/1501251703025041531/QDS0RBUuG8PNRNaDFB02dAHP1miwhixrAfxUw8HhDswt6ce-hIHUootC4GhmjKP9A6b1")
+# v59.10 SICHERHEITSFIX: Alle Fallback-URLs entfernt. Diese Webhook-URLs standen vorher als
+# Klartext-Fallback im Code – wurde die Datei jemals öffentlich sichtbar (z.B. GitHub), waren
+# sie damit für jeden nutzbar (eine Webhook-URL wirkt wie ein Passwort: wer sie kennt, kann ohne
+# jede Anmeldung Nachrichten in den Kanal posten). Genau das war vermutlich die Ursache für die
+# Spam-Nachrichten in euren Discord-Kanälen. Jetzt MÜSSEN alle Webhook-URLs als Railway-
+# Umgebungsvariablen gesetzt sein – ohne gesetzte Variable bleibt der jeweilige Kanal stumm
+# (send_discord_embed() prüft das ab und überspringt den Versand, siehe unten).
+DISCORD_WEBHOOK_ECKEN    = os.environ.get("DISCORD_WEBHOOK_ECKEN",    "")
+DISCORD_WEBHOOK_KARTEN   = os.environ.get("DISCORD_WEBHOOK_KARTEN",   "")
+DISCORD_WEBHOOK_TORWART  = os.environ.get("DISCORD_WEBHOOK_TORWART",  "")
+DISCORD_WEBHOOK_BILANZ   = os.environ.get("DISCORD_WEBHOOK_BILANZ",   "")
+DISCORD_WEBHOOK_DRUCK    = os.environ.get("DISCORD_WEBHOOK_DRUCK",    "")
+DISCORD_WEBHOOK_COMEBACK = os.environ.get("DISCORD_WEBHOOK_COMEBACK", "")
+DISCORD_WEBHOOK_TORFLUT  = os.environ.get("DISCORD_WEBHOOK_TORFLUT",  "")
+DISCORD_WEBHOOK_ROTKARTE = os.environ.get("DISCORD_WEBHOOK_ROTKARTE", "")
+DISCORD_WEBHOOK_HZ1TORE  = os.environ.get("DISCORD_WEBHOOK_HZ1TORE",  "")
+DISCORD_WEBHOOK_VZTORE   = os.environ.get("DISCORD_WEBHOOK_VZTORE",   "")
+DISCORD_WEBHOOK_TORE     = os.environ.get("DISCORD_WEBHOOK_TORE",     "")
+DISCORD_WEBHOOK_VALUE    = os.environ.get("DISCORD_WEBHOOK_VALUE",    "")
 DISCORD_WEBHOOK_CS2      = os.environ.get("DISCORD_WEBHOOK_CS2",      "")
 
 # ── v59: Discord-Bot-Token für Reaktionen (✅/❌) auf ausgewertete Signale ──
@@ -968,7 +975,11 @@ def cache_aufraumen():
 # arbeiten alle Funktionen unten mit match_id statt mit Team-Namen-Suche wie
 # vorher bei the-odds-api.com.
 _af_odds_cache = {}
-AF_ODDS_TTL    = 60  # v59.5: von 5 Min auf 1 Min verkürzt, da Live-Quoten sich schnell ändern
+AF_ODDS_TTL    = 240  # v59.9 FIX: von 1 Min auf 4 Min hochgesetzt – die 1-Minuten-TTL hat
+                       # das tägliche API-Football-Kontingent stark belastet (Live-Odds für
+                       # jedes laufende Spiel, von ~15 Bots, jede Minute neu abgefragt) und
+                       # dadurch vermutlich das Tageslimit erreicht – was WIEDERUM auch die
+                       # Ergebnis-Abfragen für die Auswertung lahmgelegt hat (gleicher Key/Limit).
 
 def af_get_odds(fixture_id) -> list:
     """
@@ -2068,6 +2079,11 @@ def send_tagesbericht():
         rang  = bot_rangliste()
         vk    = vk_status_text()
         farbe = 0x2ECC71 if gn >= 0 else 0xE74C3C
+        # v59.9: Diagnose-Zähler – zeigt wie viele offene/nicht auswertbare Signale gerade
+        # im Tracker stehen, damit sichtbar ist ob die Auswertung insgesamt "klemmt".
+        with _tracker_lock:
+            _offen_ct = sum(1 for s in _signal_tracker.values() if s.get("status")=="offen")
+            _na_ct    = sum(1 for s in _signal_tracker.values() if s.get("status")=="nicht_auswertbar")
         tages_embed = {
             "title": f"📋 Tagesbericht – {heute()}", "color": farbe,
             "fields": [
@@ -2076,6 +2092,7 @@ def send_tagesbericht():
                 {"name":"🎯 Trefferquote","value":f"**{pct}%**","inline":True},
                 {"name":"💰 Bankroll","value":f"**{br}€** ({br_pfeil}{diff}€)","inline":True},
                 {"name":"🔥 Streak","value": (f"**Noch keine Serie** (Beste: {streak_beste}x)" if streak_aktuell==0 else f"**{abs(streak_aktuell)}x {'Gewinn' if streak_aktuell>0 else 'Verlust'}** (Beste: {streak_beste}x)"),"inline":True},
+                {"name":"⏳ Offen / ❓ Nicht auswertbar","value":f"**{_offen_ct}** offen | **{_na_ct}** nicht auswertbar","inline":True},
                 {"name":"🏆 Bot-Rangliste","value": rang or "Noch keine Daten","inline":False},
                 {"name":"🏦 Virtuelle Konten","value": vk or "–","inline":False},
                 {"name":"🎁 Willkommensbonus","value":"Zahl **100€** ein und du bekommst **50€ BettingLab-Bonus** obendrauf!","inline":False},
@@ -3199,6 +3216,22 @@ def tracker_ausgewertet_markieren(key: str, gewonnen: bool):
             _signal_tracker[key]["ausgewertet_um"] = de_now().strftime("%Y-%m-%d %H:%M")
     tracker_speichern()
 
+def tracker_nicht_auswertbar_markieren(key: str):
+    """
+    v59.9 NEU: Für Signale, deren Ergebnis nach 20 Versuchen (~30 Min) nicht sicher
+    ermittelt werden konnte. Bleibt BEWUSST außerhalb der Gewonnen/Verloren-Statistik
+    (vorher wurden solche Fälle über tracker_ausgewertet_markieren(key,False) fälschlich
+    als "verloren" behandelt, aber nie tatsächlich in update_statistik gezählt – dadurch
+    blieben Tagesbericht/Wochenbericht bei 0/0 hängen, wenn die Ergebnis-Quellen für eine
+    Liga öfter mal nichts liefern, UND es gab nie eine Reaktion, weil dieser Pfad den
+    Discord-Embed-Code nie erreicht hat).
+    """
+    with _tracker_lock:
+        if key in _signal_tracker:
+            _signal_tracker[key]["status"] = "nicht_auswertbar"
+            _signal_tracker[key]["ausgewertet_um"] = de_now().strftime("%Y-%m-%d %H:%M")
+    tracker_speichern()
+
 def tracker_get_offene() -> list:
     jetzt_ts = time.time()
     with _tracker_lock:
@@ -3468,8 +3501,15 @@ def bot_nachschau():
                 )
                 if not result:
                     if versuche >= 20:
-                        print(f"  [Nachschau] ❌ Aufgegeben nach {versuche} Versuchen: {home} vs {away} ({typ})")
-                        tracker_ausgewertet_markieren(key,False)
+                        print(f"  [Nachschau] ❓ Aufgegeben nach {versuche} Versuchen (kein Ergebnis gefunden): {home} vs {away} ({typ})")
+                        tracker_nicht_auswertbar_markieren(key)
+                        msg_id_na  = sig.get("discord_message_id")
+                        chan_id_na = sig.get("discord_channel_id")
+                        if msg_id_na and chan_id_na:
+                            discord_add_reaction(chan_id_na, msg_id_na, "%E2%9D%93")  # ❓
+                        send_telegram(f"❓ <b>Nicht auswertbar</b>\n📌 {home} vs {away} ({typ})\n"
+                                      f"Ergebnis konnte nach 30 Min über keine Quelle sicher bestätigt werden.\n"
+                                      f"🕐 {jetzt()} Uhr")
                     else:
                         print(f"  [Nachschau] {home} vs {away} | Noch kein Ergebnis (Versuch {versuche}/20)")
                     continue
@@ -3491,8 +3531,15 @@ def bot_nachschau():
 
                 if not msg:
                     if versuche >= 20:
-                        print(f"  [Nachschau] ❌ Kein Auswertungs-Ergebnis nach {versuche} Versuchen")
-                        tracker_ausgewertet_markieren(key,False)
+                        print(f"  [Nachschau] ❓ Kein Auswertungs-Ergebnis nach {versuche} Versuchen: {home} vs {away} ({typ})")
+                        tracker_nicht_auswertbar_markieren(key)
+                        msg_id_na  = sig.get("discord_message_id")
+                        chan_id_na = sig.get("discord_channel_id")
+                        if msg_id_na and chan_id_na:
+                            discord_add_reaction(chan_id_na, msg_id_na, "%E2%9D%93")  # ❓
+                        send_telegram(f"❓ <b>Nicht auswertbar</b>\n📌 {home} vs {away} ({typ})\n"
+                                      f"Ergebnis lag vor, konnte aber nicht zuverlässig zu einem Gewonnen/Verloren ausgewertet werden.\n"
+                                      f"🕐 {jetzt()} Uhr")
                     continue
 
                 gewonnen = "GEWONNEN" in msg
