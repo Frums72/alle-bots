@@ -3001,12 +3001,19 @@ def bot_tore_analyse():
                                   f"📊 H2H: <b>{ana['hz1_spiele']}</b> Spiele | Ø HZ1-Tore: <b>{ana['avg_hz1']}</b>\n"
                                   f"🎯 Tipp: {richtung.capitalize()} <b>{linie}</b> Tore (HZ1){ql}{cl_hz1}\n"
                                   f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
+                        # v59.11 FIX (Duplikate): tipp_erlaubt() MUSS vor dem Versand geprüft werden.
+                        # Vorher wurde erst gesendet und danach geprüft – schlug die Prüfung fehl
+                        # (z.B. weil für dieses Spiel schon ein anderer Tipp registriert war), wurde
+                        # zwar bereits gepostet, match_id aber NIE zu notified_hz1tore hinzugefügt.
+                        # Ergebnis: exakt dieselbe Nachricht wurde bei jedem Durchlauf (~alle 2 Min)
+                        # erneut verschickt, solange das Spiel im Zeitfenster blieb.
+                        if not tipp_erlaubt(match_id,"Tore-Bot-HZ1"):
+                            notified_hz1tore.add(match_id)  # Spiel trotzdem sperren, nicht endlos erneut prüfen
+                            continue
                         send_telegram(msg)
                         dc_info = send_discord_embed(DISCORD_WEBHOOK_HZ1TORE,
                             discord_hz1tore_tipp(home,away,comp,country,richtung,linie,ana["avg_hz1"],ana["hz1_spiele"],quote,einsatz=einsatz,konfidenz=konfidenz),
                             wait_for_message=True)
-                        if not tipp_erlaubt(match_id,"Tore-Bot-HZ1"):
-                            continue
                         notified_hz1tore.add(match_id)
                         beobachtung_hinzufuegen(match_id,{
                             "typ":"hz1tore","match_id":match_id,"home":home,"away":away,"liga":comp,
@@ -3040,12 +3047,15 @@ def bot_tore_analyse():
                                   f"📊 H2H: <b>{ana['spiele']}</b> Spiele | Ø VZ-Tore: <b>{ana['avg_vz']}</b>\n"
                                   f"🎯 Tipp: {richtung.capitalize()} <b>{linie}</b> Tore (VZ){ql}{cl_vz}\n"
                                   f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
+                        # v59.11 FIX (Duplikate): tipp_erlaubt() MUSS vor dem Versand geprüft werden
+                        # (gleicher Bug wie im HZ1-Block darüber – siehe Kommentar dort).
+                        if not tipp_erlaubt(match_id,"Tore-Bot-VZ"):
+                            notified_vztore.add(match_id)  # Spiel trotzdem sperren, nicht endlos erneut prüfen
+                            continue
                         send_telegram(msg)
                         dc_info = send_discord_embed(DISCORD_WEBHOOK_VZTORE,
                             discord_vztore_tipp(home,away,comp,country,richtung,linie,ana["avg_vz"],ana["spiele"],quote,einsatz=einsatz,konfidenz=konfidenz),
                             wait_for_message=True)
-                        if not tipp_erlaubt(match_id,"Tore-Bot-VZ"):
-                            continue
                         notified_vztore.add(match_id)
                         beobachtung_hinzufuegen(match_id,{
                             "typ":"vztore","match_id":match_id,"home":home,"away":away,"liga":comp,
