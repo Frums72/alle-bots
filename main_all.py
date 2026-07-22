@@ -285,6 +285,9 @@ CLV_WARNSCHWELLE     = 0.05
 MIN_DRUCK_ECKEN      = 6
 DRUCK_RATIO          = 2.5
 COMEBACK_AB_MINUTE   = 30
+SPAETESTE_SIGNAL_MINUTE = 80  # v59.13 FIX: Live-Signale mit Zeitkomponente (nächstes Tor/Ecke)
+                              # werden ab dieser Minute nicht mehr gepostet – zu wenig Restzeit,
+                              # damit der Tipp noch realistisch eintreten kann.
 TORFLUT_MIN_TORE     = 3
 BANKROLL             = 100.0
 BANKROLL_DATEI       = "bankroll.json"
@@ -2009,7 +2012,13 @@ def statistik_zeile(name,stat):
     emoji  = "📈" if gewinn >= 0 else "📉"
     return f"{name}: {stat['gewonnen']}/{gesamt} ({pct}%) {emoji} {'+' if gewinn>=0 else ''}{gewinn}€"
 
-def bot_rangliste() -> str:
+def bot_rangliste(discord: bool = False) -> str:
+    """
+    v59.12 FIX: Die Streak-Zeile nutzte immer HTML <b>-Tags. Da diese Funktion sowohl für
+    Telegram (HTML) als auch für Discord-Embeds (Markdown) verwendet wird, zeigten die
+    Discord-Embeds die <b>-Tags als reinen Text an (Discord rendert kein HTML). Jetzt steuert
+    der discord-Parameter, welches Format genutzt wird.
+    """
     bots = {
         "📐 Ecken Unter":  wochen_statistik["ecken"],
         "🧤 Torwart":       wochen_statistik["torwart"],
@@ -2032,7 +2041,9 @@ def bot_rangliste() -> str:
         medal = ["🥇","🥈","🥉"][i-1] if i <= 3 else f"{i}."
         zeilen.append(f"{medal} {name}: {gw}/{ges} ({pct}%)")
     streak_emoji = "🔥" if streak_aktuell > 0 else "❄️"
-    streak_text  = f"{streak_emoji} Streak: <b>{abs(streak_aktuell)}x {'Gewinn' if streak_aktuell > 0 else 'Verlust'}</b> | Beste: <b>{streak_beste}x</b>"
+    fett = "**" if discord else "<b>"
+    fett_zu = "**" if discord else "</b>"
+    streak_text = f"{streak_emoji} Streak: {fett}{abs(streak_aktuell)}x {'Gewinn' if streak_aktuell > 0 else 'Verlust'}{fett_zu} | Beste: {fett}{streak_beste}x{fett_zu}"
     return "\n".join(zeilen)+f"\n━━━━━━━━━━━━━━━━━━━━\n{streak_text}" if zeilen else "Noch keine Daten"
 
 def send_tagesbericht():
@@ -2076,7 +2087,7 @@ def send_tagesbericht():
 
     # ── v59 NEU: Tagesbericht zusätzlich als Discord-Embed in den Bilanz-Channel ──
     try:
-        rang  = bot_rangliste()
+        rang  = bot_rangliste(discord=True)
         vk    = vk_status_text()
         farbe = 0x2ECC71 if gn >= 0 else 0xE74C3C
         # v59.9: Diagnose-Zähler – zeigt wie viele offene/nicht auswertbare Signale gerade
@@ -2124,7 +2135,7 @@ def send_wochenbericht():
            f"━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
     send_telegram(msg)
     farbe_w = 0x2ECC71 if gn >= 0 else 0xE74C3C
-    rang_w  = bot_rangliste()
+    rang_w  = bot_rangliste(discord=True)
     woche_embed = {
         "title":f"📅 Wochenbericht – KW {de_now().isocalendar()[1]}","color":farbe_w,
         "fields":[
@@ -2627,7 +2638,7 @@ def bot_torwart():
         try:
             matches = get_live_matches()
             aktiv   = [m for m in matches if m.get("status") in ("IN PLAY","ADDED TIME","HALF TIME BREAK")
-                       and (_safe_int(m.get("time",0)) >= 20 or m.get("status") == "HALF TIME BREAK")]
+                       and (20 <= _safe_int(m.get("time",0)) <= SPAETESTE_SIGNAL_MINUTE or m.get("status") == "HALF TIME BREAK")]
             print(f"[{jetzt()}] [Torwart-Bot] {len(aktiv)} aktive Spiele (ab Min. 20)")
             for game in aktiv:
                 match_id = str(game.get("id"))
@@ -2702,7 +2713,7 @@ def bot_druck():
         try:
             matches = get_live_matches()
             laufend = [m for m in matches if m.get("status") in ("IN PLAY","ADDED TIME")
-                       and 20 <= _safe_int(m.get("time",0)) <= 85]
+                       and 20 <= _safe_int(m.get("time",0)) <= SPAETESTE_SIGNAL_MINUTE]
             print(f"[{jetzt()}] [Druck-Bot] {len(laufend)} Spiele geprüft")
             for game in laufend:
                 match_id = str(game.get("id"))
@@ -2785,7 +2796,7 @@ def bot_comeback():
         try:
             matches = get_live_matches()
             laufend = [m for m in matches if m.get("status") in ("IN PLAY","ADDED TIME")
-                       and _safe_int(m.get("time",0)) >= COMEBACK_AB_MINUTE]
+                       and COMEBACK_AB_MINUTE <= _safe_int(m.get("time",0)) <= SPAETESTE_SIGNAL_MINUTE]
             print(f"[{jetzt()}] [Comeback-Bot] {len(laufend)} Spiele geprüft")
             for game in laufend:
                 match_id = str(game.get("id"))
@@ -3089,7 +3100,7 @@ def bot_corner_rush():
         try:
             matches = get_live_matches()
             laufend = [m for m in matches if m.get("status") in ("IN PLAY","ADDED TIME")
-                       and _safe_int(m.get("time",0)) >= 20]
+                       and 20 <= _safe_int(m.get("time",0)) <= SPAETESTE_SIGNAL_MINUTE]
             live_ids_cr = {str(m.get("id")) for m in laufend}
             for mid in list(_corner_history.keys()):
                 if mid not in live_ids_cr:
@@ -3350,12 +3361,19 @@ def ls_get_match_result(match_id: str, home: str = "", away: str = "", liga: str
     ergebnisse = {}
     ht_score   = ""
 
+    # v59.12 DIAGNOSE: Zeigt bei jedem Versuch den rohen Status/Score von API-Football sowie
+    # den aktuellen Tages-API-Verbrauch – damit im Log sichtbar wird, OB das Problem am
+    # Tageslimit liegt (dann wäre _api_monitor hoch) oder daran, dass API-Football für diese
+    # Fixture schlicht (noch) keinen "FT"-Status/Score zurückgibt.
+    print(f"  [Triple-Debug] Fixture {match_id} | API heute: {_api_monitor.get('heute',0)}/{API_DAILY_LIMIT}")
+
     try:
         match    = ls_get_single_match(match_id)
         status   = str(match.get("status","") or "").upper().strip()
         time_val = str(match.get("time","") or "").upper().strip()
         score    = (match.get("scores") or {}).get("score","")
         ht_raw   = (match.get("scores") or {}).get("ht_score","") or ""
+        print(f"  [Triple-Debug] Fixture {match_id} roh: status='{status}' time='{time_val}' score='{score}'")
         if time_val in ("FT","FULL TIME","AET"):
             status = "FT"
         if status in FT_STATI_SET and score:
@@ -3671,7 +3689,7 @@ def bot_xg():
         try:
             matches = get_live_matches()
             laufend = [m for m in matches if m.get("status") in ("IN PLAY","ADDED TIME")
-                       and _safe_int(m.get("time",0)) >= 30]
+                       and 30 <= _safe_int(m.get("time",0)) <= SPAETESTE_SIGNAL_MINUTE]
             print(f"[{jetzt()}] [xG-Bot] {len(laufend)} Spiele geprüft")
             for game in laufend:
                 match_id = str(game.get("id"))
@@ -3901,11 +3919,16 @@ VALUE_REGELN = [
     {"typ":"tore_unter","name":"Tore Unter 1.5","markt":("Goals Over/Under","Over/Under"),
      "check":lambda s,ev,st:(_safe_int(s.get("time",0))>=70 and s.get("scores",{}).get("score","") in ("0 - 0","0-0")),
      "prob":lambda s,ev,st:0.75,"linie":1.5,"richtung":"unter"},
+    # v59.13 FIX: Beide "über"-Regeln unten prüften vorher nur "mindestens X", nicht "genau
+    # einen Schritt unter der Linie" – dadurch wurde z.B. bei 4 bereits gefallenen Toren immer
+    # noch "Tore Über 3.5" empfohlen, obwohl der Tipp zu diesem Zeitpunkt schon gewonnen (also
+    # gar kein echter Tipp mehr) war. Jetzt wird nur noch signalisiert, wenn die Grenze noch
+    # NICHT erreicht ist (genau einen Treffer/Ecke drunter), der Ausgang also noch offen ist.
     {"typ":"tore_ueber","name":"Tore Über 3.5","markt":("Goals Over/Under","Over/Under"),
-     "check":lambda s,ev,st:(_safe_int(s.get("time",0))>=60 and sum(parse_score(s.get("scores",{}).get("score","0-0")))>=3),
+     "check":lambda s,ev,st:(_safe_int(s.get("time",0))>=60 and sum(parse_score(s.get("scores",{}).get("score","0-0")))==3),
      "prob":lambda s,ev,st:0.78,"linie":3.5,"richtung":"über"},
     {"typ":"ecken_ueber_live","name":"Ecken Über 11.5","markt":("Corners Over/Under","Corners Over Under"),
-     "check":lambda s,ev,st:(_safe_int(s.get("time",0))>=60 and st["corners_home"]+st["corners_away"]>=10),
+     "check":lambda s,ev,st:(_safe_int(s.get("time",0))>=60 and 9<=st["corners_home"]+st["corners_away"]<=10),
      "prob":lambda s,ev,st:0.72,"linie":11.5,"richtung":"über"},
 ]
 
