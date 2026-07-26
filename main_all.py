@@ -301,7 +301,8 @@ GITHUB_BACKUP_UHRZEIT = 2
 MAX_BEOBACHTUNG_STUNDEN = 3
 SIGNAL_TRACKER_DATEI = "signal_tracker.json"
 VALUE_BET_MIN_QUOTE  = 1.6
-VALUE_BET_MIN_VALUE  = 0.15
+VALUE_BET_MIN_VALUE  = 0.25  # v59.17: von 15% auf 25% erhöht (Qualität statt Quantität)
+MIN_KONFIDENZ_VERSAND = 6    # v59.17: Live-Signale unter dieser Konfidenz werden nicht mehr gesendet
 
 # ── v57: Hartes Tageslimit für livescore-api.com Anfragen ───────────
 API_DAILY_LIMIT     = 75000
@@ -2228,7 +2229,7 @@ def auswertung_ecken(spiel,ft_result=None):
         if total_ecken == 0 and hz1_ecken > 0:
             total_ecken = hz1_ecken
         gewonnen    = total_ecken < grenze
-        update_statistik("ecken",gewonnen,quote)
+        update_statistik("ecken",gewonnen,quote,liga=liga,match_id=match_id)  # v59.17: liga ergänzt
         emoji = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
         ql = f"💶 Quote: <b>{quote}</b> → Gewinn: <b>+{round((quote-1)*EINSATZ,2)}€</b>\n" if quote and gewonnen else ""
         return (f"📊 <b>Auswertung – Ecken Unter</b>\n━━━━━━━━━━━━━━━━━━━━\n"
@@ -2260,7 +2261,7 @@ def auswertung_torwart(spiel,ft_result=None):
                 pass
         tore     = h+a
         gewonnen = tore >= 1
-        update_statistik("torwart",gewonnen,quote)
+        update_statistik("torwart",gewonnen,quote,liga=liga,match_id=match_id)  # v59.17: liga ergänzt
         emoji = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
         ql = f"💶 Quote: <b>{quote}</b> → Gewinn: <b>+{round((quote-1)*EINSATZ,2)}€</b>\n" if quote and gewonnen else ""
         return (f"📊 <b>Auswertung – Torwart</b>\n━━━━━━━━━━━━━━━━━━━━\n"
@@ -2298,7 +2299,7 @@ def auswertung_druck(spiel,ft_result=None):
             gewonnen = a > a_sig
         if not score_signal:
             gewonnen = (h > a) if druck_team == home else (a > h)
-        update_statistik("druck",gewonnen,quote)
+        update_statistik("druck",gewonnen,quote,liga=liga,match_id=match_id)  # v59.17: liga ergänzt
         emoji = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
         ql = f"💶 Quote: <b>{quote}</b> → Gewinn: <b>+{round((quote-1)*EINSATZ,2)}€</b>\n" if quote and gewonnen else ""
         return (f"📊 <b>Auswertung – Druck</b>\n━━━━━━━━━━━━━━━━━━━━\n"
@@ -2336,7 +2337,7 @@ def auswertung_comeback(spiel,ft_result=None):
                 h,a = h_sig,a_sig; score = score_signal
         bereits_beide_getroffen = h_sig >= 1 and a_sig >= 1
         gewonnen = (h >= 1 and a >= 1) or bereits_beide_getroffen
-        update_statistik("comeback",gewonnen,quote)
+        update_statistik("comeback",gewonnen,quote,liga=liga,match_id=match_id)  # v59.17: liga ergänzt
         emoji = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
         ql = f"💶 Quote: <b>{quote}</b> → Gewinn: <b>+{round((quote-1)*EINSATZ,2)}€</b>\n" if quote and gewonnen else ""
         hinweis = " (zum Signalzeitpunkt bereits erfüllt)" if bereits_beide_getroffen else ""
@@ -2370,7 +2371,7 @@ def auswertung_torflut(spiel,ft_result=None):
             else:
                 tore = hz1_tore; score = f"mind. {hz1_tore} (HZ1)"
         gewonnen = tore > grenze
-        update_statistik("torflut",gewonnen,quote)
+        update_statistik("torflut",gewonnen,quote,liga=liga,match_id=match_id)  # v59.17: liga ergänzt
         emoji = "✅ GEWONNEN" if gewonnen else "❌ VERLOREN"
         ql = f"💶 Quote: <b>{quote}</b> → Gewinn: <b>+{round((quote-1)*EINSATZ,2)}€</b>\n" if quote and gewonnen else ""
         return (f"📊 <b>Auswertung – Torflut</b>\n━━━━━━━━━━━━━━━━━━━━\n"
@@ -2534,6 +2535,8 @@ def bot_ecken():
                     continue
                 if not liga_erlaubt(comp):
                     continue
+                if not liga_signal_erlaubt(comp):  # v59.15: Liga-Zuverlässigkeit
+                    continue
                 if not whitelist_check(comp,home,away):
                     continue
                 qd      = get_quote_details(match_id)
@@ -2582,6 +2585,8 @@ def bot_ecken():
                 cl_ok,cl_text = claude_tipp_review(home,away,"ecken",analyse)
                 if not cl_ok:
                     konfidenz = max(1,konfidenz-2)
+                if konfidenz < MIN_KONFIDENZ_VERSAND:  # v59.17: Mindest-Konfidenz
+                    continue
                 einsatz = kelly_einsatz_bankroll(quote,"ecken") if quote else EINSATZ
                 ke      = konfidenz_emoji(konfidenz)
                 ev_data = berechne_ev_score(konfidenz, quote) if quote else {"label":"–"}
@@ -2615,7 +2620,7 @@ def bot_ecken():
                 konfidenz   = min(10,konfidenz+multi_bonus)
                 beobachtung_hinzufuegen(match_id,{
                     "typ":"ecken","match_id":match_id,"home":home,"away":away,
-                    "hz1_ecken":corners,"quote":quote,"einsatz":einsatz,"liga":comp,
+                    "hz1_ecken":corners,"quote":quote,"einsatz":einsatz,"liga":comp,"konfidenz":konfidenz,
                     "webhook":DISCORD_WEBHOOK_ECKEN,"signal_zeit":time.time(),"bot":"Ecken-Bot",
                     "discord_message_id": (dc_info or {}).get("message_id"),
                     "discord_channel_id": (dc_info or {}).get("channel_id"),
@@ -2651,6 +2656,10 @@ def bot_torwart():
                 away    = game.get("away",{}).get("name","?")
                 comp    = game.get("competition",{}).get("name","?")
                 country = (game.get("country") or {}).get("name","International")
+                if not liga_signal_erlaubt(comp):  # v59.15: Liga-Zuverlässigkeit
+                    continue
+                if not liga_erlaubt(comp):  # v59.17: Liga-Trefferquote
+                    continue
                 stats      = get_statistiken(match_id)
                 shots_home = stats["shots_on_target_home"]
                 shots_away = stats["shots_on_target_away"]
@@ -2673,6 +2682,8 @@ def bot_torwart():
                     continue
                 einsatz   = kelly_einsatz_bankroll(quote,"torwart") if quote else EINSATZ
                 konfidenz = berechne_konfidenz("torwart",comp,quote)  # v59.8: Konfidenz ergänzt
+                if konfidenz < MIN_KONFIDENZ_VERSAND:  # v59.17: Mindest-Konfidenz
+                    continue
                 ke        = konfidenz_emoji(konfidenz)
                 ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
                 msg     = (f"🧤 <b>Torwart-Alarm!</b> {ke} Konfidenz: <b>{konfidenz}/10</b>\n━━━━━━━━━━━━━━━━━━━━\n"
@@ -2691,7 +2702,7 @@ def bot_torwart():
                 notified_torwart.add(match_id)
                 beobachtung_hinzufuegen(match_id,{
                     "typ":"torwart","match_id":match_id,"home":home,"away":away,
-                    "quote":quote,"einsatz":einsatz,"liga":comp,
+                    "quote":quote,"einsatz":einsatz,"liga":comp,"konfidenz":konfidenz,
                     "webhook":DISCORD_WEBHOOK_TORWART,"signal_zeit":time.time(),"bot":"Torwart-Bot",
                     "discord_message_id": (dc_info or {}).get("message_id"),
                     "discord_channel_id": (dc_info or {}).get("channel_id"),
@@ -2742,6 +2753,10 @@ def bot_druck():
                 away    = game.get("away",{}).get("name","?")
                 comp    = game.get("competition",{}).get("name","?")
                 country = (game.get("country") or {}).get("name","International")
+                if not liga_signal_erlaubt(comp):  # v59.15: Liga-Zuverlässigkeit
+                    continue
+                if not liga_erlaubt(comp):  # v59.17: Liga-Trefferquote
+                    continue
                 score   = game.get("scores",{}).get("score","?")
                 minute  = game.get("time","?")
                 quote   = get_quote(match_id,"druck")
@@ -2752,6 +2767,8 @@ def bot_druck():
                 konfidenz = berechne_konfidenz("druck",comp,quote)
                 if ecken_schwach > 0 and ecken_stark/ecken_schwach >= 4:
                     konfidenz = min(10,konfidenz+1)
+                if konfidenz < MIN_KONFIDENZ_VERSAND:  # v59.17: Mindest-Konfidenz
+                    continue
                 ke      = konfidenz_emoji(konfidenz)
                 ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
                 msg = (f"🔥 <b>Druck Signal!</b> {ke} Konfidenz: <b>{konfidenz}/10</b>\n━━━━━━━━━━━━━━━━━━━━\n"
@@ -2774,7 +2791,7 @@ def bot_druck():
                 beobachtung_hinzufuegen(match_id,{
                     "typ":"druck","match_id":match_id,"home":home,"away":away,
                     "druck_team":druck_team,"score_signal":score,
-                    "quote":quote,"einsatz":einsatz,"liga":comp,
+                    "quote":quote,"einsatz":einsatz,"liga":comp,"konfidenz":konfidenz,
                     "webhook":DISCORD_WEBHOOK_DRUCK,"signal_zeit":time.time(),"bot":"Druck-Bot",
                     "discord_message_id": (dc_info or {}).get("message_id"),
                     "discord_channel_id": (dc_info or {}).get("channel_id"),
@@ -2828,6 +2845,10 @@ def bot_comeback():
                     continue
                 comp    = game.get("competition",{}).get("name","?")
                 country = (game.get("country") or {}).get("name","International")
+                if not liga_signal_erlaubt(comp):  # v59.15: Liga-Zuverlässigkeit
+                    continue
+                if not liga_erlaubt(comp):  # v59.17: Liga-Trefferquote
+                    continue
                 minute  = game.get("time","?")
                 quote   = get_quote(match_id,"comeback")
                 if quote and quote < MIN_QUOTE:
@@ -2837,6 +2858,8 @@ def bot_comeback():
                 konfidenz = berechne_konfidenz("comeback",comp,quote)
                 if poss_r >= 60:
                     konfidenz = min(10,konfidenz+1)
+                if konfidenz < MIN_KONFIDENZ_VERSAND:  # v59.17: Mindest-Konfidenz
+                    continue
                 ke      = konfidenz_emoji(konfidenz)
                 ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
                 msg = (f"🔄 <b>Comeback Signal!</b> {ke} Konfidenz: <b>{konfidenz}/10</b>\n━━━━━━━━━━━━━━━━━━━━\n"
@@ -2860,7 +2883,7 @@ def bot_comeback():
                 beobachtung_hinzufuegen(match_id,{
                     "typ":"comeback","match_id":match_id,"home":home,"away":away,
                     "rueckliegend":rueckliegend,"score_signal":score_str,
-                    "quote":quote,"einsatz":einsatz,"liga":comp,
+                    "quote":quote,"einsatz":einsatz,"liga":comp,"konfidenz":konfidenz,
                     "webhook":DISCORD_WEBHOOK_COMEBACK,"signal_zeit":time.time(),
                     "bot":"Comeback-Bot","competition":comp,
                     "discord_message_id": (dc_info or {}).get("message_id"),
@@ -2897,6 +2920,10 @@ def bot_torflut():
                 away    = game.get("away",{}).get("name","?")
                 comp    = game.get("competition",{}).get("name","?")
                 country = (game.get("country") or {}).get("name","International")
+                if not liga_signal_erlaubt(comp):  # v59.15: Liga-Zuverlässigkeit
+                    continue
+                if not liga_erlaubt(comp):  # v59.17: Liga-Trefferquote
+                    continue
                 stats_tf   = get_statistiken(match_id)
                 shots_h_tf = stats_tf["shots_on_target_home"]
                 shots_a_tf = stats_tf["shots_on_target_away"]
@@ -2919,6 +2946,8 @@ def bot_torflut():
                 konfidenz = berechne_konfidenz("torflut",comp,quote)
                 if tore_hz1 >= 4:
                     konfidenz = min(10,konfidenz+1)
+                if konfidenz < MIN_KONFIDENZ_VERSAND:  # v59.17: Mindest-Konfidenz
+                    continue
                 ke      = konfidenz_emoji(konfidenz)
                 ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
                 msg     = (f"🌊 <b>Torflut Signal!</b> {ke} Konfidenz: <b>{konfidenz}/10</b>\n━━━━━━━━━━━━━━━━━━━━\n"
@@ -2938,7 +2967,7 @@ def bot_torflut():
                 notified_torflut.add(match_id)
                 beobachtung_hinzufuegen(match_id,{
                     "typ":"torflut","match_id":match_id,"home":home,"away":away,
-                    "hz1_tore":tore_hz1,"grenze":grenze,"quote":quote,
+                    "hz1_tore":tore_hz1,"grenze":grenze,"quote":quote,"einsatz":einsatz,"konfidenz":konfidenz,
                     "webhook":DISCORD_WEBHOOK_TORFLUT,"signal_zeit":time.time(),"bot":"Torflut-Bot",
                     "discord_message_id": (dc_info or {}).get("message_id"),
                     "discord_channel_id": (dc_info or {}).get("channel_id"),
@@ -2973,6 +3002,8 @@ def bot_tore_analyse():
                 minute  = game.get("time","?")
                 if not liga_erlaubt(comp):
                     continue
+                if not liga_signal_erlaubt(comp):  # v59.15: Liga-Zuverlässigkeit
+                    continue
                 home_id = str((game.get("home") or {}).get("id",""))
                 away_id = str((game.get("away") or {}).get("id",""))
                 if not home_id or not away_id:
@@ -3004,6 +3035,8 @@ def bot_tore_analyse():
                         analyse_hz1 = f"H2H Ø HZ1-Tore: {ana['avg_hz1']} ({ana['hz1_spiele']} Spiele)\nTipp: {richtung} {linie}"
                         cl_ok,cl_text = claude_tipp_review(home,away,"hz1tore",analyse_hz1)
                         if not cl_ok: konfidenz = max(1,konfidenz-2)
+                        if konfidenz < MIN_KONFIDENZ_VERSAND:  # v59.17: Mindest-Konfidenz
+                            continue
                         cl_hz1 = f"\n🤖 Claude: <b>{cl_text}</b>" if cl_text else ""
                         ql     = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
                         msg    = (f"🥅 <b>HZ1-Tore Signal!</b> {konfidenz_emoji(konfidenz)} Konfidenz: <b>{konfidenz}/10</b>\n"
@@ -3028,7 +3061,7 @@ def bot_tore_analyse():
                         notified_hz1tore.add(match_id)
                         beobachtung_hinzufuegen(match_id,{
                             "typ":"hz1tore","match_id":match_id,"home":home,"away":away,"liga":comp,
-                            "richtung":richtung,"linie":linie,"quote":quote,"einsatz":einsatz,
+                            "richtung":richtung,"linie":linie,"quote":quote,"einsatz":einsatz,"konfidenz":konfidenz,
                             "webhook":DISCORD_WEBHOOK_HZ1TORE,"signal_zeit":time.time(),
                             "discord_message_id": (dc_info or {}).get("message_id"),
                             "discord_channel_id": (dc_info or {}).get("channel_id"),
@@ -3050,6 +3083,8 @@ def bot_tore_analyse():
                         analyse_vz = f"H2H Ø VZ-Tore: {ana['avg_vz']} ({ana['spiele']} Spiele)\nTipp: {richtung} {linie}"
                         cl_ok,cl_text = claude_tipp_review(home,away,"vztore",analyse_vz)
                         if not cl_ok: konfidenz = max(1,konfidenz-2)
+                        if konfidenz < MIN_KONFIDENZ_VERSAND:  # v59.17: Mindest-Konfidenz
+                            continue
                         cl_vz  = f"\n🤖 Claude: <b>{cl_text}</b>" if cl_text else ""
                         ql     = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else ""
                         msg    = (f"🏆 <b>Vollzeit-Tore Signal!</b> {konfidenz_emoji(konfidenz)} Konfidenz: <b>{konfidenz}/10</b>\n"
@@ -3070,7 +3105,7 @@ def bot_tore_analyse():
                         notified_vztore.add(match_id)
                         beobachtung_hinzufuegen(match_id,{
                             "typ":"vztore","match_id":match_id,"home":home,"away":away,"liga":comp,
-                            "richtung":richtung,"linie":linie,"quote":quote,"einsatz":einsatz,
+                            "richtung":richtung,"linie":linie,"quote":quote,"einsatz":einsatz,"konfidenz":konfidenz,
                             "webhook":DISCORD_WEBHOOK_VZTORE,"signal_zeit":time.time(),
                             "discord_message_id": (dc_info or {}).get("message_id"),
                             "discord_channel_id": (dc_info or {}).get("channel_id"),
@@ -3140,6 +3175,8 @@ def bot_corner_rush():
                 quote_cr   = get_quote(match_id,"cornerrush")
                 einsatz_cr = kelly_einsatz_bankroll(quote_cr,"ecken") if quote_cr else EINSATZ
                 konfidenz_cr = min(10,5+rush_ecken)  # mehr Ecken im Rush-Fenster = höhere Konfidenz
+                if konfidenz_cr < MIN_KONFIDENZ_VERSAND:  # v59.17: Mindest-Konfidenz
+                    continue
                 ke_cr        = konfidenz_emoji(konfidenz_cr)
                 ql_cr      = f"\n💶 Quote: <b>{quote_cr}</b> | 💰 Einsatz: <b>{einsatz_cr}€</b>" if quote_cr else f"\n💰 Einsatz: <b>{einsatz_cr}€</b>"
                 msg = (f"📐 <b>Corner Rush!</b> {ke_cr} Konfidenz: <b>{konfidenz_cr}/10</b>\n━━━━━━━━━━━━━━━━━━━━\n"
@@ -3252,6 +3289,73 @@ def tracker_nicht_auswertbar_markieren(key: str):
             _signal_tracker[key]["status"] = "nicht_auswertbar"
             _signal_tracker[key]["ausgewertet_um"] = de_now().strftime("%Y-%m-%d %H:%M")
     tracker_speichern()
+
+# ============================================================
+#  v59.15 NEU: LIGA-ZUVERLÄSSIGKEIT (Qualität statt Quantität)
+# ============================================================
+# Statt Ligen von Hand zu raten und zu sperren, merkt sich der Bot pro Liga automatisch,
+# wie oft die Auswertung tatsächlich gelingt oder scheitert. Ligen mit dauerhaft schlechter
+# Auswertungs-Erfolgsquote werden für NEUE Signale automatisch gesperrt – bis sich die
+# Datenlage für diese Liga bessert (Sperre ist nicht endgültig, wird laufend neu bewertet).
+LIGA_AUSWERTUNG_DATEI    = "liga_auswertung.json"
+LIGA_AUSWERTUNG_MIN_PROBEN = 5     # erst ab so vielen Versuchen wird überhaupt bewertet
+LIGA_AUSWERTUNG_MIN_QUOTE  = 0.5   # mind. 50% müssen erfolgreich auswertbar sein
+liga_auswertung_stats = {}   # {"Liga Name": {"erfolgreich": int, "nicht_auswertbar": int}}
+_liga_auswertung_lock = threading.Lock()
+
+def liga_auswertung_laden():
+    import json, os as _os
+    global liga_auswertung_stats
+    if not _os.path.exists(LIGA_AUSWERTUNG_DATEI):
+        return
+    try:
+        with open(LIGA_AUSWERTUNG_DATEI) as f:
+            liga_auswertung_stats = json.load(f)
+        print(f"  [Liga-Zuverlässigkeit] {len(liga_auswertung_stats)} Ligen geladen")
+    except Exception as e:
+        print(f"  [Liga-Zuverlässigkeit] Ladefehler: {e}")
+
+def liga_auswertung_speichern():
+    import json
+    try:
+        with _liga_auswertung_lock:
+            data = dict(liga_auswertung_stats)
+        with open(LIGA_AUSWERTUNG_DATEI,"w") as f:
+            json.dump(data,f,indent=2)
+    except Exception as e:
+        print(f"  [Liga-Zuverlässigkeit] Speicherfehler: {e}")
+
+def liga_auswertung_update(liga: str, erfolgreich: bool):
+    if not liga:
+        return
+    with _liga_auswertung_lock:
+        liga_auswertung_stats.setdefault(liga, {"erfolgreich":0,"nicht_auswertbar":0})
+        if erfolgreich:
+            liga_auswertung_stats[liga]["erfolgreich"] += 1
+        else:
+            liga_auswertung_stats[liga]["nicht_auswertbar"] += 1
+    liga_auswertung_speichern()
+
+def liga_signal_erlaubt(liga: str) -> bool:
+    """
+    Prüft VOR dem Senden eines neuen Signals, ob diese Liga bisher zuverlässig genug
+    auswertbar war. Erst ab LIGA_AUSWERTUNG_MIN_PROBEN Versuchen wird überhaupt geprüft
+    (sonst würde jede neue Liga sofort gesperrt). Unterhalb von LIGA_AUSWERTUNG_MIN_QUOTE
+    Erfolgsquote wird die Liga für neue Signale gesperrt.
+    """
+    if not liga:
+        return True
+    stat = liga_auswertung_stats.get(liga)
+    if not stat:
+        return True
+    gesamt = stat["erfolgreich"] + stat["nicht_auswertbar"]
+    if gesamt < LIGA_AUSWERTUNG_MIN_PROBEN:
+        return True
+    quote = stat["erfolgreich"] / gesamt
+    if quote < LIGA_AUSWERTUNG_MIN_QUOTE:
+        print(f"  [Liga-Zuverlässigkeit] '{liga}' gesperrt: nur {stat['erfolgreich']}/{gesamt} ({round(quote*100)}%) auswertbar")
+        return False
+    return True
 
 def tracker_get_offene() -> list:
     jetzt_ts = time.time()
@@ -3523,14 +3627,16 @@ def bot_nachschau():
                 versuche = sig.get("versuche",0)+1
                 print(f"  [Nachschau] Prüfe: {home} vs {away} ({typ}) | Versuch #{versuche}")
 
+                liga_name = sig.get("competition",sig.get("liga",""))
                 result = ls_get_match_result(
                     match_id, home=home, away=away,
-                    liga=sig.get("competition",sig.get("liga",""))
+                    liga=liga_name
                 )
                 if not result:
                     if versuche >= 20:
                         print(f"  [Nachschau] ❓ Aufgegeben nach {versuche} Versuchen (kein Ergebnis gefunden): {home} vs {away} ({typ})")
                         tracker_nicht_auswertbar_markieren(key)
+                        liga_auswertung_update(liga_name, False)  # v59.15
                         msg_id_na  = sig.get("discord_message_id")
                         chan_id_na = sig.get("discord_channel_id")
                         if msg_id_na and chan_id_na:
@@ -3561,6 +3667,7 @@ def bot_nachschau():
                     if versuche >= 20:
                         print(f"  [Nachschau] ❓ Kein Auswertungs-Ergebnis nach {versuche} Versuchen: {home} vs {away} ({typ})")
                         tracker_nicht_auswertbar_markieren(key)
+                        liga_auswertung_update(liga_name, False)  # v59.15
                         msg_id_na  = sig.get("discord_message_id")
                         chan_id_na = sig.get("discord_channel_id")
                         if msg_id_na and chan_id_na:
@@ -3629,6 +3736,7 @@ def bot_nachschau():
                     print(f"  [Nachschau] Bankroll-Fehler: {e}")
 
                 tracker_ausgewertet_markieren(key,gewonnen)
+                liga_auswertung_update(liga_name, True)  # v59.15: erfolgreich ausgewertet (unabhängig von gewonnen/verloren)
                 check_streak_alarm()
 
                 if not gewonnen:
@@ -3720,6 +3828,8 @@ def bot_xg():
                 quote_xg   = get_quote(match_id,"xg")
                 einsatz_xg = kelly_einsatz_bankroll(quote_xg,"torflut") if quote_xg else EINSATZ
                 konfidenz_xg = min(10,5+round(xg_diff))  # höhere xG-Differenz = höhere Konfidenz
+                if konfidenz_xg < MIN_KONFIDENZ_VERSAND:  # v59.17: Mindest-Konfidenz
+                    continue
                 ke_xg        = konfidenz_emoji(konfidenz_xg)
                 ql_xg      = f"\n💶 Quote: <b>{quote_xg}</b> | 💰 Einsatz: <b>{einsatz_xg}€</b>" if quote_xg else f"\n💰 Einsatz: <b>{einsatz_xg}€</b>"
                 msg = (f"📊 <b>xG Signal!</b> {ke_xg} Konfidenz: <b>{konfidenz_xg}/10</b>\n━━━━━━━━━━━━━━━━━━━━\n"
@@ -3801,6 +3911,8 @@ def bot_early_goal():
                 einsatz = kelly_einsatz_bankroll(quote,"torflut") if quote else EINSATZ
                 # v59.8: Konfidenz ergänzt – je früher das Tor, desto höher
                 konfidenz = min(10,10-_safe_int(tor_min,5)//2)
+                if konfidenz < MIN_KONFIDENZ_VERSAND:  # v59.17: Mindest-Konfidenz
+                    continue
                 ke        = konfidenz_emoji(konfidenz)
                 ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else f"\n💰 Einsatz: <b>{einsatz}€</b>"
                 msg = (f"⚡ <b>Early Goal!</b> {ke} Konfidenz: <b>{konfidenz}/10</b>\n━━━━━━━━━━━━━━━━━━━━\n"
@@ -4248,6 +4360,10 @@ def bot_hz2_tore():
                 away    = game.get("away",{}).get("name","?")
                 comp    = game.get("competition",{}).get("name","?")
                 country = (game.get("country") or {}).get("name","?")
+                if not liga_signal_erlaubt(comp):  # v59.15: Liga-Zuverlässigkeit
+                    continue
+                if not liga_erlaubt(comp):  # v59.17: Liga-Trefferquote
+                    continue
                 if not whitelist_check(comp,home,away):
                     continue
                 stats     = get_statistiken(match_id)
@@ -4267,6 +4383,8 @@ def bot_hz2_tore():
                 einsatz   = kelly_einsatz_bankroll(quote,"hz1tore") if quote else EINSATZ
                 ql        = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else f"\n💰 Einsatz: <b>{einsatz}€</b>"
                 konfidenz = min(10,6+(1 if druck_ges >= 12 else 0)+(1 if druck_ges >= 16 else 0))
+                if konfidenz < MIN_KONFIDENZ_VERSAND:  # v59.17: Mindest-Konfidenz
+                    continue
                 ke        = konfidenz_emoji(konfidenz)
                 msg = (f"⚡ <b>Über 0.5 HZ2 Tore!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                        f"🏆 {comp} ({country})\n📌 {home} vs {away}\n"
@@ -4300,7 +4418,7 @@ def bot_hz2_tore():
                 beobachtung_hinzufuegen(match_id,{
                     "typ":"hz1tore","match_id":match_id,"home":home,"away":away,
                     "richtung":"ueber","linie":0.5,"score_signal":"0 - 0",
-                    "quote":quote,"einsatz":einsatz,"webhook":DISCORD_WEBHOOK_TORE,
+                    "quote":quote,"einsatz":einsatz,"konfidenz":konfidenz,"webhook":DISCORD_WEBHOOK_TORE,
                     "signal_zeit":time.time(),"bot":"HZ2-Tore-Bot",
                     "discord_message_id": (dc_info or {}).get("message_id"),
                     "discord_channel_id": (dc_info or {}).get("channel_id"),
@@ -4374,6 +4492,8 @@ def bot_rotkarte_ecken():
                 einsatz = kelly_einsatz_bankroll(quote,"rotkarte") if quote else EINSATZ
                 # v59.8: Konfidenz ergänzt – je weniger Restzeit, desto sicherer bleibt's unter der Grenze
                 konfidenz = min(10,max(1,4+(30-restminuten)//5))
+                if konfidenz < MIN_KONFIDENZ_VERSAND:  # v59.17: Mindest-Konfidenz
+                    continue
                 ke        = konfidenz_emoji(konfidenz)
                 ql      = f"\n💶 Quote: <b>{quote}</b> | 💰 Einsatz: <b>{einsatz}€</b>" if quote else f"\n💰 Einsatz: <b>{einsatz}€</b>"
                 msg = (f"📐 <b>Rotkarte Ecken-Signal!</b> {ke} Konfidenz: <b>{konfidenz}/10</b>\n━━━━━━━━━━━━━━━━━━━━\n"
@@ -4471,6 +4591,7 @@ PERSISTENZ_DATEIEN = [
     "statistik.json","signal_tracker.json","beobachtete_spiele.json",
     "notified_sets.json","bankroll.json","dynamische_filter.json",
     "whitelist.json","admins.json","bekannte_user.json","manuell_tipps.json",
+    "liga_auswertung.json",
 ]
 GITHUB_DATA_PFAD   = "data/latest"
 GITHUB_DATA_BRANCH = os.environ.get("GITHUB_DATA_BRANCH","data-backup")
@@ -4882,6 +5003,12 @@ def bot_selbstlernend():
                     msg = (f"🧠 <b>Selbstlern-Update!</b>\n━━━━━━━━━━━━━━━━━━━━\n"+
                            "\n".join(aenderungen)+f"\n━━━━━━━━━━━━━━━━━━━━\n🕐 {jetzt()} Uhr")
                     send_telegram(msg)
+                # v59.17 NEU: Konfidenz-Kalibrierung täglich mitlaufen lassen (vorher nie
+                # aufgerufen). Prüft ob z.B. "8/10"-Signale auch wirklich ~80% treffen.
+                try:
+                    kalibriere_konfidenz()
+                except Exception as e:
+                    print(f"  [Selbstlern] Kalibrierung Fehler: {e}")
         except Exception as e:
             print(f"  [Selbstlern] Fehler: {e}")
         time.sleep(60)
@@ -4890,7 +5017,8 @@ def analysiere_bot_performance(typ: str) -> dict:
     with _tracker_lock:
         tipps = [s for s in _signal_tracker.values()
                  if s.get("typ") == typ and s.get("status") == "ausgewertet"]
-    if len(tipps) < 15:
+    if len(tipps) < 8:  # v59.17: von 15 auf 8 gesenkt, damit der Selbstlern-Bot bei
+                        # aktuell reduziertem Signal-Volumen schneller reagieren kann
         return {"ausreichend":False,"tipps":len(tipps)}
     gw = sum(1 for t in tipps if t.get("gewonnen"))
     return {"ausreichend":True,"tipps":len(tipps),"gewonnen":gw,"quote":gw/len(tipps)}
@@ -5067,6 +5195,22 @@ def bot_telegram_befehle():
 
                 elif text == "/api":
                     antworten(f"📡 <b>API Monitor</b>\n━━━━━━━━━━━━━━━━━━━━\n{api_monitor_bericht()}\n🕐 {jetzt()} Uhr")
+
+                elif text == "/liga_status":
+                    # v59.15: Übersicht der Liga-Zuverlässigkeit für Auswertungen
+                    zeilen = []
+                    for liga_n, st in sorted(liga_auswertung_stats.items(),
+                                              key=lambda x: x[1]["erfolgreich"]+x[1]["nicht_auswertbar"], reverse=True):
+                        gesamt = st["erfolgreich"]+st["nicht_auswertbar"]
+                        if gesamt < 1:
+                            continue
+                        quote = round(st["erfolgreich"]/gesamt*100)
+                        gesperrt = gesamt >= LIGA_AUSWERTUNG_MIN_PROBEN and (st["erfolgreich"]/gesamt) < LIGA_AUSWERTUNG_MIN_QUOTE
+                        icon = "🔴" if gesperrt else ("🟡" if gesamt < LIGA_AUSWERTUNG_MIN_PROBEN else "🟢")
+                        zeilen.append(f"{icon} {liga_n}: {st['erfolgreich']}/{gesamt} auswertbar ({quote}%){' – GESPERRT' if gesperrt else ''}")
+                    text_out = "\n".join(zeilen[:25]) if zeilen else "Noch keine Daten"
+                    antworten(f"📋 <b>Liga-Zuverlässigkeit</b>\n━━━━━━━━━━━━━━━━━━━━\n{text_out}\n"
+                              f"━━━━━━━━━━━━━━━━━━━━\n🟢 OK | 🟡 noch zu wenig Daten (&lt;{LIGA_AUSWERTUNG_MIN_PROBEN}) | 🔴 gesperrt (&lt;{int(LIGA_AUSWERTUNG_MIN_QUOTE*100)}%)\n🕐 {jetzt()} Uhr")
 
                 elif text.startswith("/whitelist "):
                     teile = text.split(" ",2)
@@ -5509,7 +5653,7 @@ def kalibriere_konfidenz():
     with _tracker_lock:
         alle = [s for s in _signal_tracker.values()
                 if s.get("status")=="ausgewertet" and s.get("konfidenz")]
-    if len(alle)<100: return {}
+    if len(alle)<40: return {}  # v59.17: von 100 auf 40 gesenkt (weniger Signale aktuell)
     nach_k = {}
     for s in alle:
         k = s.get("konfidenz",6)
@@ -5518,7 +5662,7 @@ def kalibriere_konfidenz():
         if s.get("gewonnen"): nach_k[k]["gewonnen"] += 1
     meldungen = []
     for k,data in sorted(nach_k.items()):
-        if data["total"]<10: continue
+        if data["total"]<5: continue  # v59.17: von 10 auf 5 gesenkt
         echte = round(data["gewonnen"]/data["total"]*100)
         erw   = k*10
         if abs(echte-erw)>=15:
@@ -6050,6 +6194,7 @@ if __name__ == "__main__":
     bekannte_user_laden()
     manuell_tipps_laden()
     telegram_filter_laden()
+    liga_auswertung_laden()
 
     try:
         dynamische_filter_laden()
@@ -6087,17 +6232,32 @@ if __name__ == "__main__":
         ("EarlyGoal-Bot",    bot_early_goal),
         ("RotkarteEcken-Bot",bot_rotkarte_ecken),
         ("Anomalie-Bot",     bot_anomalie_erkennung),
-        ("Sharp-Money-Bot",  bot_sharp_money),
+        # v59.16: Deaktiviert auf Wunsch – bewirbt/beobachtet Buchmacher-Quoten ohne
+        # direkten Mehrwert für den aktuellen Fokus. Funktion bleibt im Code erhalten,
+        # falls sie später wieder aktiviert werden soll.
+        # ("Sharp-Money-Bot",  bot_sharp_money),
         ("HZ2-Tore-Bot",     bot_hz2_tore),
         ("CornerRush-Bot",   bot_corner_rush),
         ("Morgen-Bot",       bot_morgen_uebersicht),
         ("Selbstlern-Bot",   bot_selbstlernend),
         ("Wetter-Bot",       bot_wetter_tipp),
         ("TippDesTages-Bot",  bot_tipp_des_tages),
-        ("Odds-Tracker",      bot_odds_tracker),
-        ("Hedge-Alarm-Bot",   bot_hedge_alarm),
-        ("Bonus-Tracker",     bot_bonus_tracker),
-        ("Quotenvergleich-Bot",bot_quotenvergleich),
+        # v59.16: Deaktiviert auf Wunsch – bewirbt/beobachtet Buchmacher-Quoten ohne
+        # direkten Mehrwert für den aktuellen Fokus. Funktion bleibt im Code erhalten,
+        # falls sie später wieder aktiviert werden soll.
+        # ("Odds-Tracker",      bot_odds_tracker),
+        # v59.16: Deaktiviert auf Wunsch – bewirbt/beobachtet Buchmacher-Quoten ohne
+        # direkten Mehrwert für den aktuellen Fokus. Funktion bleibt im Code erhalten,
+        # falls sie später wieder aktiviert werden soll.
+        # ("Hedge-Alarm-Bot",   bot_hedge_alarm),
+        # v59.14: Bonus-Tracker deaktiviert – bewarb Buchmacher ohne eigene Affiliate-Links,
+        # kein Nutzen für BettingLab. Funktion bleibt im Code, falls sie später mit echten
+        # Affiliate-Links wieder aktiviert werden soll.
+        # ("Bonus-Tracker",     bot_bonus_tracker),
+        # v59.16: Deaktiviert auf Wunsch – bewirbt/beobachtet Buchmacher-Quoten ohne
+        # direkten Mehrwert für den aktuellen Fokus. Funktion bleibt im Code erhalten,
+        # falls sie später wieder aktiviert werden soll.
+        # ("Quotenvergleich-Bot",bot_quotenvergleich),
         ("Gruppen-Bot",      bot_telegram_gruppe),
     ]
 
