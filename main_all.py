@@ -64,8 +64,8 @@ from datetime import datetime, timezone, timedelta
 #  Telegram-Startmeldung. So lässt sich immer zweifelsfrei sehen, welcher Code-Stand
 #  tatsächlich läuft, statt zu raten ob ein Deploy wirklich durchgekommen ist.
 # ============================================================
-BOT_VERSION      = "v59.25"
-BOT_VERSION_INFO = "KRITISCH: Zweite, direktere Absicherung gegen verfrühte Auswertung laufender Spiele (Live-Sammel-Liste hatte Lücken bei kleineren Ligen)"
+BOT_VERSION      = "v59.30"
+BOT_VERSION_INFO = "TippDesTages-Bot: nur noch echte Prematch-Spiele vom selben Tag, nur noch bei Konfidenz 10/10 (sonst kein Tipp des Tages)"
 
 # ============================================================
 #  KONFIGURATION
@@ -97,6 +97,7 @@ DISCORD_WEBHOOK_VZTORE   = os.environ.get("DISCORD_WEBHOOK_VZTORE",   "")
 DISCORD_WEBHOOK_TORE     = os.environ.get("DISCORD_WEBHOOK_TORE",     "")
 DISCORD_WEBHOOK_VALUE    = os.environ.get("DISCORD_WEBHOOK_VALUE",    "")
 DISCORD_WEBHOOK_CS2      = os.environ.get("DISCORD_WEBHOOK_CS2",      "")
+DISCORD_WEBHOOK_TAGESTIPP = os.environ.get("DISCORD_WEBHOOK_TAGESTIPP", "")  # v59.29 NEU: eigener Kanal für "Tipp des Tages" (vorher fälschlich im Auswertungs-/Bilanz-Kanal)
 
 # ── v59: Discord-Bot-Token für Reaktionen (✅/❌) auf ausgewertete Signale ──
 # Webhooks können KEINE Reaktionen setzen – dafür braucht es einen echten Bot
@@ -411,6 +412,7 @@ def _af_fixture_zu_prematch(fx: dict) -> dict:
         _af_home_team_cache[fixture_id] = home_id
     return {
         "id": fixture_id,
+        "status": _af_status(fx),  # v59.30 NEU: für Prematch-Filter (nur "NS" = noch nicht begonnen)
         "home_name": (teams.get("home") or {}).get("name","?"),
         "away_name": (teams.get("away") or {}).get("name","?"),
         "home": {"id":home_id,"name":(teams.get("home") or {}).get("name","?")},
@@ -469,7 +471,12 @@ fehler_zaehler   = {}
 FEHLER_ALERT_AB  = 3
 _api_calls_log   = []
 _api_calls_lock  = threading.Lock()
-MAX_API_PER_MIN  = 50
+MAX_API_PER_MIN  = 400  # v59.27 FIX: von 50 auf 400 erhöht. Euer API-Football-Abo ist der
+                         # "Ultra"-Plan (75.000 Requests/Tag) – der erlaubt laut API-Football
+                         # offiziell 450 Calls/Minute, nicht 50. Das selbst gesetzte Limit war
+                         # damit fast 10x enger als nötig und hat unnötig zu ständigem
+                         # "Rate-Limit"-Warten geführt, wodurch auch die Auswertungs-Calls des
+                         # Nachschau-Bots im Stau steckenblieben. 400 statt 450 als Sicherheitspuffer.
 aktive_tipps     = {}
 signal_log       = []
 SIGNAL_LOG_DATEI = "signal_log.json"
@@ -988,11 +995,13 @@ def cache_aufraumen():
 # arbeiten alle Funktionen unten mit match_id statt mit Team-Namen-Suche wie
 # vorher bei the-odds-api.com.
 _af_odds_cache = {}
-AF_ODDS_TTL    = 240  # v59.9 FIX: von 1 Min auf 4 Min hochgesetzt – die 1-Minuten-TTL hat
-                       # das tägliche API-Football-Kontingent stark belastet (Live-Odds für
-                       # jedes laufende Spiel, von ~15 Bots, jede Minute neu abgefragt) und
-                       # dadurch vermutlich das Tageslimit erreicht – was WIEDERUM auch die
-                       # Ergebnis-Abfragen für die Auswertung lahmgelegt hat (gleicher Key/Limit).
+AF_ODDS_TTL    = 600  # v59.26 FIX: von 4 auf 10 Min hochgesetzt. Log-Analyse zeigt konstante
+                       # "Rate-Limit 50 Calls/Min – warte..."-Meldungen quer durch den ganzen
+                       # Betrieb – die Odds-Abfragen (von ~10 Bots, für jedes der ~70+ laufenden
+                       # Spiele) konkurrieren um dasselbe Minuten-Kontingent wie die
+                       # Ergebnis-Abfragen des Nachschau-Bots, wodurch Auswertungen im 90s/20-
+                       # Versuche-Fenster nicht mehr rechtzeitig durchkommen. Odds ändern sich
+                       # auch nach 10 Min noch ausreichend aktuell für unsere Zwecke.
 
 def af_get_odds(fixture_id) -> list:
     """
@@ -1013,6 +1022,17 @@ def af_get_odds(fixture_id) -> list:
     cached = _af_odds_cache.get(key)
     if cached and now-cached["ts"] < AF_ODDS_TTL:
         return cached["data"]
+
+    # v59.26 FIX: Quoten sind "nice to have", nicht kritisch (wir zeigen bei fehlender
+    # Quote schon ehrlich "Keine zuverlässige Quote" an). Wenn das Minuten-Kontingent gerade
+    # eng wird, wird die Odds-Abfrage übersprungen statt zu warten – so blockiert sie nicht
+    # die wichtigeren Calls (Ergebnis-Auswertung, Live-Spiele-Liste). Wird beim nächsten
+    # Durchlauf einfach erneut versucht.
+    with _api_calls_lock:
+        _aktuelle_calls_min = len(_api_calls_log)
+    if _aktuelle_calls_min >= MAX_API_PER_MIN * 0.8:
+        print(f"  [AF-Odds] Übersprungen (Fixture {fixture_id}) – Minuten-Kontingent fast ausgeschöpft ({_aktuelle_calls_min}/{MAX_API_PER_MIN})")
+        return cached["data"] if cached else []
 
     bookmakers = []
     quelle = ""
@@ -3654,6 +3674,33 @@ def hz1_bereit_fuer_auswertung(match_id: str) -> bool:
         print(f"  [Nachschau] HZ1-Bereitschaftscheck Fehler: {e}")
         return True  # im Zweifel nicht blockieren, normale Auswertungs-Logik greift danach ohnehin
 
+def match_bereit_fuer_volle_auswertung(match_id: str) -> bool:
+    """
+    v59.28 NEU: Dasselbe Prinzip wie hz1_bereit_fuer_auswertung, aber für alle Wett-Typen,
+    die das GESAMTE Spielende brauchen (Ecken, Torwart, Druck, Comeback, Torflut, VZ-Tore,
+    HZ2-Tore). Vorher wartete der Nachschau-Bot pauschal 15 Minuten und hatte dann nur noch
+    30 Minuten (20 Versuche à 90s) Zeit – bei einem Signal aus Minute 20 reicht das bei
+    Weitem nicht bis zum tatsächlichen Spielende (~90+ Min). Das 20-Versuche-Budget wurde
+    dadurch oft schon verbraucht, BEVOR das Spiel überhaupt fertig war -> "nicht auswertbar",
+    obwohl eine spätere Auswertung problemlos möglich gewesen wäre. Jetzt: Das Budget startet
+    erst zu laufen, sobald das Spiel laut Live-Status wirklich kurz vor Schluss oder bereits
+    vorbei ist.
+    """
+    try:
+        live = get_live_matches()
+        for m in live:
+            if str(m.get("id")) == str(match_id):
+                status  = m.get("status","")
+                elapsed = _safe_int(m.get("time",0))
+                if status == "IN PLAY" and elapsed >= 88:
+                    return True  # tief in der Nachspielzeit, Spielende steht unmittelbar bevor
+                return False  # läuft erkennbar noch, noch nicht versuchen
+        # Fixture nicht mehr in der Live-Liste -> Spiel vermutlich vorbei, Auswertung versuchen
+        return True
+    except Exception as e:
+        print(f"  [Nachschau] Vollzeit-Bereitschaftscheck Fehler: {e}")
+        return True  # im Zweifel nicht blockieren, normale Auswertungs-Logik greift danach ohnehin
+
 def ls_get_match_result(match_id: str, home: str = "", away: str = "", liga: str = ""):
     ergebnisse = {}
     ht_score   = ""
@@ -3838,19 +3885,16 @@ def bot_nachschau():
                 away     = sig.get("away","?")
                 webhook  = sig.get("webhook","")
 
-                # v59.20 FIX: Die pauschale "15 Min warten"-Regel reicht für HZ1-Tore-Wetten
-                # nicht – die 1. Halbzeit kann noch 40+ Minuten laufen, wenn das Signal kurz
-                # nach Anpfiff kam. Für diesen Typ wird jetzt der ECHTE Live-Status/die
-                # Spielminute geprüft (Halbzeitpause erreicht?), statt eine feste Zeit zu raten.
-                # Für alle anderen Typen bleibt die einfache Mindestwartezeit (die reicht dort,
-                # weil Ecken/Torflut erst zur Halbzeit signalisieren und Torwart/Druck/Comeback/
-                # VZ-Tore ohnehin das ganze Spielende abwarten müssen).
+                # v59.28 FIX: Die pauschale "15 Min warten"-Regel reichte auch für alle
+                # anderen Typen nicht (nicht nur HZ1) – Ecken/Torwart/Druck/Comeback/Torflut/
+                # VZ-Tore/HZ2-Tore brauchen alle das ECHTE (nahezu) Spielende, nicht nur eine
+                # feste Wartezeit seit dem Signal. Jetzt wird für JEDEN Typ der tatsächliche
+                # Live-Status geprüft, bevor das 20-Versuche-Budget zu laufen beginnt.
                 if typ == "hz1tore":
                     if not hz1_bereit_fuer_auswertung(match_id):
                         continue
                 else:
-                    signal_alter_min = (time.time()-sig.get("signal_zeit",time.time()))/60
-                    if signal_alter_min < 15:
+                    if not match_bereit_fuer_volle_auswertung(match_id):
                         continue
 
                 letzter = sig.get("letzter_versuch",0)
@@ -6139,7 +6183,7 @@ def sende_pdf_telegram(pfad, monat):
 # ============================================================
 
 def bot_tipp_des_tages():
-    print("[TippDesTages-Bot] Gestartet | Täglich 09:00 Uhr")
+    print("[TippDesTages-Bot] Gestartet | Täglich 09:00 Uhr | Nur bei Konfidenz 10/10")
     import random; gesendet = set()
     while True:
         try:
@@ -6147,7 +6191,13 @@ def bot_tipp_des_tages():
             if now.hour==9 and now.minute<5 and key not in gesendet:
                 gesendet.add(key)
                 fixtures = ls_get_fixtures(now.strftime("%Y-%m-%d"))
-                top      = filtere_top_spiele(fixtures)
+                top_alle = filtere_top_spiele(fixtures)
+                # v59.30 FIX: Nur echte Prematch-Spiele (noch nicht begonnen), die HEUTE
+                # stattfinden – ls_get_fixtures liefert zwar schon nur den heutigen Tag, aber
+                # ohne Status-Filter könnte theoretisch ein bereits laufendes frühes Spiel
+                # mitgenommen werden. "NS" (Not Started) stellt sicher, dass es wirklich noch
+                # vor Anpfiff ist.
+                top = [s for s in top_alle if s.get("status") in ("NS","TBD")]
                 if not top: time.sleep(60); continue
                 bester = None; beste_k = 0
                 for spiel in top[:10]:
@@ -6159,7 +6209,12 @@ def bot_tipp_des_tages():
                     if r and r.get("konfidenz",0)>beste_k:
                         beste_k=r["konfidenz"]; bester={**r,"home":home,"away":away,"liga":liga,"anstoß":anstoß,"id":spiel.get("id","")}
                     time.sleep(1)
-                if not bester: time.sleep(60); continue
+                # v59.30 FIX: Nur noch senden, wenn die Konfidenz wirklich 10/10 erreicht –
+                # ansonsten lieber an dem Tag GAR KEINEN Tipp des Tages senden (Qualität statt
+                # Quantität), statt einen schwächeren Tipp als "Tipp des Tages" zu labeln.
+                if not bester or beste_k < 10:
+                    print(f"  [TippDesTages] Kein Spiel mit Konfidenz 10/10 gefunden (beste: {beste_k}/10) – heute kein Tipp des Tages")
+                    time.sleep(60); continue
                 ke = konfidenz_emoji(bester["konfidenz"])
                 # v59.7: Quote + Einsatz-Empfehlung ergänzt
                 bester_fixture_id = bester.get("id","")
@@ -6174,7 +6229,7 @@ def bot_tipp_des_tages():
                        f"{ke} Konfidenz: <b>{bester['konfidenz']}/10</b>\n"
                        f"📊 {bester['analyse']}\n━━━━━━━━━━━━━━━━━━━━\n⚠️ 18+ | Verantwortungsvoll spielen")
                 send_telegram(msg); send_telegram_gruppe(msg)
-                send_discord_embed(DISCORD_WEBHOOK_BILANZ,{
+                send_discord_embed(DISCORD_WEBHOOK_TAGESTIPP,{  # v59.29 FIX: eigener Kanal statt Auswertungs-/Bilanz-Kanal
                     "title":f"⭐ Tipp des Tages – {now.strftime('%d.%m.%Y')}","color":0xF1C40F,
                     "fields":[
                         {"name":"🏆 Liga","value":bester["liga"],"inline":True},
@@ -6398,6 +6453,7 @@ if __name__ == "__main__":
         "ANTHROPIC_KEY":    ANTHROPIC_API_KEY,
         "GITHUB_TOKEN":     GITHUB_TOKEN,
         "DISCORD_BOT_TOKEN":DISCORD_BOT_TOKEN,   # v59: fuer die ✅/❌-Reaktionen
+        "DISCORD_WEBHOOK_TAGESTIPP":DISCORD_WEBHOOK_TAGESTIPP,  # v59.29 NEU
     }
     print("[Startup] Prüfe Konfiguration...")
     for name, val in required_vars.items():
